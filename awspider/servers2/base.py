@@ -10,13 +10,14 @@ from uuid import uuid4
 from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
-from ..aws import AmazonS3
 from ..exceptions import DeleteReservationException
 from ..pagegetter import PageGetter
 from ..requestqueuer import RequestQueuer
 import pprint
+from telephus.protocol import ManagedCassandraClientFactory
+from telephus.client import CassandraClient
+from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
 from boto.ec2.connection import EC2Connection
-
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -42,10 +43,14 @@ class BaseServer(object):
     reservation_fast_caches = {}
     
     def __init__(self,
-                 aws_access_key_id=None, 
-                 aws_secret_access_key=None, 
-                 aws_s3_http_cache_bucket=None, 
-                 aws_s3_storage_bucket=None,
+                 aws_access_key_id=None,
+                 aws_secret_access_key=None,
+                 cassandra_server=None,
+                 cassandra_port=9160,
+                 cassandra_keyspace=None, 
+                 cassandra_cf=None, 
+                 cassandra_content=None,
+                 cassandra_http=None,
                  scheduler_server_group=None,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
@@ -61,18 +66,22 @@ class BaseServer(object):
             max_simultaneous_requests_per_host=int(max_simultaneous_requests_per_host))
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.aws_s3_http_cache_bucket = aws_s3_http_cache_bucket
-        self.aws_s3_storage_bucket = aws_s3_storage_bucket
-        self.s3 = AmazonS3(
-            self.aws_access_key_id, 
-            self.aws_secret_access_key, 
-            rq=self.rq)
+        self.aws_access_key_id=aws_access_key_id
+        self.aws_secret_access_key=aws_secret_access_key
+        self.cassandra_server = cassandra_server
+        self.cassandra_port = cassandra_port
+        self.cassandra_keyspace = cassandra_keyspace
+        self.cassandra_cf = cassandra_cf
+        self.cassandra_http = cassandra_http
+        self.cassandra_content = cassandra_content
+        self.cassandra_factory = ManagedCassandraClientFactory()
+        self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
+        reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
         self.scheduler_server_group=scheduler_server_group,
         self.pg = PageGetter(
-            self.s3, 
-            self.aws_s3_http_cache_bucket, 
+            self.cassandra_client, 
+            self.cassandra_cf,
+            self.cassandra_http,
             rq=self.rq)
         self._setupLogging(log_file, log_directory, log_level)
 
@@ -106,35 +115,10 @@ class BaseServer(object):
     def start(self):
         reactor.callWhenRunning(self._baseStart)
         return self.start_deferred
-
-    def _testAWSCredentials(self):
-        if self.aws_access_key_id is None:
-            raise Exception("AWS Access Key ID is required.")
-        if self.aws_secret_access_key is None:
-            raise Exception("AWS Secret Access Key ID is required.")
-            
+    
     def _baseStart(self):
-        LOGGER.critical("Checking S3 setup.")
-        deferreds = []
         if self.scheduler_server is None:
-            deferreds.append(deferToThread(self.setSchedulerServer))
-        if self.aws_s3_http_cache_bucket is not None:
-            self._testAWSCredentials()
-            deferreds.append(
-                self.s3.checkAndCreateBucket(self.aws_s3_http_cache_bucket))
-        if self.aws_s3_storage_bucket is not None:
-            self._testAWSCredentials()
-            deferreds.append(
-                self.s3.checkAndCreateBucket(self.aws_s3_storage_bucket))
-        d = DeferredList(deferreds, consumeErrors=True)
-        d.addCallback(self._baseStartCallback)
-
-    def _baseStartCallback(self, data):
-        for row in data:
-            if row[0] == False:
-                d = self.shutdown()
-                d.addCallback(self._startHandleError, row[1])
-                return d
+            deferToThread(self.setSchedulerServer)
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
             'before', 
             'shutdown', 
@@ -235,16 +219,15 @@ class BaseServer(object):
         if data is None:
             del self.active_jobs[uuid]
             return None
-        # If we have an place to store the response on S3, do it.
-        if self.aws_s3_storage_bucket is not None:
-            LOGGER.debug("Putting result for %s, %s on S3." % (function_name, uuid))
+        # If we have an place to store the response on Cassandra, do it.
+        if self.cassandra_cf is not None:
+            LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
             pickled_data = cPickle.dumps(data)
-            d = self.s3.putObject(
-                self.aws_s3_storage_bucket, 
-                uuid, 
-                pickled_data, 
-                content_type="text/plain", 
-                gzip=True)
+            d = self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf, 
+                pickled_data,
+                column=self.cassandra_content)
             d.addCallback(self._exposedFunctionCallback2, data, uuid)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
             return d
@@ -343,7 +326,7 @@ class BaseServer(object):
         url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (self.scheduler_server, self.schedulerserver_port, query_string)
         deferreds = []
         deferreds.append(self.getPage(url=url))
-        deferreds.append(self.s3.deleteObject(self.aws_s3_storage_bucket, uuid))
+        deferreds.append(self.cassandra_client.remove(uuid, self.cassandra_cf))
         d = DeferredList(deferreds)
         d.addCallback(self._deleteReservationCallback, function_name, uuid)
         d.addErrback(self._deleteReservationErrback, function_name, uuid)
@@ -357,32 +340,32 @@ class BaseServer(object):
         LOGGER.error("Error deleting reservation %s, %s.\n%s" % (function_name, uuid, error))
         return False
     
-    def deleteHTTPCache(self):
-        deferreds = []
-        if self.aws_s3_http_cache_bucket is not None:
-            deferreds.append(
-                self.s3.emptyBucket(self.aws_s3_http_cache_bucket))
-        if len(deferreds) > 0:
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallback(self._deleteHTTPCacheCallback)
-            return d
-        else:
-            return True
-        
-    def _deleteHTTPCacheCallback(self, data):
-        deferreds = []
-        if self.aws_s3_http_cache_bucket is not None:
-            deferreds.append(
-                self.s3.deleteBucket(self.aws_s3_http_cache_bucket))
-        if len(deferreds) > 0:
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallback(self._deleteHTTPCacheCallback2)
-            return d
-        else:
-            return True
-            
-    def _deleteHTTPCacheCallback2(self, data):
-        return True
+    # def deleteHTTPCache(self):
+    #     deferreds = []
+    #     if self.aws_s3_http_cache_bucket is not None:
+    #         deferreds.append(
+    #             self.s3.emptyBucket(self.aws_s3_http_cache_bucket))
+    #     if len(deferreds) > 0:
+    #         d = DeferredList(deferreds, consumeErrors=True)
+    #         d.addCallback(self._deleteHTTPCacheCallback)
+    #         return d
+    #     else:
+    #         return True
+    #     
+    # def _deleteHTTPCacheCallback(self, data):
+    #     deferreds = []
+    #     if self.aws_s3_http_cache_bucket is not None:
+    #         deferreds.append(
+    #             self.s3.deleteBucket(self.aws_s3_http_cache_bucket))
+    #     if len(deferreds) > 0:
+    #         d = DeferredList(deferreds, consumeErrors=True)
+    #         d.addCallback(self._deleteHTTPCacheCallback2)
+    #         return d
+    #     else:
+    #         return True
+    #         
+    # def _deleteHTTPCacheCallback2(self, data):
+    #     return True
 
     def getServerData(self):    
         running_time = time.time() - self.start_time

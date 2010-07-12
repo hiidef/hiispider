@@ -19,10 +19,13 @@ class InterfaceServer(BaseServer):
     name = "AWSpider Interface Server UUID: %s" % str(uuid4())
     
     def __init__(self,
-            aws_access_key_id, 
-            aws_secret_access_key, 
-            aws_s3_http_cache_bucket=None,
-            aws_s3_storage_bucket=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            cassandra_server=None, 
+            cassandra_keyspace=None,
+            cassandra_cf=None,
+            cassandra_content=None,
+            cassandra_http=None,
             scheduler_server_group='flavors_spider_production',
             schedulerserver_port=5004,
             max_simultaneous_requests=50,
@@ -32,10 +35,13 @@ class InterfaceServer(BaseServer):
             log_file='interfaceserver.log',
             log_directory=None,
             log_level="debug"):
-        self.aws_access_key_id=aws_access_key_id
-        self.aws_secret_access_key=aws_secret_access_key
-        self.scheduler_server_group=scheduler_server_group
-        self.schedulerserver_port=schedulerserver_port
+        # Cassandra
+        self.cassandra_server=cassandra_server
+        self.cassandra_keyspace=cassandra_keyspace
+        self.cassandra_cf=cassandra_cf
+        self.cassandra_http=cassandra_http
+        self.cassandra_content=cassandra_content
+        self.schedulerserver_port = schedulerserver_port
         resource = Resource()
         interface_resource = InterfaceResource(self)
         resource.putChild("interface", interface_resource)
@@ -44,10 +50,13 @@ class InterfaceServer(BaseServer):
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         BaseServer.__init__(
             self,
-            aws_access_key_id, 
-            aws_secret_access_key, 
-            aws_s3_http_cache_bucket=aws_s3_http_cache_bucket, 
-            aws_s3_storage_bucket=aws_s3_storage_bucket,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            cassandra_server=cassandra_server,
+            cassandra_keyspace=cassandra_keyspace,
+            cassandra_cf=cassandra_cf,
+            cassandra_content=cassandra_content,
+            cassandra_http=cassandra_http,
             scheduler_server_group=scheduler_server_group,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,

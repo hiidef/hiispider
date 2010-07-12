@@ -29,10 +29,13 @@ class WorkerServer(BaseServer):
     pending_dequeue = False
     
     def __init__(self,
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_s3_http_cache_bucket=None,
-            aws_s3_storage_bucket=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            cassandra_server=None, 
+            cassandra_keyspace=None,
+            cassandra_cf=None,
+            cassandra_content=None,
+            cassandra_http=None,
             mysql_username=None,
             mysql_password=None,
             mysql_host=None,
@@ -70,6 +73,12 @@ class WorkerServer(BaseServer):
             host=mysql_host,
             cp_reconnect=True,
             cursorclass=DictCursor)
+        # Cassandra
+        self.cassandra_server=cassandra_server
+        self.cassandra_keyspace=cassandra_keyspace
+        self.cassandra_cf=cassandra_cf
+        self.cassandra_http=cassandra_http
+        self.cassandra_content=cassandra_content
         # Create Memcached client
         self.memcached_host = memcached_host
         self.memcached_port = memcached_port
@@ -98,8 +107,11 @@ class WorkerServer(BaseServer):
             self,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
-            aws_s3_http_cache_bucket=aws_s3_http_cache_bucket,
-            aws_s3_storage_bucket=aws_s3_storage_bucket,
+            cassandra_server=cassandra_server,
+            cassandra_keyspace=cassandra_keyspace,
+            cassandra_cf=cassandra_cf,
+            cassandra_content=cassandra_content,
+            cassandra_http=cassandra_http,
             scheduler_server_group=scheduler_server_group,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
