@@ -205,6 +205,7 @@ class BaseServer(object):
                 if scheduler_hostnames:
                     self.scheduler_server = scheduler_hostnames[0]
             if not self.scheduler_server:
+                LOGGER.error('No scheduler server found, using 0.0.0.0')
                 self.scheduler_server = "0.0.0.0"
             LOGGER.debug('Scheduler Server found at %s' % self.scheduler_server)
         except Exception, e:

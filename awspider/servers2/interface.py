@@ -26,6 +26,7 @@ class InterfaceServer(BaseServer):
             cassandra_cf=None,
             cassandra_content=None,
             cassandra_http=None,
+            remote_scheduler=True,
             scheduler_server_group='flavors_spider_production',
             schedulerserver_port=5004,
             max_simultaneous_requests=50,
@@ -41,7 +42,11 @@ class InterfaceServer(BaseServer):
         self.cassandra_cf=cassandra_cf
         self.cassandra_http=cassandra_http
         self.cassandra_content=cassandra_content
-        self.schedulerserver_port = schedulerserver_port
+        self.aws_access_key_id=aws_access_key_id
+        self.aws_secret_access_key=aws_secret_access_key
+        self.scheduler_server_group=scheduler_server_group
+        self.schedulerserver_port=schedulerserver_port
+        self.remote_scheduler=remote_scheduler
         resource = Resource()
         interface_resource = InterfaceResource(self)
         resource.putChild("interface", interface_resource)
@@ -144,7 +149,7 @@ class InterfaceServer(BaseServer):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
-        if self.scheduler_server:
+        if self.remote_scheduler:
             parameters = {
                 'uuid': uuid,
                 'type': function_name
@@ -157,8 +162,7 @@ class InterfaceServer(BaseServer):
             d.addErrback(self._createReservationErrback, function_name, uuid)
             return d
         else:
-            LOGGER.error('No scheduler server defined...')
-            raise
+            self._createReservationCallback2(data, function_name, uuid, data)
 
     def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
         LOGGER.debug("Function %s returned successfully." % (function_name))
