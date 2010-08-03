@@ -136,15 +136,11 @@ class PageGetter:
         if hash_url is None:
             request_hash = hashlib.sha1(json.dumps([
                 url, 
-                headers, 
-                agent, 
-                cookies])).hexdigest()
+                agent])).hexdigest()
         else:
             request_hash = hashlib.sha1(json.dumps([
                 hash_url, 
-                headers, 
-                agent, 
-                cookies])).hexdigest()
+                agent])).hexdigest()
         if request_kwargs["method"] != "GET":
             d = self.rq.getPage(url, **request_kwargs)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
