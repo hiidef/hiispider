@@ -3,8 +3,8 @@ import hashlib
 from twisted.internet.defer import DeferredList
 from twisted.trial import unittest
 import yaml
-from awspider.servers import DataServer
-from awspider.aws import AmazonS3
+from hiispider.servers import DataServer
+from hiispider.aws import AmazonS3
 
 class DataServerStartTestCase(unittest.TestCase):
     

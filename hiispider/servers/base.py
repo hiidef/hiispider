@@ -1,5 +1,6 @@
-import cPickle
-import hashlib
+import cjson
+import zlib
+import urllib
 import inspect
 import logging
 import logging.handlers
@@ -10,13 +11,14 @@ from uuid import uuid4
 from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
-from ..aws import AmazonS3, AmazonSDB
-from ..aws import sdb_now
 from ..exceptions import DeleteReservationException
 from ..pagegetter import PageGetter
 from ..requestqueuer import RequestQueuer
-from ..timeoffset import getTimeOffset
 import pprint
+from telephus.protocol import ManagedCassandraClientFactory
+from telephus.client import CassandraClient
+from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
+from boto.ec2.connection import EC2Connection
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -26,7 +28,8 @@ class ReservationCachingException(Exception):
     pass
 
 class BaseServer(object):
-    
+
+    scheduler_server = None
     logging_handler = None
     shutdown_trigger_id = None
     uuid = uuid4().hex
@@ -36,33 +39,28 @@ class BaseServer(object):
         "reservation_function_name", 
         "reservation_created", 
         "reservation_next_request", 
-        "reservation_error",
-        "reservation_cache"]
+        "reservation_error"]
     functions = {}
     reservation_fast_caches = {}
     
     def __init__(self,
-                 aws_access_key_id, 
-                 aws_secret_access_key, 
-                 aws_s3_http_cache_bucket=None, 
-                 aws_sdb_reservation_domain=None, 
-                 aws_s3_storage_bucket=None,
-                 aws_s3_reservation_cache_bucket=None,
-                 aws_sdb_coordination_domain=None,
+                 aws_access_key_id=None,
+                 aws_secret_access_key=None,
+                 cassandra_server=None,
+                 cassandra_port=9160,
+                 cassandra_keyspace=None, 
+                 cassandra_cf=None, 
+                 cassandra_content=None,
+                 cassandra_http=None,
+                 scheduler_server=None,
+                 scheduler_server_port=5001,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
                  max_simultaneous_requests_per_host=0,
                  log_file=None,
                  log_directory=None,
                  log_level="debug",
-                 name=None,
-                 time_offset=None,
                  port=8080):
-        if name == None:
-            name = "AWSpider Server UUID: %s" % self.uuid
-        self.port = port
-        self.time_offset = time_offset
-        self.name = name
         self.start_deferred = Deferred()
         self.rq = RequestQueuer( 
             max_simultaneous_requests=int(max_simultaneous_requests), 
@@ -70,28 +68,25 @@ class BaseServer(object):
             max_simultaneous_requests_per_host=int(max_simultaneous_requests_per_host))
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
-        self.aws_s3_reservation_cache_bucket = aws_s3_reservation_cache_bucket
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.aws_s3_http_cache_bucket = aws_s3_http_cache_bucket
-        self.aws_s3_storage_bucket = aws_s3_storage_bucket
-        self.aws_sdb_reservation_domain = aws_sdb_reservation_domain
-        self.aws_sdb_coordination_domain = aws_sdb_coordination_domain
-        self.s3 = AmazonS3(
-            self.aws_access_key_id, 
-            self.aws_secret_access_key, 
-            rq=self.rq)
-        self.sdb = AmazonSDB(
-            self.aws_access_key_id, 
-            self.aws_secret_access_key, 
-            rq=self.rq)
+        self.aws_access_key_id=aws_access_key_id
+        self.aws_secret_access_key=aws_secret_access_key
+        self.cassandra_server = cassandra_server
+        self.cassandra_port = cassandra_port
+        self.cassandra_keyspace = cassandra_keyspace
+        self.cassandra_cf = cassandra_cf
+        self.cassandra_http = cassandra_http
+        self.cassandra_content = cassandra_content
+        self.cassandra_factory = ManagedCassandraClientFactory()
+        self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
+        reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
+        self.scheduler_server = scheduler_server
+        self.scheduler_server_port = scheduler_server_port
         self.pg = PageGetter(
-            self.s3, 
-            self.aws_s3_http_cache_bucket, 
+            self.cassandra_client, 
+            self.cassandra_cf,
+            self.cassandra_http,
             rq=self.rq)
         self._setupLogging(log_file, log_directory, log_level)
-        if self.name is not None:
-            LOGGER.info("Successfully loaded %s configuration." % self.name)
 
     def _setupLogging(self, log_file, log_directory, log_level):
         if log_directory is None:
@@ -123,39 +118,13 @@ class BaseServer(object):
     def start(self):
         reactor.callWhenRunning(self._baseStart)
         return self.start_deferred
-
+    
     def _baseStart(self):
-        LOGGER.critical("Checking S3 and SDB setup.")
-        deferreds = []
-        if self.aws_s3_reservation_cache_bucket is not None:
-            deferreds.append(
-                self.s3.checkAndCreateBucket(self.aws_s3_reservation_cache_bucket))            
-        if self.aws_s3_http_cache_bucket is not None:
-            deferreds.append(
-                self.s3.checkAndCreateBucket(self.aws_s3_http_cache_bucket))
-        if self.aws_sdb_reservation_domain is not None:
-            deferreds.append(
-                self.sdb.checkAndCreateDomain(self.aws_sdb_reservation_domain))
-        if self.aws_s3_storage_bucket is not None:
-            deferreds.append(
-                self.s3.checkAndCreateBucket(self.aws_s3_storage_bucket))
-        if self.aws_sdb_coordination_domain is not None:
-            deferreds.append(
-                self.sdb.checkAndCreateDomain(self.aws_sdb_coordination_domain))
-        d = DeferredList(deferreds, consumeErrors=True)
-        d.addCallback(self._baseStartCallback)
-
-    def _baseStartCallback(self, data):
-        for row in data:
-            if row[0] == False:
-                d = self.shutdown()
-                d.addCallback(self._startHandleError, row[1])
-                return d
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
             'before', 
             'shutdown', 
             self.shutdown)
-        LOGGER.critical("Starting %s" % self.name)
+        LOGGER.critical("Starting.")
         self._baseStartCallback2(None)
 
     def _baseStartCallback2(self, data):
@@ -165,36 +134,20 @@ class BaseServer(object):
         self.start_deferred.errback(error)
         
     def shutdown(self):
-        LOGGER.debug("%s waiting for shutdown." % self.name)
+        LOGGER.debug("Waiting for shutdown.")
         d = Deferred()
         reactor.callLater(0, self._waitForShutdown, d)
         return d
 
     def _waitForShutdown(self, shutdown_deferred):          
         if self.rq.getPending() > 0 or self.rq.getActive() > 0:
-            LOGGER.debug("%s waiting for shutdown." % self.name)
+            LOGGER.debug("Waiting for shutdown.")
             reactor.callLater(1, self._waitForShutdown, shutdown_deferred)
             return
         self.shutdown_trigger_id = None
-        LOGGER.debug("%s shut down." % self.name)
+        LOGGER.debug("Shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
-    
-    def getTimeOffset(self):
-        d = getTimeOffset()
-        d.addCallback(self._getTimeOffsetCallback)
-        d.addErrback(self._getTimeOffsetErrback)
-        return d
-
-    def _getTimeOffsetCallback(self, time_offset):
-        self.time_offset = time_offset
-        LOGGER.info("Got time offset for sync: %s" % self.time_offset)
-
-    def _getTimeOffsetErrback(self, error):
-        if self.time_offset is None:
-            message = "Could not get time offset for sync."
-            LOGGER.critical(message)
-            raise Exception(message)
     
     def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
@@ -206,49 +159,17 @@ class BaseServer(object):
             kwargs["reservation_fast_cache"] = reservation_fast_cache
         elif self.functions[function_name]["check_reservation_fast_cache"]:
             kwargs["reservation_fast_cache"] = None
-        if self.functions[function_name]["check_reservation_cache"] and \
-                self.aws_s3_reservation_cache_bucket is not None:
-            d = self.getReservationCache(uuid)
-            d.addCallback(self._reservationCacheCallback, 
-                func, 
-                kwargs, 
-                function_name, 
-                uuid)
-            d.addErrback(self._reservationCacheErrback, 
-                func, 
-                kwargs, 
-                function_name, 
-                uuid)
-            return d
-        elif self.functions[function_name]["check_reservation_cache"]:
-            kwargs["reservation_cache"] = None
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
-            
-    def _reservationCacheCallback(self, data, func, kwargs, function_name, uuid):
-        LOGGER.debug("Got reservation cache for %s" % uuid)
-        kwargs["reservation_cache"] = data
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
-        
-    def _reservationCacheErrback(self, error, func, kwargs, function_name, uuid):
-        LOGGER.debug("Could not get reservation cache for %s" % uuid)
-        kwargs["reservation_cache"] = None
         d = maybeDeferred(func, **kwargs)
         d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
         
     def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None:
+        if uuid is not None and uuid in self.active_jobs:
             del self.active_jobs[uuid]
         try:
             error.raiseException()
-        except DeleteReservationException, e:
+        except DeleteReservationException:
             if uuid is not None:
                 self.deleteReservation(uuid)
             message = """Error with %s, %s.\n%s            
@@ -256,7 +177,7 @@ class BaseServer(object):
                 function_name,
                 uuid,
                 error)
-            LOGGER.error(message)
+            LOGGER.debug(message)
             return
         except:
             pass
@@ -278,29 +199,30 @@ class BaseServer(object):
         if data is None:
             del self.active_jobs[uuid]
             return None
-        # If we have an place to store the response on S3, do it.
-        if self.aws_s3_storage_bucket is not None:
-            LOGGER.debug("Putting result for %s, %s on S3." % (function_name, uuid))
-            pickled_data = cPickle.dumps(data)
-            d = self.s3.putObject(
-                self.aws_s3_storage_bucket, 
-                uuid, 
-                pickled_data, 
-                content_type="text/plain", 
-                gzip=True)
+        # If we have an place to store the response on Cassandra, do it.
+        if self.cassandra_cf is not None:
+            LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
+            pickled_data = zlib.compress(cjson.encode(data))
+            d = self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf, 
+                pickled_data,
+                column=self.cassandra_content)
             d.addCallback(self._exposedFunctionCallback2, data, uuid)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
             return d
         return data
 
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-        del self.active_jobs[uuid]
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
         LOGGER.error("Could not put results of %s, %s on S3.\n%s" % (function_name, uuid, error))
         return data
         
     def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):
-        del self.active_jobs[uuid]
-        return data    
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        return data
         
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
@@ -316,16 +238,7 @@ class BaseServer(object):
             kwarg_defaults = []
         required_arguments = arguments[0:len(arguments) - len(kwarg_defaults)]
         optional_arguments = arguments[len(arguments) - len(kwarg_defaults):]
-        # Reservation cache is stored on S3
-        if "reservation_cache" in required_arguments:
-            del required_arguments[required_arguments.index("reservation_cache")]
-            check_reservation_cache = True
-        elif "reservation_cache" in optional_arguments:
-            del optional_arguments[optional_arguments.index("reservation_cache")]
-            check_reservation_cache = True
-        else:
-            check_reservation_cache = False
-        # Reservation fast cache is stored on SDB with the reservation
+        # Reservation fast cache is stored on with the reservation
         if "reservation_fast_cache" in required_arguments:
             del required_arguments[required_arguments.index("reservation_fast_cache")]
             check_reservation_fast_cache = True
@@ -371,7 +284,6 @@ class BaseServer(object):
             "interval":interval,
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,
-            "check_reservation_cache":check_reservation_cache,
             "check_reservation_fast_cache":check_reservation_fast_cache,
             "get_reservation_uuid":get_reservation_uuid
         }
@@ -388,14 +300,18 @@ class BaseServer(object):
         return self.rq.setHostMaxSimultaneousRequests(*args, **kwargs)
 
     def deleteReservation(self, uuid, function_name="Unknown"):
-        LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
-        deferreds = []
-        deferreds.append(self.sdb.delete(self.aws_sdb_reservation_domain, uuid))
-        deferreds.append(self.s3.deleteObject(self.aws_s3_storage_bucket, uuid))
-        d = DeferredList(deferreds)
-        d.addCallback(self._deleteReservationCallback, function_name, uuid)
-        d.addErrback(self._deleteReservationErrback, function_name, uuid)
-        return d
+        if self.scheduler_server is not None:
+            LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
+            parameters = {'uuid': uuid}
+            query_string = urllib.urlencode(parameters)
+            url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
+            deferreds = []
+            deferreds.append(self.getPage(url=url))
+            deferreds.append(self.cassandra_client.remove(uuid, self.cassandra_cf))
+            d = DeferredList(deferreds)
+            d.addCallback(self._deleteReservationCallback, function_name, uuid)
+            d.addErrback(self._deleteReservationErrback, function_name, uuid)
+            return d
 
     def _deleteReservationCallback(self, data, function_name, uuid):
         LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
@@ -405,62 +321,47 @@ class BaseServer(object):
         LOGGER.error("Error deleting reservation %s, %s.\n%s" % (function_name, uuid, error))
         return False
     
-    def deleteHTTPCache(self):
-        deferreds = []
-        if self.aws_s3_http_cache_bucket is not None:
-            deferreds.append(
-                self.s3.emptyBucket(self.aws_s3_http_cache_bucket))
-        if len(deferreds) > 0:
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallback(self._deleteHTTPCacheCallback)
-            return d
-        else:
-            return True
-        
-    def _deleteHTTPCacheCallback(self, data):
-        deferreds = []
-        if self.aws_s3_http_cache_bucket is not None:
-            deferreds.append(
-                self.s3.deleteBucket(self.aws_s3_http_cache_bucket))
-        if len(deferreds) > 0:
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallback(self._deleteHTTPCacheCallback2)
-            return d
-        else:
-            return True
-            
-    def _deleteHTTPCacheCallback2(self, data):
-        return True
+    # def deleteHTTPCache(self):
+    #     deferreds = []
+    #     if self.aws_s3_http_cache_bucket is not None:
+    #         deferreds.append(
+    #             self.s3.emptyBucket(self.aws_s3_http_cache_bucket))
+    #     if len(deferreds) > 0:
+    #         d = DeferredList(deferreds, consumeErrors=True)
+    #         d.addCallback(self._deleteHTTPCacheCallback)
+    #         return d
+    #     else:
+    #         return True
+    #     
+    # def _deleteHTTPCacheCallback(self, data):
+    #     deferreds = []
+    #     if self.aws_s3_http_cache_bucket is not None:
+    #         deferreds.append(
+    #             self.s3.deleteBucket(self.aws_s3_http_cache_bucket))
+    #     if len(deferreds) > 0:
+    #         d = DeferredList(deferreds, consumeErrors=True)
+    #         d.addCallback(self._deleteHTTPCacheCallback2)
+    #         return d
+    #     else:
+    #         return True
+    #         
+    # def _deleteHTTPCacheCallback2(self, data):
+    #     return True
 
     def getServerData(self):    
         running_time = time.time() - self.start_time
-        cost = (self.sdb.box_usage * .14) * (60*60*24*30.4) / (running_time)
         active_requests_by_host = self.rq.getActiveRequestsByHost()
         pending_requests_by_host = self.rq.getPendingRequestsByHost()
         data = {
             "load_avg":[str(Decimal(str(x), 2)) for x in os.getloadavg()],
             "running_time":running_time,
-            "cost":cost,
             "active_requests_by_host":active_requests_by_host,
             "pending_requests_by_host":pending_requests_by_host,
             "active_requests":self.rq.getActive(),
-            "pending_requests":self.rq.getPending(),
-            "current_timestamp":sdb_now(offset=self.time_offset)
+            "pending_requests":self.rq.getPending()
         }
         LOGGER.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
         return data
-    
-    def getReservationCache(self, uuid):
-        if self.aws_s3_reservation_cache_bucket is None:
-            raise ReservationCachingException("No reservation cache bucket is specified.")        
-        d = self.s3.getObject(
-            self.aws_s3_reservation_cache_bucket,
-            uuid)
-        d.addCallback(self._getReservationCacheCallback)
-        return d    
-    
-    def _getReservationCacheCallback(self, data):
-        return cPickle.loads(data["response"])
 
     def setReservationFastCache(self, uuid, data):
         if not isinstance(data, str):
@@ -469,14 +370,3 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
     
-    def setReservationCache(self, uuid, data):
-        if uuid is None:
-            return None
-        if self.aws_s3_reservation_cache_bucket is None:
-            raise ReservationCachingException("No reservation cache bucket is specified.")
-        d = self.s3.putObject(
-            self.aws_s3_reservation_cache_bucket,
-            uuid,
-            cPickle.dumps(data))
-        return d
-        

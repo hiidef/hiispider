@@ -12,7 +12,7 @@ twisted.internet.base.DelayedCall.debug = True
 
 import yaml
 
-from awspider.aws import AmazonS3
+from hiispider.aws import AmazonS3
 
 class AmazonS3TestCase(unittest.TestCase):
     

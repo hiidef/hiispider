@@ -1,7 +1,7 @@
 from twisted.internet.defer import Deferred, DeferredList
 from twisted.trial import unittest
-from awspider import AWSpider
-from awspider.aws import AmazonS3, AmazonSDB
+from hiispider import HiiSpider
+from hiispider.aws import AmazonS3, AmazonSDB
 import yaml
 import hashlib
 import os
@@ -54,7 +54,7 @@ class EncodingTestCase(unittest.TestCase):
         self.aws_sdb_reservation_domain = "%s_reservation" % self.uuid
         #self.aws_sdb_coordination_domain = "%s_coordination" % self.uuid
 
-        self.spider = AWSpider( 
+        self.spider = HiiSpider( 
             aws_access_key_id = self.aws_access_key_id, 
             aws_secret_access_key = self.aws_secret_access_key,
             aws_s3_cache_bucket = self.aws_s3_cache_bucket, 

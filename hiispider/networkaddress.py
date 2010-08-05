@@ -10,7 +10,7 @@ logger = logging.getLogger("main")
 import random
 import socket
             
-def getPage( url, method='GET', postdata=None, headers=None, agent="AWSpider", timeout=60, cookies=None, followRedirect=1 ):
+def getPage( url, method='GET', postdata=None, headers=None, agent="HiiSpider", timeout=60, cookies=None, followRedirect=1 ):
     
     scheme, host, port, path = _parse(url)
 

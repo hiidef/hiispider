@@ -61,7 +61,7 @@ from .exceptions import DeleteReservationException
 
 from .evaluateboolean import evaluateBoolean
 
-class AWSpider:
+class HiiSpider:
 
     """
     Amazon S3, Amazon EC2 based web spider.
@@ -901,7 +901,7 @@ class AWSpider:
             logger.debug( "Waiting for shutdown." )
             reactor.callLater( .1, self._waitForShutdown, shutdown_deferred )
             return
-        logger.debug( "AWSpider shut down." )
+        logger.debug( "HiiSpider shut down." )
         
         logger.removeHandler(self.logging_handler)
             

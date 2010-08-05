@@ -4,7 +4,7 @@ import traceback
 import simplejson
 from twisted.python.failure import Failure
 from twisted.internet import reactor
-from awspider import evaluateboolean
+from hiispider import evaluateboolean
 import urlparse
 
 class PeerResource(Resource):

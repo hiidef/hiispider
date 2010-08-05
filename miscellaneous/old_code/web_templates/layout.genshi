@@ -5,7 +5,7 @@
 		<meta http-equiv="Content-type" content="text/html; charset=utf-8"/>
 		<meta http-equiv="Content-Language" content="en-us"/>
 		<title py:with="title = list(select('title/text()'))">
-			AWSpider<py:if test="title">: ${title}</py:if>
+			HiiSpider<py:if test="title">: ${title}</py:if>
 		</title>
 		<link rel="stylesheet" href="/static/css/blueprint/screen.css" type="text/css" media="screen, projection" />
 		<link rel="stylesheet" href="/static/css/blueprint/print.css" type="text/css" media="print" />	 

@@ -9,7 +9,7 @@
 </head>
 <body>
 	<div class="span-24 last">
-		<h1>AWSpider <span id="paused">(paused)</span></h1>
+		<h1>HiiSpider <span id="paused">(paused)</span></h1>
 		<p id="running_time">The spider has been running for an unknown period of time.</p>
 		<p>The current timestamp is <span id="current_timestamp"></span></p>
 		<table id="request_data">

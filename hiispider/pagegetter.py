@@ -74,7 +74,7 @@ class PageGetter:
             method='GET', 
             postdata=None,
             headers=None, 
-            agent="AWSpider", 
+            agent="HiiSpider", 
             timeout=60, 
             cookies=None, 
             follow_redirect=1, 
@@ -96,7 +96,7 @@ class PageGetter:
          * *headers* -- Dictionary of strings to send as request headers. 
            (Default ``None``)
          * *agent* -- User agent to send with request. (Default 
-           ``'AWSpider'``)
+           ``'HiiSpider'``)
          * *timeout* -- Request timeout, in seconds. (Default ``60``)
          * *cookies* -- Dictionary of strings to send as request cookies. 
            (Default ``None``).

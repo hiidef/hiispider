@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 # Also requires python-dev and python-openssl
 setup(
 
-    name = "AWSpider",
+    name = "HiiSpider",
 
     version = "0.3.9.2",
 
@@ -13,10 +13,10 @@ setup(
     
     # metadata for upload to PyPI
     author = "John Wehr",
-    author_email = "johnwehr@gmail.com",
-    description = "Amazon Web Services web crawler",
+    author_email = "johnwehr@hiidef.com",
+    description = "HiiDef Web Services web crawler",
     license = "MIT License",
-    keywords = "AWS amazon ec2 s3 simpledb twisted spider crawler",
-    url = "http://github.com/wehriam/awspider/"
+    keywords = "twisted spider crawler",
+    url = "http://github.com/rays/hiispider"
     
 )

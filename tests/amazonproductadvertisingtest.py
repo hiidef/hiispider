@@ -12,7 +12,7 @@ twisted.internet.base.DelayedCall.debug = True
 
 import yaml
 
-from awspider.aws import AmazonProductAdvertising
+from hiispider.aws import AmazonProductAdvertising
 
 class AmazonProductAdvertisingTestCase(unittest.TestCase):
     

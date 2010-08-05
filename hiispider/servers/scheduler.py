@@ -13,7 +13,7 @@ from twisted.internet import task
 from twisted.internet.threads import deferToThread
 from txamqp.content import Content
 from .base import BaseServer, LOGGER
-from ..resources2 import SchedulerResource
+from ..resources import SchedulerResource
 from ..amqp import amqp as AMQP
 from ..resources import ExposedResource
 from twisted.web.resource import Resource
@@ -22,7 +22,7 @@ from twisted.web.resource import Resource
 class SchedulerServer(BaseServer):
     exposed_functions = []
     exposed_function_resources = {}
-    name = "AWSpider Schedule Server UUID: %s" % str(uuid4())
+    name = "HiiSpider Schedule Server UUID: %s" % str(uuid4())
     heap = []
     unscheduled_items = []
     enqueueCallLater = None
@@ -42,7 +42,7 @@ class SchedulerServer(BaseServer):
             amqp_exchange,
             amqp_port=5672,
             mysql_port=3306,
-            port=5004,
+            port=5001,
             service_mapping=None,
             log_file='schedulerserver.log',
             log_directory=None,

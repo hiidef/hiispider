@@ -2,7 +2,7 @@ import inspect
 import types 
 
 
-__all__ = ["aliases", "expose", "make_callable", "AWSpiderPlugin"]
+__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin"]
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
@@ -34,7 +34,7 @@ def make_callable(func=None, interval=0, name=None, memoize=False):
     return decorator
 
 
-class AWSpiderPlugin(object):
+class HiiSpiderPlugin(object):
     
     def __init__(self, spider):
         self.spider = spider

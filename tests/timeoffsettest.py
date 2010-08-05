@@ -9,7 +9,7 @@ sys.path.append(os.path.join( os.path.dirname(__file__), "lib"))
 import twisted
 twisted.internet.base.DelayedCall.debug = True
 
-from awspider.timeoffset import getTimeOffset
+from hiispider.timeoffset import getTimeOffset
 
 import re
 

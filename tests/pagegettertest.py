@@ -2,7 +2,7 @@ from twisted.trial import unittest
 from twisted.internet.defer import Deferred, DeferredList
 from twisted.internet import reactor
 
-from awspider.pagegetter import PageGetter, StaleContentException
+from hiispider.pagegetter import PageGetter, StaleContentException
 
 import os
 import sys
@@ -10,7 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "lib"))
 
 from miniwebserver import MiniWebServer
 
-from awspider.aws import AmazonS3
+from hiispider.aws import AmazonS3
 
 import yaml
 import hashlib

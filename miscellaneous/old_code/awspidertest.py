@@ -8,18 +8,18 @@ sys.path.append(os.path.join( os.path.dirname(__file__), "lib"))
 
 from miniwebserver import MiniWebServer
 
-from awspider import AWSpider
-from awspider.aws import AmazonS3, AmazonSDB
+from hiispider import HiiSpider
+from hiispider.aws import AmazonS3, AmazonSDB
 
 import yaml
 import hashlib
 
-from awspider.pagegetter import PageGetter
+from hiispider.pagegetter import PageGetter
 
 import twisted
 twisted.internet.base.DelayedCall.debug = True
 
-class AWSpiderStartTestCase(unittest.TestCase):
+class HiiSpiderStartTestCase(unittest.TestCase):
     
     def setUp(self):
         
@@ -42,7 +42,7 @@ class AWSpiderStartTestCase(unittest.TestCase):
         self.aws_sdb_reservation_domain = "%s_reservation" % self.uuid
         self.aws_sdb_coordination_domain = "%s_coordination" % self.uuid
         
-        self.spider = AWSpider( 
+        self.spider = HiiSpider( 
             aws_access_key_id = self.aws_access_key_id, 
             aws_secret_access_key = self.aws_secret_access_key,
             aws_s3_cache_bucket = self.aws_s3_cache_bucket, 
@@ -87,7 +87,7 @@ class AWSpiderStartTestCase(unittest.TestCase):
 def foo():
     return "bar"
     
-class AWSpiderTestCase(unittest.TestCase):
+class HiiSpiderTestCase(unittest.TestCase):
     def setUp(self):
         
         self.mini_web_server = MiniWebServer()
@@ -111,7 +111,7 @@ class AWSpiderTestCase(unittest.TestCase):
         self.aws_sdb_reservation_domain = "%s_reservation" % self.uuid
         self.aws_sdb_coordination_domain = "%s_coordination" % self.uuid
         
-        self.spider = AWSpider( 
+        self.spider = HiiSpider( 
             aws_access_key_id = self.aws_access_key_id, 
             aws_secret_access_key = self.aws_secret_access_key,
             aws_s3_cache_bucket = self.aws_s3_cache_bucket, 

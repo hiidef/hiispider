@@ -1,5 +1,5 @@
 from .base import BaseServer, LOGGER
-from ..resources2 import WorkerResource
+from ..resources import WorkerResource
 from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
 from ..resources import InterfaceResource, ExposedResource
@@ -47,8 +47,8 @@ class WorkerServer(BaseServer):
             amqp_queue=None,
             amqp_exchange=None,
             memcached_host=None,
-            scheduler_server_group='flavors_spider_production',
-            schedulerserver_port=5004,
+            scheduler_server=None,
+            scheduler_server_port=5001,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -58,7 +58,7 @@ class WorkerServer(BaseServer):
             max_simultaneous_requests=100,
             max_requests_per_host_per_second=0,
             max_simultaneous_requests_per_host=0,
-            port=5005,
+            port=6000,
             log_file='workerserver.log',
             log_directory=None,
             log_level="debug"):
@@ -85,8 +85,8 @@ class WorkerServer(BaseServer):
         self.memc_ClientCreator = protocol.ClientCreator(
             reactor, MemCacheProtocol)
         #Schedule Server
-        self.scheduler_server_group=scheduler_server_group
-        self.schedulerserver_port=schedulerserver_port
+        self.scheduler_server=scheduler_server
+        self.scheduler_server_port=scheduler_server_port
         # Resource Mappings
         self.service_mapping = service_mapping
         self.service_args_mapping = service_args_mapping
@@ -112,7 +112,8 @@ class WorkerServer(BaseServer):
             cassandra_cf=cassandra_cf,
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
-            scheduler_server_group=scheduler_server_group,
+            scheduler_server=scheduler_server,
+            scheduler_server_port=scheduler_server_port,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
             max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
@@ -157,8 +158,8 @@ class WorkerServer(BaseServer):
             exchange=self.amqp_exchange)
         yield self.chan.basic_consume(queue=self.amqp_queue,
             no_ack=False,
-            consumer_tag="awspider_consumer")
-        self.queue = yield self.conn.queue("awspider_consumer")
+            consumer_tag="hiispider_consumer")
+        self.queue = yield self.conn.queue("hiispider_consumer")
         yield BaseServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)

@@ -12,7 +12,7 @@ twisted.internet.base.DelayedCall.debug = True
 
 import yaml
 
-from awspider.aws import AmazonSQS
+from hiispider.aws import AmazonSQS
 
 import time
 

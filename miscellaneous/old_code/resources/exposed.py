@@ -1,6 +1,6 @@
 from twisted.python.failure import Failure
 from twisted.web.resource import Resource
-from awspider.aws import sdb_now
+from hiispider.aws import sdb_now
 from uuid import uuid4
 import simplejson
 from twisted.web import server

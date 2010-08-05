@@ -2,8 +2,8 @@ from .base import BaseResource
 
 class SchedulerResource(BaseResource):
     
-    def __init__(self, heapserver):    
-        self.heapserver = heapserver
+    def __init__(self, schedulerserver):    
+        self.schedulerserver = schedulerserver
         BaseResource.__init__(self)
     
     def render(self, request):

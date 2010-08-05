@@ -17,7 +17,7 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 class InterfaceServer(BaseServer):
     exposed_functions = []
     exposed_function_resources = {}
-    name = "AWSpider Interface Server UUID: %s" % str(uuid4())
+    name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
     
     def __init__(self,
             aws_access_key_id=None,
@@ -27,9 +27,8 @@ class InterfaceServer(BaseServer):
             cassandra_cf=None,
             cassandra_content=None,
             cassandra_http=None,
-            remote_scheduler=True,
-            scheduler_server_group='flavors_spider_production',
-            schedulerserver_port=5004,
+            scheduler_server=None,
+            scheduler_server_port=5001,
             max_simultaneous_requests=50,
             max_requests_per_host_per_second=1,
             max_simultaneous_requests_per_host=5,
@@ -45,9 +44,8 @@ class InterfaceServer(BaseServer):
         self.cassandra_content=cassandra_content
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
-        self.scheduler_server_group=scheduler_server_group
-        self.schedulerserver_port=schedulerserver_port
-        self.remote_scheduler=remote_scheduler
+        self.scheduler_server=scheduler_server
+        self.scheduler_server_port=scheduler_server_port
         resource = Resource()
         interface_resource = InterfaceResource(self)
         resource.putChild("interface", interface_resource)
@@ -63,7 +61,8 @@ class InterfaceServer(BaseServer):
             cassandra_cf=cassandra_cf,
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
-            scheduler_server_group=scheduler_server_group,
+            scheduler_server=scheduler_server,
+            scheduler_server_port=scheduler_server_port,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
             max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
@@ -150,13 +149,13 @@ class InterfaceServer(BaseServer):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
-        if self.remote_scheduler:
+        if self.scheduler_server is not None:
             parameters = {
                 'uuid': uuid,
                 'type': function_name
             }
             query_string = urllib.urlencode(parameters)       
-            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.schedulerserver_port, query_string)
+            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
             LOGGER.info('Sending UUID to scheduler: %s' % url)
             d = self.getPage(url=url)
             d.addCallback(self._createReservationCallback2, function_name, uuid, data)

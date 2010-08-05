@@ -5,21 +5,21 @@ pylint="/opt/local/Library/Frameworks/Python.framework/Versions/2.6/bin/pylint -
 rm -rf pylint
 rm -rf pep8
 
-directories=$(find  "../awspider" -type d \! -path "*.git*" )
+directories=$(find  "../hiispider" -type d \! -path "*.git*" )
 for directory in $directories
 do
 	pythonFilesCount=$(find $directory -type f -path "*.py" \! -path "*.pyc" | wc -l)
 	if [ $pythonFilesCount -gt 0 ]; then
-		newdir=$(echo $directory | sed "s/\.\.\/awspider//")
+		newdir=$(echo $directory | sed "s/\.\.\/hiispider//")
 		mkdir "pep8$newdir"
 		mkdir "pylint$newdir"
 	fi
 done
 
-pythonFiles=$(find "../awspider" -type f -path "*.py" \! -path "*.pyc")
+pythonFiles=$(find "../hiispider" -type f -path "*.py" \! -path "*.pyc")
 for pythonFile in $pythonFiles
 do
-	outputFile=$(echo $pythonFile | sed "s/\.\.\/awspider//")
+	outputFile=$(echo $pythonFile | sed "s/\.\.\/hiispider//")
 	
 	echo "pep8: $pythonFile"
 	$pep8 $pythonFile > "pep8$outputFile.txt"

@@ -13,7 +13,7 @@ twisted.internet.base.DelayedCall.debug = True
 
 import yaml
 
-from awspider.aws import AmazonSDB
+from hiispider.aws import AmazonSDB
 
 class AmazonSDBTestCase(unittest.TestCase):
     

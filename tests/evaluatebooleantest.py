@@ -9,7 +9,7 @@ sys.path.append(os.path.join( os.path.dirname(__file__), "lib"))
 import twisted
 twisted.internet.base.DelayedCall.debug = True
 
-from awspider.evaluateboolean import evaluateBoolean
+from hiispider.evaluateboolean import evaluateBoolean
 
 class EvaluateBooleanTestCase(unittest.TestCase):
     
