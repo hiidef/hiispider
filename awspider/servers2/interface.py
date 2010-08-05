@@ -10,6 +10,7 @@ from .base import BaseServer, LOGGER
 from ..resources import InterfaceResource, ExposedResource
 from ..aws import sdb_now
 from ..evaluateboolean import evaluateBoolean
+import zlib
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
