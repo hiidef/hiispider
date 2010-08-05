@@ -4,7 +4,7 @@ setup(
 
     name = "AWSpider",
 
-    version = "0.3.3.0-cassandra",
+    version = "0.3.9.0",
 
     packages = find_packages(),
 

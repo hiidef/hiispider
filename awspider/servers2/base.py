@@ -1,4 +1,4 @@
-import json
+import cjson
 import urllib
 import inspect
 import logging
@@ -223,7 +223,7 @@ class BaseServer(object):
         # If we have an place to store the response on Cassandra, do it.
         if self.cassandra_cf is not None:
             LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            pickled_data = json.dumps(data)
+            pickled_data = zlib.compress(cjson.encode(data))
             d = self.cassandra_client.insert(
                 uuid,
                 self.cassandra_cf, 

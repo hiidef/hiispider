@@ -1,4 +1,4 @@
-import json
+import cjson
 import twisted.python.failure
 import datetime
 import dateutil.parser
@@ -10,6 +10,7 @@ from twisted.internet.defer import maybeDeferred
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8, convertToUnicode
 from .exceptions import StaleContentException
+import zlib
 
 class ReportedFailure(twisted.python.failure.Failure):
     pass
@@ -134,11 +135,11 @@ class PageGetter:
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
-            request_hash = hashlib.sha1(json.dumps([
+            request_hash = hashlib.sha1(cjson.encode([
                 url, 
                 agent])).hexdigest()
         else:
-            request_hash = hashlib.sha1(json.dumps([
+            request_hash = hashlib.sha1(cjson.encode([
                 hash_url, 
                 agent])).hexdigest()
         if request_kwargs["method"] != "GET":
@@ -204,7 +205,7 @@ class PageGetter:
             request_kwargs,
             confirm_cache_write,
             content_sha1):
-        data = json.loads(data.column.value)
+        data = cjson.decode(zlib.decompress(data.column.value))
         LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
         http_history = {}
         #if "content-length" in data["headers"] and int(data["headers"]["content-length"][0]) == 0:
@@ -346,7 +347,7 @@ class PageGetter:
             self.cassandra_cf,
             {
                 self.cassandra_http: "",
-                "headers": json.dumps(headers),
+                "headers": zlib.compress(cjson.encode(headers), 1),
             },
         )
         if confirm_cache_write:
@@ -402,7 +403,7 @@ class PageGetter:
                 self.cassandra_cf, 
                 {
                     self.cassandra_http: data["response"],
-                    "headers": json.dumps(headers),
+                    "headers": zlib.compress(cjson.encode(headers), 1),
                 },
             )
             if confirm_cache_write:
@@ -414,7 +415,7 @@ class PageGetter:
         return ReportedFailure(error)
         
     def _returnCachedData(self, data, request_hash):
-        data = data.column.value
+        data = cjson.decode(zlib.decompress(data.column.value))
         LOGGER.debug("Got request %s from Cassandra." % (request_hash))
         data["pagegetter-cache-hit"] = True
         data["status"] = 304
@@ -473,7 +474,7 @@ class PageGetter:
             self.cassandra_cf, 
             {
                 self.cassandra_http: data["response"],
-                "headers": json.dumps(headers),
+                "headers": zlib.compress(cjson.encode(headers), 1),
             },
         )
         if confirm_cache_write:
