@@ -1,4 +1,5 @@
 import cjson
+import zlib
 import urllib
 import inspect
 import logging
