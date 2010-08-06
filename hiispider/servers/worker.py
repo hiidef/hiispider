@@ -128,6 +128,7 @@ class WorkerServer(BaseServer):
     @inlineCallbacks
     def _start(self):
         yield self.getNetworkAddress()
+        LOGGER.info('Connecting to memcache.')
         # Create memcached client
         self.memc = yield self.memc_ClientCreator.connectTCP(self.memcached_host, self.memcached_port)
         LOGGER.info('Connecting to broker.')

@@ -81,7 +81,7 @@ class SchedulerServer(BaseServer):
             log_level=log_level)
         self.expose(self.remoteRemoveFromHeap)
         self.expose(self.remoteAddToHeap)
-        self.expose(self.enqueue)
+        self.expose(self.enqueueUUID)
 
     def start(self):
         reactor.callWhenRunning(self._start)
@@ -217,8 +217,9 @@ class SchedulerServer(BaseServer):
         LOGGER.error(error.printBriefTraceback)
         raise
 
-    def enqueue(self, uuid):
-        LOGGER.debug('enqueue: uuid=%s' % uuid)
+    def enqueueUUID(self, uuid):
+        LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
+        self.chan.basic_publish(exchange=self.amqp_exchange, content=Content(UUID(uuid).bytes))
         return uuid        
         
     def remoteAddToHeap(self, uuid, type):
@@ -227,33 +228,6 @@ class SchedulerServer(BaseServer):
 
     def remoteRemoveFromHeap(self, uuid):
         LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
-
-#    def createReservation(self, function_name, **kwargs):
-#        LOGGER.debug('%s Called' % function_name)
-#        if function_name == 'schedulerserver/remoteaddtoheap':
-#            LOGGER.debug('remoteaddtoheap has been called')
-#            LOGGER.debug('kwargs: %s' % repr(kwargs))
-#            if set(('uuid', 'type')).issubset(set(kwargs)):
-#                LOGGER.debug('\tUUID: %s\n\tType: %s'
-#                    % (kwargs['uuid'], kwargs['type']))
-#                if kwargs['uuid']:
-#                    self.addToHeap(kwargs['uuid'], kwargs['type'])
-#                return {}
-#            else:
-#                return {'error':
-#                    'Required parameters are uuid and type'}
-#        elif function_name == 'schedulerserver/remoteremovefromheap':
-#            LOGGER.debug('remoteremovefromheap has been called')
-#            LOGGER.debug('kwargs: %s' % repr(kwargs))
-#            if 'uuid' in kwargs:
-#                LOGGER.debug('UUID: %s' % kwargs['uuid'])
-#                if kwargs['uuid']:
-#                    self.removeFromHeap(kwargs['uuid'])
-#                return {}
-#            else:
-#                return {'error':
-#                    'Required parameters are uuid'}
-#        return
 
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
