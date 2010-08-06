@@ -2,6 +2,8 @@ from .base import BaseResource
 
 class SchedulerResource(BaseResource):
     
+    isLeaf = True
+    
     def __init__(self, schedulerserver):    
         self.schedulerserver = schedulerserver
         BaseResource.__init__(self)

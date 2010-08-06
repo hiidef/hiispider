@@ -6,19 +6,20 @@ import logging
 import logging.handlers
 import os
 import time
+import pprint
 from decimal import Decimal
 from uuid import uuid4
+from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
-from ..exceptions import DeleteReservationException
-from ..pagegetter import PageGetter
-from ..requestqueuer import RequestQueuer
-import pprint
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
 from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
-from boto.ec2.connection import EC2Connection
+from ..exceptions import DeleteReservationException
+from ..pagegetter import PageGetter
+from ..requestqueuer import RequestQueuer
+from ..resources import ExposedResource
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -42,6 +43,7 @@ class BaseServer(object):
         "reservation_error"]
     functions = {}
     reservation_fast_caches = {}
+    function_resource = None
     
     def __init__(self,
                  aws_access_key_id=None,
@@ -288,6 +290,21 @@ class BaseServer(object):
             "get_reservation_uuid":get_reservation_uuid
         }
         LOGGER.info("Function %s is now callable." % function_name)
+        if expose and self.function_resource is not None:
+            self.exposed_functions.append(function_name)
+            er = ExposedResource(self, function_name)
+            function_name_parts = function_name.split("/")
+            if len(function_name_parts) > 1:
+                if function_name_parts[0] in self.exposed_function_resources:
+                    r = self.exposed_function_resources[function_name_parts[0]]
+                else:
+                    r = Resource()
+                    self.exposed_function_resources[function_name_parts[0]] = r
+                self.function_resource.putChild(function_name_parts[0], r)
+                r.putChild(function_name_parts[1], er)
+            else:
+                self.function_resource.putChild(function_name_parts[0], er)
+            LOGGER.info("Function %s is now available via the HTTP interface." % function_name)
         return function_name
 
     def getPage(self, *args, **kwargs):
@@ -369,4 +386,51 @@ class BaseServer(object):
         if uuid is None:
             return None
         self.reservation_fast_caches[uuid] = data
-    
+
+    def createReservation(self, function_name, **kwargs):
+        uuid = None
+        if not isinstance(function_name, str):
+            for key in self.functions:
+                if self.functions[key]["function"] == function_name:
+                    function_name = key
+                    break
+        if function_name not in self.functions:
+            raise Exception("Function %s does not exist." % function_name)
+        function = self.functions[function_name]
+        if function["interval"] > 0:
+            uuid = uuid4().hex
+        d = self.callExposedFunction(
+            self.functions[function_name]["function"], 
+            kwargs, 
+            function_name, 
+            uuid=uuid)
+        d.addCallback(self._createReservationCallback, function_name, uuid)
+        d.addErrback(self._createReservationErrback, function_name, uuid)
+        return d
+
+    def _createReservationCallback(self, data, function_name, uuid):
+        if self.scheduler_server is not None:
+            parameters = {
+                'uuid': uuid,
+                'type': function_name
+            }
+            query_string = urllib.urlencode(parameters)       
+            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
+            LOGGER.info('Sending UUID to scheduler: %s' % url)
+            d = self.getPage(url=url)
+            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
+            d.addErrback(self._createReservationErrback, function_name, uuid)
+            return d
+        else:
+            self._createReservationCallback2(data, function_name, uuid, data)
+
+    def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
+        LOGGER.debug("Function %s returned successfully." % (function_name))
+        if not uuid:
+            return reservation_data
+        else:
+            return {uuid: reservation_data}
+
+    def _createReservationErrback(self, error, function_name, uuid):
+        LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
+        return error    

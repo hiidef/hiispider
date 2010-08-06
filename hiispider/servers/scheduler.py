@@ -15,7 +15,7 @@ from txamqp.content import Content
 from .base import BaseServer, LOGGER
 from ..resources import SchedulerResource
 from ..amqp import amqp as AMQP
-from ..resources import ExposedResource
+
 from twisted.web.resource import Resource
 
 
@@ -69,7 +69,7 @@ class SchedulerServer(BaseServer):
         self.amqp_queue = amqp_queue
         self.amqp_exchange = amqp_exchange
         # HTTP interface
-        resource = SchedulerResource(self)
+        resource = Resource()
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
         self.site_port = reactor.listenTCP(port, server.Site(resource))
@@ -79,48 +79,9 @@ class SchedulerServer(BaseServer):
             log_file=log_file,
             log_directory=log_directory,
             log_level=log_level)
-        function_name = BaseServer.makeCallable(
-            self,
-            self.remoteAddToHeap,
-            interval=0,
-            name=None,
-            expose=True)
-        self.exposed_functions.append(function_name)
-        er = ExposedResource(self, function_name)
-        function_name_parts = function_name.split("/")
-        if len(function_name_parts) > 1:
-            if function_name_parts[0] in self.exposed_function_resources:
-                r = self.exposed_function_resources[function_name_parts[0]]
-            else:
-                r = Resource()
-                self.exposed_function_resources[function_name_parts[0]] = r
-            self.function_resource.putChild(function_name_parts[0], r)
-            r.putChild(function_name_parts[1], er)
-        else:
-            self.function_resource.putChild(function_name_parts[0], er)
-        LOGGER.info("Function %s is now available via the HTTP interface."
-            % function_name)
-        function_name = BaseServer.makeCallable(
-            self,
-            self.remoteRemoveFromHeap,
-            interval=0,
-            name=None,
-            expose=True)
-        self.exposed_functions.append(function_name)
-        er = ExposedResource(self, function_name)
-        function_name_parts = function_name.split("/")
-        if len(function_name_parts) > 1:
-            if function_name_parts[0] in self.exposed_function_resources:
-                r = self.exposed_function_resources[function_name_parts[0]]
-            else:
-                r = Resource()
-                self.exposed_function_resources[function_name_parts[0]] = r
-            self.function_resource.putChild(function_name_parts[0], r)
-            r.putChild(function_name_parts[1], er)
-        else:
-            self.function_resource.putChild(function_name_parts[0], er)
-        LOGGER.info("Function %s is now available via the HTTP interface."
-            % function_name)
+        self.expose(self.remoteRemoveFromHeap)
+        self.expose(self.remoteAddToHeap)
+        self.expose(self.enqueue)
 
     def start(self):
         reactor.callWhenRunning(self._start)
@@ -154,7 +115,7 @@ class SchedulerServer(BaseServer):
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
         # Build heap from data in MySQL
-        yield self._loadFromMySQL()
+        #yield self._loadFromMySQL()
         self.statusloop = task.LoopingCall(self.queueStatusCheck)
         self.statusloop.start(60)
 
@@ -256,6 +217,10 @@ class SchedulerServer(BaseServer):
         LOGGER.error(error.printBriefTraceback)
         raise
 
+    def enqueue(self, uuid):
+        LOGGER.debug('enqueue: uuid=%s' % uuid)
+        return uuid        
+        
     def remoteAddToHeap(self, uuid, type):
         LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
         pass
@@ -263,32 +228,32 @@ class SchedulerServer(BaseServer):
     def remoteRemoveFromHeap(self, uuid):
         LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
 
-    def createReservation(self, function_name, **kwargs):
-        LOGGER.debug('%s Called' % function_name)
-        if function_name == 'schedulerserver/remoteaddtoheap':
-            LOGGER.debug('remoteaddtoheap has been called')
-            LOGGER.debug('kwargs: %s' % repr(kwargs))
-            if set(('uuid', 'type')).issubset(set(kwargs)):
-                LOGGER.debug('\tUUID: %s\n\tType: %s'
-                    % (kwargs['uuid'], kwargs['type']))
-                if kwargs['uuid']:
-                    self.addToHeap(kwargs['uuid'], kwargs['type'])
-                return {}
-            else:
-                return {'error':
-                    'Required parameters are uuid and type'}
-        elif function_name == 'schedulerserver/remoteremovefromheap':
-            LOGGER.debug('remoteremovefromheap has been called')
-            LOGGER.debug('kwargs: %s' % repr(kwargs))
-            if 'uuid' in kwargs:
-                LOGGER.debug('UUID: %s' % kwargs['uuid'])
-                if kwargs['uuid']:
-                    self.removeFromHeap(kwargs['uuid'])
-                return {}
-            else:
-                return {'error':
-                    'Required parameters are uuid'}
-        return
+#    def createReservation(self, function_name, **kwargs):
+#        LOGGER.debug('%s Called' % function_name)
+#        if function_name == 'schedulerserver/remoteaddtoheap':
+#            LOGGER.debug('remoteaddtoheap has been called')
+#            LOGGER.debug('kwargs: %s' % repr(kwargs))
+#            if set(('uuid', 'type')).issubset(set(kwargs)):
+#                LOGGER.debug('\tUUID: %s\n\tType: %s'
+#                    % (kwargs['uuid'], kwargs['type']))
+#                if kwargs['uuid']:
+#                    self.addToHeap(kwargs['uuid'], kwargs['type'])
+#                return {}
+#            else:
+#                return {'error':
+#                    'Required parameters are uuid and type'}
+#        elif function_name == 'schedulerserver/remoteremovefromheap':
+#            LOGGER.debug('remoteremovefromheap has been called')
+#            LOGGER.debug('kwargs: %s' % repr(kwargs))
+#            if 'uuid' in kwargs:
+#                LOGGER.debug('UUID: %s' % kwargs['uuid'])
+#                if kwargs['uuid']:
+#                    self.removeFromHeap(kwargs['uuid'])
+#                return {}
+#            else:
+#                return {'error':
+#                    'Required parameters are uuid'}
+#        return
 
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is

@@ -7,7 +7,7 @@ from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
 from .base import BaseServer, LOGGER
-from ..resources import InterfaceResource, ExposedResource
+from ..resources import InterfaceResource
 from ..aws import sdb_now
 from ..evaluateboolean import evaluateBoolean
 import zlib
@@ -104,73 +104,21 @@ class InterfaceServer(BaseServer):
     def _shutdownCallback(self, data):
         return BaseServer.shutdown(self)
     
-    def makeCallable(self, func, interval=0, name=None, expose=False):
-        function_name = BaseServer.makeCallable(
-            self, 
-            func, 
-            interval=interval, 
-            name=name, 
-            expose=expose)
-        if expose:
-            self.exposed_functions.append(function_name)
-            er = ExposedResource(self, function_name)
-            function_name_parts = function_name.split("/")
-            if len(function_name_parts) > 1:
-                if function_name_parts[0] in self.exposed_function_resources:
-                    r = self.exposed_function_resources[function_name_parts[0]]
-                else:
-                    r = Resource()
-                    self.exposed_function_resources[function_name_parts[0]] = r
-                self.function_resource.putChild(function_name_parts[0], r)
-                r.putChild(function_name_parts[1], er)
-            else:
-                self.function_resource.putChild(function_name_parts[0], er)
-            LOGGER.info("Function %s is now available via the HTTP interface." % function_name)
-            
-    def createReservation(self, function_name, **kwargs):
-        uuid = None
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        function = self.functions[function_name]
-        if function["interval"] > 0:
-            uuid = uuid4().hex
-        d = self.callExposedFunction(
-            self.functions[function_name]["function"], 
-            kwargs, 
-            function_name, 
-            uuid=uuid)
-        d.addCallback(self._createReservationCallback, function_name, uuid)
-        d.addErrback(self._createReservationErrback, function_name, uuid)
-        return d
-
-    def _createReservationCallback(self, data, function_name, uuid):
+    def enqueue(self, uuid):
         if self.scheduler_server is not None:
-            parameters = {
-                'uuid': uuid,
-                'type': function_name
-            }
+            parameters = {'uuid': uuid}
             query_string = urllib.urlencode(parameters)       
-            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            LOGGER.info('Sending UUID to scheduler: %s' % url)
+            url = 'http://%s:%s/function/schedulerserver/enqueue?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
+            LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
             d = self.getPage(url=url)
-            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
-            d.addErrback(self._createReservationErrback, function_name, uuid)
+            d.addCallback(self._enqueueCallback, uuid)
+            d.addErrback(self._enqueueErrback, uuid)
             return d
-        else:
-            self._createReservationCallback2(data, function_name, uuid, data)
-
-    def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
-        if not uuid:
-            return reservation_data
-        else:
-            return {uuid: reservation_data}
-
-    def _createReservationErrback(self, error, function_name, uuid):
-        LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
-        return error
+        return None
+    
+    def _enqueueCallback(self, data, uuid):
+        LOGGER.info("%s is added to spider queue." % uuid)
+    
+    def _enqueueErrback(self, error, uuid):
+        LOGGER.info("Could not enqueue %s." % uuid)
+            

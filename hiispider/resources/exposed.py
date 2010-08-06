@@ -7,8 +7,8 @@ class ExposedResource(BaseResource):
     
     isLeaf = True
     
-    def __init__(self, interfaceserver, function_name):
-        self.interfaceserver = interfaceserver
+    def __init__(self, server, function_name):
+        self.primary_server = server
         self.function_name = function_name
         BaseResource.__init__(self)
     
@@ -17,7 +17,7 @@ class ExposedResource(BaseResource):
         kwargs = {}
         for key in request.args:
             kwargs[key] = request.args[key][0]
-        d = maybeDeferred(self.interfaceserver.createReservation, self.function_name, **kwargs)
+        d = maybeDeferred(self.primary_server.createReservation, self.function_name, **kwargs)
         d.addCallback(self._successResponse)
         d.addErrback(self._errorResponse)
         d.addCallback(self._immediateResponse, request)
