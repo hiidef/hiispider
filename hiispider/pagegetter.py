@@ -346,7 +346,7 @@ class PageGetter:
             request_hash,
             self.cassandra_cf,
             {
-                self.cassandra_http: "",
+                self.cassandra_http: zlib.compress(cjson.encode(""), 1),
                 "headers": zlib.compress(cjson.encode(headers), 1),
             },
         )
@@ -402,7 +402,7 @@ class PageGetter:
                 request_hash, 
                 self.cassandra_cf, 
                 {
-                    self.cassandra_http: data["response"],
+                    self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
                     "headers": zlib.compress(cjson.encode(headers), 1),
                 },
             )
@@ -473,7 +473,7 @@ class PageGetter:
             request_hash, 
             self.cassandra_cf, 
             {
-                self.cassandra_http: data["response"],
+                self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
                 "headers": zlib.compress(cjson.encode(headers), 1),
             },
         )
