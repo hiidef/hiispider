@@ -104,13 +104,13 @@ class InterfaceServer(BaseServer):
     def _shutdownCallback(self, data):
         return BaseServer.shutdown(self)
     
-    def enqueue(self, uuid):
+    def enqueueUUID(self, uuid):
         if self.scheduler_server is not None:
             parameters = {'uuid': uuid}
             query_string = urllib.urlencode(parameters)       
             url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
             LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
-            d = self.getPage(url=url)
+            d = self.rq.getPage(url=url)
             d.addCallback(self._enqueueCallback, uuid)
             d.addErrback(self._enqueueErrback, uuid)
             return d

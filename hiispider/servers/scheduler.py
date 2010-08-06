@@ -3,6 +3,7 @@ import time
 import random
 import logging
 import logging.handlers
+import random
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
@@ -115,7 +116,7 @@ class SchedulerServer(BaseServer):
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
         # Build heap from data in MySQL
-        #yield self._loadFromMySQL()
+        yield self._loadFromMySQL()
         self.statusloop = task.LoopingCall(self.queueStatusCheck)
         self.statusloop.start(60)
 
@@ -132,8 +133,6 @@ class SchedulerServer(BaseServer):
         return d
 
     def _loadFromMySQLCallback(self, data, start):
-        # Add rows to heap. The second argument is interval, would be
-        # based on the plugin's interval setting, random for now.
         for row in data:
             self.addToHeap(row["uuid"], row["type"])
         # Load next chunk.
@@ -249,7 +248,9 @@ class SchedulerServer(BaseServer):
             else:
                 LOGGER.error('Could not find interval for type %s' % type)
                 return
-            enqueue_time = int(time.time() + interval)
+            # Enqueue randomly over the interval so it doesn't
+            # flood the server at the interval time.
+            enqueue_time = int(time.time() + random.randint(0,interval))
             # Add a UUID to the heap.
             LOGGER.debug('Adding %s to heap with time %s and interval of %s'
                 % (uuid, enqueue_time, interval))

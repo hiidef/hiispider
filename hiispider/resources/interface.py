@@ -27,11 +27,11 @@ class InterfaceResource(BaseResource):
                     return server.NOT_DONE_YET
                 else:
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
-            elif request.postpath[0] == "refresh":
+            elif request.postpath[0] == "enqueueuuid":
                 if "uuid" in request.args:
                     deferreds = []
                     for uuid in request.args["uuid"]:
-                        deferreds.append(self.interfaceserver.enqueue(uuid))
+                        deferreds.append(self.interfaceserver.enqueueUUID(uuid))
                     d = DeferredList(deferreds, consumeErrors=True)
                     d.addCallback(self._successResponse)
                     d.addErrback(self._errorResponse)
