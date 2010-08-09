@@ -55,6 +55,7 @@ class BaseServer(object):
                  cassandra_cf_content=None,
                  cassandra_content=None,
                  cassandra_http=None,
+                 cassandra_headers=None,
                  scheduler_server=None,
                  scheduler_server_port=5001,
                  max_simultaneous_requests=100,
@@ -79,6 +80,7 @@ class BaseServer(object):
         self.cassandra_cf_cache = cassandra_cf_cache
         self.cassandra_cf_content = cassandra_cf_content
         self.cassandra_http = cassandra_http
+        self.cassandra_headers=cassandra_headers
         self.cassandra_content = cassandra_content
         self.cassandra_factory = ManagedCassandraClientFactory()
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
@@ -89,6 +91,7 @@ class BaseServer(object):
             self.cassandra_client, 
             self.cassandra_cf_cache,
             self.cassandra_http,
+            self.cassandra_headers,
             rq=self.rq)
         self._setupLogging(log_file, log_directory, log_level)
 
