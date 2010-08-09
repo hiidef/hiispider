@@ -38,8 +38,9 @@ class PageGetter:
     
     def __init__(self, 
         cassandra_client, 
-        cassandra_cf,
+        cassandra_cf_cache,
         cassandra_http,
+        cassandra_headers,
         time_offset=0,
         rq=None):
         """
@@ -47,15 +48,16 @@ class PageGetter:
 
         **Arguments:**
          * *cassandra_client* -- Cassandra client object.
-         * *cassandra_cf -- Cassandra CF to use for the HTTP cache.
+         * *cassandra_cf_cache -- Cassandra CF to use for the HTTP cache.
 
         **Keyword arguments:**
          * *rq* -- Request Queuer object. (Default ``None``)      
 
         """
         self.cassandra_client = cassandra_client
-        self.cassandra_cf = cassandra_cf
+        self.cassandra_cf_cache = cassandra_cf_cache
         self.cassandra_http = cassandra_http
+        self.cassandra_headers = cassandra_headers
         self.time_offset = time_offset
         if rq is None:
             self.rq = RequestQueuer()
@@ -167,8 +169,8 @@ class PageGetter:
             # Check if there is a cache entry, return headers.
             d = self.cassandra_client.get(
                 request_hash,
-                self.cassandra_cf,
-                column="headers")
+                self.cassandra_cf_cache,
+                column=self.cassandra_headers)
             d.addCallback(self._checkCacheHeaders, 
                 request_hash,
                 url,  
@@ -187,7 +189,7 @@ class PageGetter:
             LOGGER.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
             d = self.cassandra_client.get(
                 request_hash,
-                self.cassandra_cf,
+                self.cassandra_cf_cache,
                 column=self.cassandra_http)
             d.addCallback(self._returnCachedData, request_hash)
             d.addErrback(self._requestWithNoCacheHeaders, 
@@ -228,7 +230,7 @@ class PageGetter:
                 LOGGER.debug("Cached data %s for URL %s is not stale. Getting from Cassandra." % (request_hash, url))
                 d = self.cassandra_client.get(
                     request_hash,
-                    self.cassandra_cf,
+                    self.cassandra_cf_cache,
                     column=self.cassandra_http)
                 d.addCallback(self._returnCachedData, request_hash)
                 d.addErrback(
@@ -344,10 +346,10 @@ class PageGetter:
         headers["request-failures"] = ",".join(http_history["request-failures"])
         d = self.cassandra_client.batch_insert(
             request_hash,
-            self.cassandra_cf,
+            self.cassandra_cf_cache,
             {
                 self.cassandra_http: zlib.compress(cjson.encode(""), 1),
-                "headers": zlib.compress(cjson.encode(headers), 1),
+                self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
             },
         )
         if confirm_cache_write:
@@ -374,7 +376,7 @@ class PageGetter:
             LOGGER.debug("Request %s for URL %s hasn't been modified since it was last downloaded. Getting data from Cassandra." % (request_hash, url))
             d = self.cassandra_client.get(
                 request_hash,
-                self.cassandra_cf,
+                self.cassandra_cf_cache,
                 column=self.cassandra_http)
             d.addCallback(self._returnCachedData, request_hash)
             d.addErrback(
@@ -400,10 +402,10 @@ class PageGetter:
             headers["request-failures"] = ",".join(http_history["request-failures"])
             d = self.cassandra_client.batch_insert(
                 request_hash, 
-                self.cassandra_cf, 
+                self.cassandra_cf_cache, 
                 {
                     self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
-                    "headers": zlib.compress(cjson.encode(headers), 1),
+                    self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
                 },
             )
             if confirm_cache_write:
@@ -471,10 +473,10 @@ class PageGetter:
             content_type = data["headers"]["content-type"][0]
         d = self.cassandra_client.batch_insert(
             request_hash, 
-            self.cassandra_cf, 
+            self.cassandra_cf_cache, 
             {
                 self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
-                "headers": zlib.compress(cjson.encode(headers), 1),
+                self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
             },
         )
         if confirm_cache_write:

@@ -51,7 +51,8 @@ class BaseServer(object):
                  cassandra_server=None,
                  cassandra_port=9160,
                  cassandra_keyspace=None, 
-                 cassandra_cf=None, 
+                 cassandra_cf_cache=None,
+                 cassandra_cf_content=None,
                  cassandra_content=None,
                  cassandra_http=None,
                  scheduler_server=None,
@@ -75,7 +76,8 @@ class BaseServer(object):
         self.cassandra_server = cassandra_server
         self.cassandra_port = cassandra_port
         self.cassandra_keyspace = cassandra_keyspace
-        self.cassandra_cf = cassandra_cf
+        self.cassandra_cf_cache = cassandra_cf_cache
+        self.cassandra_cf_content = cassandra_cf_content
         self.cassandra_http = cassandra_http
         self.cassandra_content = cassandra_content
         self.cassandra_factory = ManagedCassandraClientFactory()
@@ -85,7 +87,7 @@ class BaseServer(object):
         self.scheduler_server_port = scheduler_server_port
         self.pg = PageGetter(
             self.cassandra_client, 
-            self.cassandra_cf,
+            self.cassandra_cf_cache,
             self.cassandra_http,
             rq=self.rq)
         self._setupLogging(log_file, log_directory, log_level)
@@ -202,13 +204,13 @@ class BaseServer(object):
             del self.active_jobs[uuid]
             return None
         # If we have an place to store the response on Cassandra, do it.
-        if self.cassandra_cf is not None:
+        if self.cassandra_cf_content is not None:
             LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            pickled_data = zlib.compress(cjson.encode(data))
+            encoded_data = zlib.compress(cjson.encode(data))
             d = self.cassandra_client.insert(
                 uuid,
-                self.cassandra_cf, 
-                pickled_data,
+                self.cassandra_cf_content, 
+                encoded_data,
                 column=self.cassandra_content)
             d.addCallback(self._exposedFunctionCallback2, data, uuid)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
@@ -324,7 +326,7 @@ class BaseServer(object):
             url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
             deferreds = []
             deferreds.append(self.getPage(url=url))
-            deferreds.append(self.cassandra_client.remove(uuid, self.cassandra_cf))
+            deferreds.append(self.cassandra_client.remove(uuid, self.cassandra_cf_content))
             d = DeferredList(deferreds)
             d.addCallback(self._deleteReservationCallback, function_name, uuid)
             d.addErrback(self._deleteReservationErrback, function_name, uuid)

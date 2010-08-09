@@ -24,9 +24,11 @@ class InterfaceServer(BaseServer):
             aws_secret_access_key=None,
             cassandra_server=None, 
             cassandra_keyspace=None,
-            cassandra_cf=None,
+            cassandra_cf_cache=None,
+            cassandra_cf_content=None,
             cassandra_content=None,
             cassandra_http=None,
+            cassandra_headers=None,
             scheduler_server=None,
             scheduler_server_port=5001,
             max_simultaneous_requests=50,
@@ -39,8 +41,10 @@ class InterfaceServer(BaseServer):
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
-        self.cassandra_cf=cassandra_cf
+        self.cassandra_cf_cache=cassandra_cf_content
+        self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_http=cassandra_http
+        self.cassandra_headers=cassandra_headers
         self.cassandra_content=cassandra_content
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
@@ -58,9 +62,11 @@ class InterfaceServer(BaseServer):
             aws_secret_access_key=aws_secret_access_key,
             cassandra_server=cassandra_server,
             cassandra_keyspace=cassandra_keyspace,
-            cassandra_cf=cassandra_cf,
+            cassandra_cf_cache=cassandra_cf_cache,
+            cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
+            cassandra_headers=cassandra_headers,
             scheduler_server=scheduler_server,
             scheduler_server_port=scheduler_server_port,
             max_simultaneous_requests=max_simultaneous_requests,
