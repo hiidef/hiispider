@@ -41,7 +41,7 @@ class InterfaceServer(BaseServer):
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
-        self.cassandra_cf_cache=cassandra_cf_content
+        self.cassandra_cf_cache=cassandra_cf_cache
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_http=cassandra_http
         self.cassandra_headers=cassandra_headers
