@@ -221,13 +221,19 @@ class SchedulerServer(BaseServer):
         self.chan.basic_publish(exchange=self.amqp_exchange, content=Content(UUID(uuid).bytes))
         return uuid        
         
-    def remoteAddToHeap(self, uuid, type):
-        LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
-        pass
+    def remoteAddToHeap(self, uuid=None, type=None):
+        if uuid and type:
+            LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
+            self.addToHeap(uuid, type)
+            return {}
+        else:
+            LOGGER.error('remoteAddToHeap: Required parameters are uuid and type')
+            return {'error': 'Required parameters are uuid and type'}
 
     def remoteRemoveFromHeap(self, uuid):
         LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
-
+        self.removeFromHeap(uuid)
+        
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
         # then rewrite type to the proper resource
