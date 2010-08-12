@@ -54,8 +54,10 @@ class BaseServer(object):
                  cassandra_cf_cache=None,
                  cassandra_cf_content=None,
                  cassandra_content=None,
+                 cassandra_content_error='error',
                  cassandra_http=None,
                  cassandra_headers=None,
+                 cassandra_error='error',
                  scheduler_server=None,
                  scheduler_server_port=5001,
                  max_simultaneous_requests=100,
@@ -82,6 +84,7 @@ class BaseServer(object):
         self.cassandra_http = cassandra_http
         self.cassandra_headers=cassandra_headers
         self.cassandra_content = cassandra_content
+        self.cassandra_content_error = cassandra_content_error
         self.cassandra_factory = ManagedCassandraClientFactory()
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
@@ -195,6 +198,13 @@ class BaseServer(object):
                 function_name, 
                 uuid,
                 error))
+            # save error in a error column in the content CF
+            encoded_data = zlib.compress(cjson.encode(error))
+            self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf_content, 
+                encoded_data,
+                column=self.cassandra_content_error)
         return error
 
     def _callExposedFunctionCallback(self, data, function_name, uuid):
