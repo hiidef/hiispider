@@ -199,11 +199,10 @@ class BaseServer(object):
                 uuid,
                 error))
             # save error in a error column in the content CF
-            encoded_data = zlib.compress(cjson.encode(error))
             self.cassandra_client.insert(
                 uuid,
-                self.cassandra_cf_content, 
-                encoded_data,
+                self.cassandra_cf_content,
+                error.getErrorMessage(),
                 column=self.cassandra_content_error)
         return error
 
