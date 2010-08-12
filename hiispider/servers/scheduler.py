@@ -255,12 +255,13 @@ class SchedulerServer(BaseServer):
                 LOGGER.error('Could not find interval for type %s' % type)
                 return
             # Enqueue randomly over the interval so it doesn't
-            # flood the server at the interval time.
-            enqueue_time = int(time.time() + random.randint(0,interval))
-            # Add a UUID to the heap.
-            LOGGER.debug('Adding %s to heap with time %s and interval of %s'
-                % (uuid, enqueue_time, interval))
-            heappush(self.heap, (enqueue_time, (uuid_bytes, interval)))
+            # flood the server at the interval time. only if an interval is defined
+            if interval:
+                enqueue_time = int(time.time() + random.randint(0,interval))
+                # Add a UUID to the heap.
+                LOGGER.debug('Adding %s to heap with time %s and interval of %s'
+                    % (uuid, enqueue_time, interval))
+                heappush(self.heap, (enqueue_time, (uuid_bytes, interval)))
         else:
             LOGGER.info('Unscheduling %s' % uuid)
             self.unscheduled_items.remove(uuid)
