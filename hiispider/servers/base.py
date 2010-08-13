@@ -8,6 +8,7 @@ import os
 import time
 import pprint
 from decimal import Decimal
+from datetime import datetime
 from uuid import uuid4
 from twisted.web.resource import Resource
 from twisted.internet import reactor
@@ -202,6 +203,7 @@ class BaseServer(object):
             data = {
                 'msg': error.getErrorMessage(),
                 'traceback': error.getTraceback(),
+                'timestamp': datetime.now().isoformat(),
             }
             encoded_data = zlib.compress(cjson.encode(data))
             self.cassandra_client.insert(
