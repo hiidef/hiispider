@@ -430,7 +430,7 @@ class BaseServer(object):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
-        if self.scheduler_server is not None:
+        if uuid and self.scheduler_server is not None:
             parameters = {
                 'uuid': uuid,
                 'type': function_name
