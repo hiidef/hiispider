@@ -239,7 +239,7 @@ class BaseServer(object):
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         if uuid in self.active_jobs:
             del self.active_jobs[uuid]
-        LOGGER.error("Could not put results of %s, %s on S3.\n%s" % (function_name, uuid, error))
+        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
         return data
         
     def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):

@@ -246,8 +246,8 @@ class SchedulerServer(BaseServer):
                 # Make sure the uuid is in bytes
                 uuid_bytes = UUID(uuid).bytes
             except ValueError:
-                LOGGER.error('Cound not turn UUID into byes using string %s'
-                    % uuid)
+                LOGGER.error('Cound not turn UUID into btyes using string: "%s" with type of "%s"'
+                    % (uuid, type))
                 return
             if type in self.functions and 'interval' in self.functions[type]:
                 interval = int(self.functions[type]['interval'])
