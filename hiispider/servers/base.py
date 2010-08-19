@@ -374,4 +374,3 @@ class BaseServer(object):
             function_name, 
             uuid=uuid)
         return d
-
