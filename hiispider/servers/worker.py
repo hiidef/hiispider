@@ -1,4 +1,5 @@
-from .base import BaseServer, LOGGER
+from .cassandra import CassandraServer
+from .base import LOGGER
 from ..resources import WorkerResource
 from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
@@ -16,7 +17,7 @@ import simplejson
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
-class WorkerServer(BaseServer):
+class WorkerServer(CassandraServer):
     
     public_ip = None
     local_ip = None
@@ -88,9 +89,6 @@ class WorkerServer(BaseServer):
         self.memcached_port = memcached_port
         self.memc_ClientCreator = protocol.ClientCreator(
             reactor, MemCacheProtocol)
-        #Schedule Server
-        self.scheduler_server=scheduler_server
-        self.scheduler_server_port=scheduler_server_port
         # Resource Mappings
         self.service_mapping = service_mapping
         self.service_args_mapping = service_args_mapping
@@ -107,7 +105,7 @@ class WorkerServer(BaseServer):
         self.amqp_queue = amqp_queue
         self.amqp_exchange = amqp_exchange
         self.amqp_prefetch_count = amqp_prefetch_count
-        BaseServer.__init__(
+        CassandraServer.__init__(
             self,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
@@ -167,7 +165,7 @@ class WorkerServer(BaseServer):
             no_ack=False,
             consumer_tag="hiispider_consumer")
         self.queue = yield self.conn.queue("hiispider_consumer")
-        yield BaseServer.start(self)
+        yield CassandraServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
@@ -181,12 +179,12 @@ class WorkerServer(BaseServer):
         except:
             pass
         # Shut things down
-        LOGGER.info('Closing broker connection')
+        LOGGER.info('Closing MYSQL Connnection Pool')
+        yield self.mysql.close()
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
-        LOGGER.info('Closing MYSQL Connnection Pool')
-        yield self.mysql.close()
+    
     
     @inlineCallbacks
     def reconnectMemcache(self):
@@ -365,13 +363,13 @@ class WorkerServer(BaseServer):
         # apply job fields to req and optional kwargs
         for arg in job['exposed_function']['required_arguments']:
             if arg in job:
-                kwargs[arg] = job[arg]
+                kwargs[str(arg)] = job[arg]
             elif arg in job['account']:
-                kwargs[arg] = job['account'][arg]
+                kwargs[str(arg)] = job['account'][arg]
         for arg in job['exposed_function']['optional_arguments']:
             if arg in job['account']:
-                kwargs[arg] = job['account'][arg]
-        LOGGER.debug('Function: %s\nKWARGS: %s' %(job['function_name'], repr(kwargs)))
+                kwargs[str(arg)] = job['account'][arg]
+        LOGGER.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
         return kwargs
         
     def getNetworkAddress(self):

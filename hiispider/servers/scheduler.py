@@ -21,8 +21,7 @@ from twisted.web.resource import Resource
 
 
 class SchedulerServer(BaseServer):
-    exposed_functions = []
-    exposed_function_resources = {}
+
     name = "HiiSpider Schedule Server UUID: %s" % str(uuid4())
     heap = []
     unscheduled_items = []

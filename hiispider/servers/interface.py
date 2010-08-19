@@ -6,7 +6,8 @@ from twisted.internet.threads import deferToThread
 from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
-from .base import BaseServer, LOGGER
+from .cassandra import CassandraServer
+from .base import LOGGER
 from ..resources import InterfaceResource
 from ..aws import sdb_now
 from ..evaluateboolean import evaluateBoolean
@@ -14,9 +15,8 @@ import zlib
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
-class InterfaceServer(BaseServer):
-    exposed_functions = []
-    exposed_function_resources = {}
+class InterfaceServer(CassandraServer):
+
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
     
     def __init__(self,
@@ -48,15 +48,13 @@ class InterfaceServer(BaseServer):
         self.cassandra_content=cassandra_content
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
-        self.scheduler_server=scheduler_server
-        self.scheduler_server_port=scheduler_server_port
         resource = Resource()
         interface_resource = InterfaceResource(self)
         resource.putChild("interface", interface_resource)
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        BaseServer.__init__(
+        CassandraServer.__init__(
             self,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
@@ -92,7 +90,7 @@ class InterfaceServer(BaseServer):
                 d = self.shutdown()
                 d.addCallback(self._startHandleError, row[1])
                 return d
-        d = BaseServer.start(self)
+        d = CassandraServer.start(self)
 
     def shutdown(self):
         deferreds = []
@@ -108,7 +106,7 @@ class InterfaceServer(BaseServer):
             return self._shutdownCallback(None)
 
     def _shutdownCallback(self, data):
-        return BaseServer.shutdown(self)
+        return CassandraServer.shutdown(self)
     
     def enqueueUUID(self, uuid):
         if self.scheduler_server is not None:

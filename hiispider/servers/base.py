@@ -1,6 +1,3 @@
-import cjson
-import zlib
-import urllib
 import inspect
 import logging
 import logging.handlers
@@ -8,17 +5,11 @@ import os
 import time
 import pprint
 from decimal import Decimal
-from datetime import datetime
 from uuid import uuid4
 from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
-from telephus.protocol import ManagedCassandraClientFactory
-from telephus.client import CassandraClient
-from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
-from ..exceptions import DeleteReservationException
-from ..pagegetter import PageGetter
 from ..requestqueuer import RequestQueuer
 from ..resources import ExposedResource
 
@@ -26,12 +17,10 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 LOGGER = logging.getLogger("main")
 
-class ReservationCachingException(Exception):
-    pass
-
 class BaseServer(object):
-
-    scheduler_server = None
+    
+    exposed_functions = []
+    exposed_function_resources = {}
     logging_handler = None
     shutdown_trigger_id = None
     uuid = uuid4().hex
@@ -49,25 +38,14 @@ class BaseServer(object):
     def __init__(self,
                  aws_access_key_id=None,
                  aws_secret_access_key=None,
-                 cassandra_server=None,
-                 cassandra_port=9160,
-                 cassandra_keyspace=None, 
-                 cassandra_cf_cache=None,
-                 cassandra_cf_content=None,
-                 cassandra_content=None,
-                 cassandra_content_error='error',
-                 cassandra_http=None,
-                 cassandra_headers=None,
-                 cassandra_error='error',
-                 scheduler_server=None,
-                 scheduler_server_port=5001,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
                  max_simultaneous_requests_per_host=0,
                  log_file=None,
                  log_directory=None,
                  log_level="debug",
-                 port=8080):
+                 port=8080,
+                 pg=None):
         self.start_deferred = Deferred()
         self.rq = RequestQueuer( 
             max_simultaneous_requests=int(max_simultaneous_requests), 
@@ -77,26 +55,10 @@ class BaseServer(object):
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
-        self.cassandra_server = cassandra_server
-        self.cassandra_port = cassandra_port
-        self.cassandra_keyspace = cassandra_keyspace
-        self.cassandra_cf_cache = cassandra_cf_cache
-        self.cassandra_cf_content = cassandra_cf_content
-        self.cassandra_http = cassandra_http
-        self.cassandra_headers=cassandra_headers
-        self.cassandra_content = cassandra_content
-        self.cassandra_content_error = cassandra_content_error
-        self.cassandra_factory = ManagedCassandraClientFactory()
-        self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
-        reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
-        self.scheduler_server = scheduler_server
-        self.scheduler_server_port = scheduler_server_port
-        self.pg = PageGetter(
-            self.cassandra_client, 
-            self.cassandra_cf_cache,
-            self.cassandra_http,
-            self.cassandra_headers,
-            rq=self.rq)
+        if pg is None:
+            self.pg = self.rq
+        else:
+            self.pg = pg
         self._setupLogging(log_file, log_directory, log_level)
 
     def _setupLogging(self, log_file, log_directory, log_level):
@@ -159,94 +121,7 @@ class BaseServer(object):
         LOGGER.debug("Shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
-    
-    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
-        if uuid is not None:
-            self.active_jobs[uuid] = True
-        if self.functions[function_name]["get_reservation_uuid"]:
-            kwargs["reservation_uuid"] = uuid 
-        if self.functions[function_name]["check_reservation_fast_cache"] and \
-                reservation_fast_cache is not None:
-            kwargs["reservation_fast_cache"] = reservation_fast_cache
-        elif self.functions[function_name]["check_reservation_fast_cache"]:
-            kwargs["reservation_fast_cache"] = None
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
-        
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None and uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        try:
-            error.raiseException()
-        except DeleteReservationException:
-            if uuid is not None:
-                self.deleteReservation(uuid)
-            message = """Error with %s, %s.\n%s            
-            Reservation deleted at request of the function.""" % (
-                function_name,
-                uuid,
-                error)
-            LOGGER.debug(message)
-            return
-        except:
-            pass
-        if uuid is None:
-            LOGGER.error("Error with %s.\n%s" % (function_name, error))
-        else:
-            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
-                function_name, 
-                uuid,
-                error))
-            # save error in a error column in the content CF
-            data = {
-                'msg': error.getErrorMessage(),
-                'traceback': error.getTraceback(),
-                'timestamp': datetime.now().isoformat(),
-            }
-            encoded_data = zlib.compress(cjson.encode(data))
-            self.cassandra_client.insert(
-                uuid,
-                self.cassandra_cf_content,
-                encoded_data,
-                column=self.cassandra_content_error)
-        return error
-
-    def _callExposedFunctionCallback(self, data, function_name, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
-        # If the UUID is None, this is a one-off type of thing.
-        if uuid is None:
-            return data
-        # If the data is None, there's nothing to store.
-        if data is None:
-            del self.active_jobs[uuid]
-            return None
-        # If we have an place to store the response on Cassandra, do it.
-        if self.cassandra_cf_content is not None:
-            LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            encoded_data = zlib.compress(cjson.encode(data))
-            d = self.cassandra_client.insert(
-                uuid,
-                self.cassandra_cf_content, 
-                encoded_data,
-                column=self.cassandra_content)
-            d.addCallback(self._exposedFunctionCallback2, data, uuid)
-            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
-            return d
-        return data
-
-    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-        return data
-        
-    def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-        
+            
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
@@ -337,55 +212,6 @@ class BaseServer(object):
     def setHostMaxSimultaneousRequests(self, *args, **kwargs):
         return self.rq.setHostMaxSimultaneousRequests(*args, **kwargs)
 
-    def deleteReservation(self, uuid, function_name="Unknown"):
-        if self.scheduler_server is not None:
-            LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
-            parameters = {'uuid': uuid}
-            query_string = urllib.urlencode(parameters)
-            url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            deferreds = []
-            deferreds.append(self.getPage(url=url))
-            deferreds.append(self.cassandra_client.remove(uuid, self.cassandra_cf_content))
-            d = DeferredList(deferreds)
-            d.addCallback(self._deleteReservationCallback, function_name, uuid)
-            d.addErrback(self._deleteReservationErrback, function_name, uuid)
-            return d
-
-    def _deleteReservationCallback(self, data, function_name, uuid):
-        LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
-        return True
-
-    def _deleteReservationErrback(self, error, function_name, uuid ):
-        LOGGER.error("Error deleting reservation %s, %s.\n%s" % (function_name, uuid, error))
-        return False
-    
-    # def deleteHTTPCache(self):
-    #     deferreds = []
-    #     if self.aws_s3_http_cache_bucket is not None:
-    #         deferreds.append(
-    #             self.s3.emptyBucket(self.aws_s3_http_cache_bucket))
-    #     if len(deferreds) > 0:
-    #         d = DeferredList(deferreds, consumeErrors=True)
-    #         d.addCallback(self._deleteHTTPCacheCallback)
-    #         return d
-    #     else:
-    #         return True
-    #     
-    # def _deleteHTTPCacheCallback(self, data):
-    #     deferreds = []
-    #     if self.aws_s3_http_cache_bucket is not None:
-    #         deferreds.append(
-    #             self.s3.deleteBucket(self.aws_s3_http_cache_bucket))
-    #     if len(deferreds) > 0:
-    #         d = DeferredList(deferreds, consumeErrors=True)
-    #         d.addCallback(self._deleteHTTPCacheCallback2)
-    #         return d
-    #     else:
-    #         return True
-    #         
-    # def _deleteHTTPCacheCallback2(self, data):
-    #     return True
-
     def getServerData(self):    
         running_time = time.time() - self.start_time
         active_requests_by_host = self.rq.getActiveRequestsByHost()
@@ -408,50 +234,46 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
 
-    def createReservation(self, function_name, **kwargs):
-        uuid = None
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        function = self.functions[function_name]
-        if function["interval"] > 0:
-            uuid = uuid4().hex
-        d = self.callExposedFunction(
-            self.functions[function_name]["function"], 
-            kwargs, 
-            function_name, 
-            uuid=uuid)
-        d.addCallback(self._createReservationCallback, function_name, uuid)
-        d.addErrback(self._createReservationErrback, function_name, uuid)
+
+    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
+        if uuid is not None:
+            self.active_jobs[uuid] = True
+        if self.functions[function_name]["get_reservation_uuid"]:
+            kwargs["reservation_uuid"] = uuid 
+        if self.functions[function_name]["check_reservation_fast_cache"] and \
+                reservation_fast_cache is not None:
+            kwargs["reservation_fast_cache"] = reservation_fast_cache
+        elif self.functions[function_name]["check_reservation_fast_cache"]:
+            kwargs["reservation_fast_cache"] = None
+        d = maybeDeferred(func, **kwargs)
+        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
+        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
-    def _createReservationCallback(self, data, function_name, uuid):
-        if self.scheduler_server is not None:
-            parameters = {
-                'uuid': uuid,
-                'type': function_name
-            }
-            query_string = urllib.urlencode(parameters)       
-            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            LOGGER.info('Sending UUID to scheduler: %s' % url)
-            d = self.getPage(url=url)
-            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
-            d.addErrback(self._createReservationErrback, function_name, uuid)
-            return d
+    def _callExposedFunctionErrback(self, error, function_name, uuid):
+        if uuid is not None and uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        if uuid is None:
+            LOGGER.error("Error with %s.\n%s" % (function_name, error))
         else:
-            self._createReservationCallback2(data, function_name, uuid, data)
+            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
+                function_name, 
+                uuid,
+                error))
+        return error
 
-    def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
+    def _callExposedFunctionCallback(self, data, function_name, uuid):
         LOGGER.debug("Function %s returned successfully." % (function_name))
-        if not uuid:
-            return reservation_data
-        else:
-            return {uuid: reservation_data}
+        # If the UUID is None, this is a one-off type of thing.
+        if uuid is None:
+            return data
+        # If the data is None, there's nothing to store.
+        if data is None:
+            del self.active_jobs[uuid]
+            return None
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        return data
 
-    def _createReservationErrback(self, error, function_name, uuid):
-        LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
-        return error    
+
+
