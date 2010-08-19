@@ -154,6 +154,7 @@ class CassandraServer(BaseServer):
         return data
         
     def _callExposedFunctionErrback(self, error, function_name, uuid):
+        error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
         try:
             error.raiseException()
         except DeleteReservationException:
@@ -168,7 +169,6 @@ class CassandraServer(BaseServer):
             return
         except:
             pass
-        error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
         # save error in a error column in the content CF
         data = {
             'msg': error.getErrorMessage(),
