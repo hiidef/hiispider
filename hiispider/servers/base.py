@@ -371,6 +371,5 @@ class BaseServer(object):
         d = self.callExposedFunction(
             self.functions[function_name]["function"], 
             kwargs, 
-            function_name, 
-            uuid=uuid)
+            function_name)
         return d
