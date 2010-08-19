@@ -68,7 +68,7 @@ class CassandraServer(BaseServer):
             rq=self.rq)
     
     def executeReservation(self, function_name, **kwargs):
-        return createReservation(self, function_name, **kwargs)
+        return self.createReservation(self, function_name, **kwargs)
         
     def createReservation(self, function_name, **kwargs):
         uuid = None
