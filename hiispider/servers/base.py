@@ -208,7 +208,6 @@ class BaseServer(object):
             del self.active_jobs[uuid]
         return data
         
->>>>>>> 15a89156ac0adc57767ab8533cf7ab275ce5916b
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
