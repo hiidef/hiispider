@@ -360,4 +360,18 @@ class BaseServer(object):
             del self.active_jobs[uuid]
         return data
 
+    def executeReservation(self, self.function_name, **kwargs):
+        if not isinstance(function_name, str):
+            for key in self.functions:
+                if self.functions[key]["function"] == function_name:
+                    function_name = key
+                    break
+        if function_name not in self.functions:
+            raise Exception("Function %s does not exist." % function_name)
+        d = self.callExposedFunction(
+            self.functions[function_name]["function"], 
+            kwargs, 
+            function_name, 
+            uuid=uuid)
+        return d
 
