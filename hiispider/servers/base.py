@@ -121,7 +121,7 @@ class BaseServer(object):
         LOGGER.debug("Shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
-            
+
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
@@ -250,30 +250,21 @@ class BaseServer(object):
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None and uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        if uuid is None:
-            LOGGER.error("Error with %s.\n%s" % (function_name, error))
-        else:
-            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
-                function_name, 
-                uuid,
-                error))
-        return error
-
-    def _callExposedFunctionCallback(self, data, function_name, uuid):
+    def _createReservationCallback(self, data, function_name, uuid):
         LOGGER.debug("Function %s returned successfully." % (function_name))
-        # If the UUID is None, this is a one-off type of thing.
-        if uuid is None:
-            return data
-        # If the data is None, there's nothing to store.
-        if data is None:
-            del self.active_jobs[uuid]
-            return None
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-
+        if uuid and self.scheduler_server is not None:
+            parameters = {
+                'uuid': uuid,
+                'type': function_name
+            }
+            query_string = urllib.urlencode(parameters)       
+            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
+            LOGGER.info('Sending UUID to scheduler: %s' % url)
+            d = self.getPage(url=url)
+            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
+            d.addErrback(self._createReservationErrback, function_name, uuid)
+            return d
+        else:
+            return self._createReservationCallback2(data, function_name, uuid, data)
 
 
