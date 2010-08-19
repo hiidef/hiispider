@@ -9,7 +9,6 @@ from twisted.web import server
 from .cassandra import CassandraServer
 from .base import LOGGER
 from ..resources import InterfaceResource
-from ..aws import sdb_now
 from ..evaluateboolean import evaluateBoolean
 import zlib
 
