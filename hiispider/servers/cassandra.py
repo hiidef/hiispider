@@ -88,7 +88,6 @@ class CassandraServer(BaseServer):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
         if uuid and self.scheduler_server is not None:
             parameters = {
                 'uuid': uuid,
@@ -105,7 +104,6 @@ class CassandraServer(BaseServer):
             return self._createReservationCallback2(data, function_name, uuid, data)
 
     def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
         if not uuid:
             return reservation_data
         else:
@@ -140,7 +138,7 @@ class CassandraServer(BaseServer):
     def _callExposedFunctionCallback(self, data, function_name, uuid):
         data = BaseServer._callExposedFunctionCallback(self, data, function_name, uuid)
         # If we have an place to store the response on Cassandra, do it.
-        if self.cassandra_cf_content is not None and data is not None:
+        if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
             encoded_data = zlib.compress(cjson.encode(data))
             d = self.cassandra_client.insert(
