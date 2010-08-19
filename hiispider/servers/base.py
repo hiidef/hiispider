@@ -214,7 +214,6 @@ class BaseServer(object):
         return error
 
     def _callExposedFunctionCallback(self, data, function_name, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
         # If the UUID is None, this is a one-off type of thing.
         if uuid is None:
             return data
@@ -430,6 +429,7 @@ class BaseServer(object):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
+        LOGGER.debug("Function %s returned successfully." % (function_name))
         if uuid and self.scheduler_server is not None:
             parameters = {
                 'uuid': uuid,
@@ -443,10 +443,9 @@ class BaseServer(object):
             d.addErrback(self._createReservationErrback, function_name, uuid)
             return d
         else:
-            self._createReservationCallback2(data, function_name, uuid, data)
+            return self._createReservationCallback2(data, function_name, uuid, data)
 
     def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
         if not uuid:
             return reservation_data
         else:
