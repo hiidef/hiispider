@@ -121,7 +121,94 @@ class BaseServer(object):
         LOGGER.debug("Shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
+    
+    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
+        if uuid is not None:
+            self.active_jobs[uuid] = True
+        if self.functions[function_name]["get_reservation_uuid"]:
+            kwargs["reservation_uuid"] = uuid 
+        if self.functions[function_name]["check_reservation_fast_cache"] and \
+                reservation_fast_cache is not None:
+            kwargs["reservation_fast_cache"] = reservation_fast_cache
+        elif self.functions[function_name]["check_reservation_fast_cache"]:
+            kwargs["reservation_fast_cache"] = None
+        d = maybeDeferred(func, **kwargs)
+        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
+        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
+        return d
+        
+    def _callExposedFunctionErrback(self, error, function_name, uuid):
+        if uuid is not None and uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        try:
+            error.raiseException()
+        except DeleteReservationException:
+            if uuid is not None:
+                self.deleteReservation(uuid)
+            message = """Error with %s, %s.\n%s            
+            Reservation deleted at request of the function.""" % (
+                function_name,
+                uuid,
+                error)
+            LOGGER.debug(message)
+            return
+        except:
+            pass
+        if uuid is None:
+            LOGGER.error("Error with %s.\n%s" % (function_name, error))
+        else:
+            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
+                function_name, 
+                uuid,
+                error))
+            # save error in a error column in the content CF
+            data = {
+                'msg': error.getErrorMessage(),
+                'traceback': error.getTraceback(),
+                'timestamp': datetime.now().isoformat(),
+            }
+            encoded_data = zlib.compress(cjson.encode(data))
+            self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf_content,
+                encoded_data,
+                column=self.cassandra_content_error)
+        return error
 
+    def _callExposedFunctionCallback(self, data, function_name, uuid):
+        # If the UUID is None, this is a one-off type of thing.
+        if uuid is None:
+            return data
+        # If the data is None, there's nothing to store.
+        if data is None:
+            del self.active_jobs[uuid]
+            return None
+        # If we have an place to store the response on Cassandra, do it.
+        if self.cassandra_cf_content is not None:
+            LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
+            encoded_data = zlib.compress(cjson.encode(data))
+            d = self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf_content, 
+                encoded_data,
+                column=self.cassandra_content)
+            d.addCallback(self._exposedFunctionCallback2, data, uuid)
+            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
+            return d
+        return data
+
+    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
+        return data
+        
+    def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        return data
+        
+>>>>>>> 15a89156ac0adc57767ab8533cf7ab275ce5916b
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
@@ -234,7 +321,6 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
 
-
     def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
@@ -250,21 +336,29 @@ class BaseServer(object):
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
-    def _createReservationCallback(self, data, function_name, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
-        if uuid and self.scheduler_server is not None:
-            parameters = {
-                'uuid': uuid,
-                'type': function_name
-            }
-            query_string = urllib.urlencode(parameters)       
-            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            LOGGER.info('Sending UUID to scheduler: %s' % url)
-            d = self.getPage(url=url)
-            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
-            d.addErrback(self._createReservationErrback, function_name, uuid)
-            return d
+    def _callExposedFunctionErrback(self, error, function_name, uuid):
+        if uuid is not None and uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        if uuid is None:
+            LOGGER.error("Error with %s.\n%s" % (function_name, error))
         else:
-            return self._createReservationCallback2(data, function_name, uuid, data)
+            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
+                function_name, 
+                uuid,
+                error))
+        return error
+
+    def _callExposedFunctionCallback(self, data, function_name, uuid):
+        LOGGER.debug("Function %s returned successfully." % (function_name))
+        # If the UUID is None, this is a one-off type of thing.
+        if uuid is None:
+            return data
+        # If the data is None, there's nothing to store.
+        if data is None:
+            del self.active_jobs[uuid]
+            return None
+        if uuid in self.active_jobs:
+            del self.active_jobs[uuid]
+        return data
 
 
