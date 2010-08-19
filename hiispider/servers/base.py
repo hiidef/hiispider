@@ -353,9 +353,6 @@ class BaseServer(object):
         if uuid is None:
             return data
         # If the data is None, there's nothing to store.
-        if data is None:
-            del self.active_jobs[uuid]
-            return None
         if uuid in self.active_jobs:
             del self.active_jobs[uuid]
         return data
