@@ -360,7 +360,7 @@ class BaseServer(object):
             del self.active_jobs[uuid]
         return data
 
-    def executeReservation(self, self.function_name, **kwargs):
+    def executeReservation(self, function_name, **kwargs):
         if not isinstance(function_name, str):
             for key in self.functions:
                 if self.functions[key]["function"] == function_name:
