@@ -10,6 +10,8 @@ class BaseResource(Resource):
         Resource.__init__(self)
 
     def _successResponse(self, data):
+        # if isinstance(data, str):
+        #      return data
         return simplejson.dumps(data)
 
     def _errorResponse(self, error):
