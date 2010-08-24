@@ -105,10 +105,6 @@ class CassandraServer(BaseServer):
         return d
 
     def _deleteReservationCallback(self, data, function_name, uuid):
-        for row in data:
-            if row[0] == False:
-                LOGGER.error("Error deleting reservation %s, %s.\n%s" % (function_name, uuid, row[1]))
-                return
         LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
         return True
         
