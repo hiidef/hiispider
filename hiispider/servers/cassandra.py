@@ -66,9 +66,6 @@ class CassandraServer(BaseServer):
             self.cassandra_http,
             self.cassandra_headers,
             rq=self.rq)
-    
-    def executeReservation(self, function_name, **kwargs):
-        return self.createReservation(function_name, **kwargs)
         
     def createReservation(self, function_name, **kwargs):
         uuid = None
@@ -102,11 +99,10 @@ class CassandraServer(BaseServer):
         return error
     
     def deleteReservation(self, uuid, function_name="Unknown"):
-        if self.scheduler_server is not None:
-            LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
-            d = self.cassandra_client.remove(uuid, self.cassandra_cf_content)
-            d.addCallback(self._deleteReservationCallback, function_name, uuid)
-            return d
+        LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
+        d = self.cassandra_client.remove(uuid, self.cassandra_cf_content)
+        d.addCallback(self._deleteReservationCallback, function_name, uuid)
+        return d
 
     def _deleteReservationCallback(self, data, function_name, uuid):
         for row in data:
