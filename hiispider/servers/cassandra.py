@@ -92,26 +92,10 @@ class CassandraServer(BaseServer):
         return d
 
     def _createReservationCallback(self, data, function_name, uuid):
-        if uuid and self.scheduler_server is not None:
-            parameters = {
-                'uuid': uuid,
-                'type': function_name
-            }
-            query_string = urllib.urlencode(parameters)       
-            url = 'http://%s:%s/function/schedulerserver/remoteaddtoheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            LOGGER.info('Sending UUID to scheduler: %s' % url)
-            d = self.getPage(url=url)
-            d.addCallback(self._createReservationCallback2, function_name, uuid, data)
-            d.addErrback(self._createReservationErrback, function_name, uuid)
-            return d
-        else:
-            return self._createReservationCallback2(data, function_name, uuid, data)
-
-    def _createReservationCallback2(self, data, function_name, uuid, reservation_data):
         if not uuid:
-            return reservation_data
+            return data
         else:
-            return {uuid: reservation_data}
+            return {uuid: data}
 
     def _createReservationErrback(self, error, function_name, uuid):
         LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
@@ -120,14 +104,7 @@ class CassandraServer(BaseServer):
     def deleteReservation(self, uuid, function_name="Unknown"):
         if self.scheduler_server is not None:
             LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
-            parameters = {'uuid': uuid}
-            query_string = urllib.urlencode(parameters)
-            url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            deferreds = [
-                self.getPage(url=url),
-                self.cassandra_client.remove(uuid, self.cassandra_cf_content)
-            ]
-            d = DeferredList(deferreds)
+            d = self.cassandra_client.remove(uuid, self.cassandra_cf_content)
             d.addCallback(self._deleteReservationCallback, function_name, uuid)
             return d
 
