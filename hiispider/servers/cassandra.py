@@ -67,7 +67,7 @@ class CassandraServer(BaseServer):
             self.cassandra_headers,
             rq=self.rq)
         
-    def createReservation(self, function_name, **kwargs):
+    def executeReservation(self, function_name, **kwargs):
         uuid = None
         if not isinstance(function_name, str):
             for key in self.functions:
@@ -84,17 +84,17 @@ class CassandraServer(BaseServer):
             kwargs, 
             function_name, 
             uuid=uuid)
-        d.addCallback(self._createReservationCallback, function_name, uuid)
-        d.addErrback(self._createReservationErrback, function_name, uuid)
+        d.addCallback(self._executeReservationCallback, function_name, uuid)
+        d.addErrback(self._executeReservationErrback, function_name, uuid)
         return d
 
-    def _createReservationCallback(self, data, function_name, uuid):
+    def _executeReservationCallback(self, data, function_name, uuid):
         if not uuid:
             return data
         else:
             return {uuid: data}
 
-    def _createReservationErrback(self, error, function_name, uuid):
+    def _executeReservationErrback(self, error, function_name, uuid):
         LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
         return error
     
