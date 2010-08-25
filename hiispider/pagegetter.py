@@ -215,9 +215,12 @@ class PageGetter:
         for row in data:
             if row[0] == False:
                 raise row[1]
+        response = cjson.decode(zlib.decompress(data[1][1].column.value))
+        if len(response) == 0:
+            raise Exception("Empty cached data.")
         data = {
             "headers":cjson.decode(zlib.decompress(data[0][1].column.value)),
-            "response":cjson.decode(zlib.decompress(data[1][1].column.value))
+            "response":response
         }
         return data
     
