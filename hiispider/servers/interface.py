@@ -64,8 +64,6 @@ class InterfaceServer(CassandraServer):
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
-            scheduler_server=scheduler_server,
-            scheduler_server_port=scheduler_server_port,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
             max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
