@@ -319,7 +319,6 @@ class PageGetter:
             request_kwargs, 
             confirm_cache_write,
             http_history=None):
-        LOGGER.critical(str(error))
         try:
             error.raiseException()
         except StaleContentException, e:
