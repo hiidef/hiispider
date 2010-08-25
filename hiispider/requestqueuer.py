@@ -173,11 +173,7 @@ class RequestQueuer(object):
                 timeout=60, 
                 cookies=None, 
                 follow_redirect=True, 
-                prioritize=False,
-                hash_url=None,  
-                cache=None,                  
-                content_sha1=None,        
-                confirm_cache_write=None 
+                prioritize=False
                 ):
         """
         Make an HTTP Request.
@@ -204,11 +200,6 @@ class RequestQueuer(object):
            (Default ``True``)
          * *prioritize* -- Move this request to the front of the request 
            queue. (Default ``False``)         
-         * *hash_url* -- Included for PageGetter compatibility.
-         * *cache* -- Included for PageGetter compatibility.
-         * *content_sha1* -- Included for PageGetter compatibility.
-         * *confirm_cache_write* -- Included for PageGetter compatibility.
-
         """
         if headers is None:
             headers={}

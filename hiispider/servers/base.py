@@ -11,6 +11,7 @@ from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from ..requestqueuer import RequestQueuer
+from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -56,7 +57,7 @@ class BaseServer(object):
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
         if pg is None:
-            self.pg = self.rq
+            self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
         self._setupLogging(log_file, log_directory, log_level)
