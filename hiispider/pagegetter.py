@@ -6,7 +6,7 @@ import hashlib
 import logging
 import time
 import copy
-from twisted.internet.defer import maybeDeferred
+from twisted.internet.defer import maybeDeferred, DeferredList
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8, convertToUnicode
 from .exceptions import StaleContentException
@@ -127,7 +127,6 @@ class PageGetter:
             "follow_redirect":follow_redirect, 
             "prioritize":prioritize}
         cache = int(cache)
-        cache=0
         if cache not in [-1,0,1]:
             raise Exception("Unknown caching mode.")
         if not isinstance(url, str):
@@ -187,10 +186,7 @@ class PageGetter:
         elif cache == 1:
             # Cache mode 1. Use cache immediately, if possible.
             LOGGER.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
-            d = self.cassandra_client.get(
-                request_hash,
-                self.cassandra_cf_cache,
-                column=self.cassandra_http)
+            d = self.getCachedData(request_hash)
             d.addCallback(self._returnCachedData, request_hash)
             d.addErrback(self._requestWithNoCacheHeaders, 
                 request_hash, 
@@ -199,39 +195,65 @@ class PageGetter:
                 confirm_cache_write)    
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d      
-                  
+    
+    def getCachedData(self, request_hash):
+        deferreds = [
+            self.cassandra_client.get(
+                request_hash,
+                self.cassandra_cf_cache,
+                column=self.cassandra_headers),
+            self.cassandra_client.get(
+                request_hash,
+                self.cassandra_cf_cache,
+                column=self.cassandra_http),                
+        ]
+        d = DeferredList(deferreds, consumeErrors=True)
+        d.addCallback(self._getCachedDataCallback)
+        return d
+    
+    def _getCachedDataCallback(self, data):
+        for row in data:
+            if row[0] == False:
+                raise row[1]
+        data = {
+            "headers":cjson.decode(zlib.decompress(data[0][1].column.value)),
+            "response":cjson.decode(zlib.decompress(data[1][1].column.value))
+        }
+        return data
+    
     def _checkCacheHeaders(self, 
-            data, 
+            headers, 
             request_hash, 
             url, 
             request_kwargs,
             confirm_cache_write,
             content_sha1):
-        data = cjson.decode(zlib.decompress(data.column.value))
+        headers = cjson.decode(zlib.decompress(headers.column.value))
         LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
         http_history = {}
-        #if "content-length" in data["headers"] and int(data["headers"]["content-length"][0]) == 0:
+        #if "content-length" in headers and int(headers["content-length"][0]) == 0:
         #    raise Exception("Zero Content length, do not use as cache.")
-        if "content-sha1" in data["headers"]:
-            http_history["content-sha1"] = data["headers"]["content-sha1"][0]
+        if "content-sha1" in headers:
+            http_history["content-sha1"] = headers["content-sha1"][0]
         # Filter?
-        if "request-failures" in data["headers"]:
-            http_history["request-failures"] = data["headers"]["request-failures"][0].split(",")
-        if "content-changes" in data["headers"]:
-            http_history["content-changes"] = data["headers"]["content-changes"][0].split(",")
+        if "request-failures" in headers:
+            request_failures = headers["request-failures"].split(",")
+            if len(request_failures) > 0:
+                http_history["request-failures"] = request_failures
+        if "content-changes" in headers:
+            content_changes = headers["content-changes"].split(",")
+            if len(content_changes) > 0:
+                http_history["content-changes"] = content_changes
         # If cached data is not stale, return it.
-        if "cache-expires" in data["headers"]:
-            expires = dateutil.parser.parse(data["headers"]["cache-expires"][0])
+        if "cache-expires" in headers:
+            expires = dateutil.parser.parse(headers["cache-expires"][0])
             now = datetime.datetime.now(UTC)
             if expires > now:
                 if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                     LOGGER.debug("Raising StaleContentException (1) on %s" % request_hash)
                     raise StaleContentException()
                 LOGGER.debug("Cached data %s for URL %s is not stale. Getting from Cassandra." % (request_hash, url))
-                d = self.cassandra_client.get(
-                    request_hash,
-                    self.cassandra_cf_cache,
-                    column=self.cassandra_http)
+                d = self.getCachedData(request_hash)
                 d.addCallback(self._returnCachedData, request_hash)
                 d.addErrback(
                     self._requestWithNoCacheHeaders, 
@@ -244,11 +266,11 @@ class PageGetter:
         modified_request_kwargs = copy.deepcopy(request_kwargs)
         # At this point, cached data may or may not be stale.
         # If cached data has an etag header, include it in the request.
-        if "cache-etag" in data["headers"]:
-            modified_request_kwargs["etag"] = data["headers"]["cache-etag"][0]
+        if "cache-etag" in headers:
+            modified_request_kwargs["etag"] = headers["cache-etag"][0]
         # If cached data has a last-modified header, include it in the request.
-        if "cache-last-modified" in data["headers"]:
-            modified_request_kwargs["last_modified"] = data["headers"]["cache-last-modified"][0]
+        if "cache-last-modified" in headers:
+            modified_request_kwargs["last_modified"] = headers["cache-last-modified"][0]
         LOGGER.debug("Requesting %s for URL %s with etag and last-modified headers." % (request_hash, url))
         # Make the request. A callback means a 20x response. An errback 
         # could be a 30x response, indicating the cache is not stale.
@@ -265,7 +287,7 @@ class PageGetter:
             url, 
             request_kwargs, 
             confirm_cache_write,
-            data,
+            headers,
             http_history,
             content_sha1)
         return d
@@ -297,6 +319,7 @@ class PageGetter:
             request_kwargs, 
             confirm_cache_write,
             http_history=None):
+        LOGGER.critical(str(error))
         try:
             error.raiseException()
         except StaleContentException, e:
@@ -366,7 +389,7 @@ class PageGetter:
             url, 
             request_kwargs,  
             confirm_cache_write,
-            data,
+            previous_headers,
             http_history,
             content_sha1):
         if error.value.status == "304":
@@ -374,10 +397,7 @@ class PageGetter:
                 LOGGER.debug("Raising StaleContentException (3) on %s" % request_hash)
                 raise StaleContentException()
             LOGGER.debug("Request %s for URL %s hasn't been modified since it was last downloaded. Getting data from Cassandra." % (request_hash, url))
-            d = self.cassandra_client.get(
-                request_hash,
-                self.cassandra_cf_cache,
-                column=self.cassandra_http)
+            d = self.getCachedData(request_hash)
             d.addCallback(self._returnCachedData, request_hash)
             d.addErrback(
                 self._requestWithNoCacheHeaders, 
@@ -397,14 +417,11 @@ class PageGetter:
             http_history["request-failures"] = http_history["request-failures"][-3:]
             LOGGER.debug("Writing data for failed request %s to Cassandra. %s" % (request_hash, error))
             headers = {}
-            for key in data["headers"]:
-                headers[key] = data["headers"][key][0]
             headers["request-failures"] = ",".join(http_history["request-failures"])
             d = self.cassandra_client.batch_insert(
                 request_hash, 
                 self.cassandra_cf_cache, 
                 {
-                    self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
                     self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
                 },
             )
@@ -417,7 +434,6 @@ class PageGetter:
         return ReportedFailure(error)
         
     def _returnCachedData(self, data, request_hash):
-        data = cjson.decode(zlib.decompress(data.column.value))
         LOGGER.debug("Got request %s from Cassandra." % (request_hash))
         data["pagegetter-cache-hit"] = True
         data["status"] = 304

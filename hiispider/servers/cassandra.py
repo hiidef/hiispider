@@ -27,8 +27,6 @@ class CassandraServer(BaseServer):
                  cassandra_http=None,
                  cassandra_headers=None,
                  cassandra_error='error',
-                 scheduler_server=None,
-                 scheduler_server_port=5001,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
                  max_simultaneous_requests_per_host=0,
@@ -46,8 +44,6 @@ class CassandraServer(BaseServer):
             log_file=log_file,
             log_directory=log_directory,
             log_level=log_level)
-        self.scheduler_server = scheduler_server
-        self.scheduler_server_port = scheduler_server_port
         self.cassandra_server = cassandra_server
         self.cassandra_port = cassandra_port
         self.cassandra_keyspace = cassandra_keyspace

@@ -84,10 +84,7 @@ class BaseServer(object):
         if log_level in log_levels:
             LOGGER.setLevel(log_levels[log_level])
         else:
-            LOGGER.setLevel(logging.DEBUG)     
-            def start(self):
-                reactor.callWhenRunning(self._start)
-                return self.start_deferred
+            LOGGER.setLevel(logging.DEBUG)
 
     def start(self):
         reactor.callWhenRunning(self._baseStart)
