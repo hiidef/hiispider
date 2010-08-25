@@ -417,13 +417,12 @@ class PageGetter:
             LOGGER.debug("Writing data for failed request %s to Cassandra. %s" % (request_hash, error))
             headers = {}
             headers["request-failures"] = ",".join(http_history["request-failures"])
-            d = self.cassandra_client.batch_insert(
+            encoded_data = zlib.compress(cjson.encode(headers), 1)
+            d = self.cassandra_client.insert(
                 request_hash, 
-                self.cassandra_cf_cache, 
-                {
-                    self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
-                },
-            )
+                self.cassandra_cf_cache,
+                encoded_data,
+                column=self.cassandra_headers)
             if confirm_cache_write:
                 d.addCallback(self._handleRequestWithCacheHeadersErrorCallback, error)
                 return d
