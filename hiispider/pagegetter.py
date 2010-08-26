@@ -197,30 +197,20 @@ class PageGetter:
             return d      
     
     def getCachedData(self, request_hash):
-        deferreds = [
-            self.cassandra_client.get(
+        d = self.cassandra_client.get_slice(
                 request_hash,
                 self.cassandra_cf_cache,
-                column=self.cassandra_headers),
-            self.cassandra_client.get(
-                request_hash,
-                self.cassandra_cf_cache,
-                column=self.cassandra_http),                
-        ]
-        d = DeferredList(deferreds, consumeErrors=True)
+                names=(self.cassandra_headers, self.cassandra_http))
         d.addCallback(self._getCachedDataCallback)
         return d
     
-    def _getCachedDataCallback(self, data):
-        for row in data:
-            if row[0] == False:
-                raise row[1]
-        response = cjson.decode(zlib.decompress(data[1][1].column.value))
+    def _getCachedDataCallback(self, cached_data):
+        response = cjson.decode(zlib.decompress(cached_data[1].column.value))
         if len(response) == 0:
             raise Exception("Empty cached data.")
         data = {
-            "headers":cjson.decode(zlib.decompress(data[0][1].column.value)),
-            "response":response
+            "headers": cjson.decode(zlib.decompress(cached_data[0].column.value)),
+            "response": response
         }
         return data
     
