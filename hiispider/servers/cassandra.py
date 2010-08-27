@@ -115,7 +115,7 @@ class CassandraServer(BaseServer):
                 self.cassandra_cf_content, 
                 encoded_data,
                 column=self.cassandra_content)
-            d.addErrback(self._exposedFunctionErrback2, function_name, uuid)
+            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
         
     def _callExposedFunctionErrback(self, error, function_name, uuid):
@@ -148,6 +148,6 @@ class CassandraServer(BaseServer):
             column=self.cassandra_content_error)
         return error
 
-    def _exposedFunctionErrback2(self, error, function_name, uuid):
+    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-
+        return data
