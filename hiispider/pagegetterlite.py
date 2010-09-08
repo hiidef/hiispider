@@ -10,6 +10,8 @@ from twisted.internet.defer import maybeDeferred
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8, convertToUnicode
 from .exceptions import StaleContentException
+from twisted.web.client import _parse
+
 
 class ReportedFailure(twisted.python.failure.Failure):
     pass
@@ -34,6 +36,8 @@ LOGGER = logging.getLogger("main")
 
 
 class PageGetter:
+    
+    negitive_cache = {}
     
     def __init__(self, rq=None):
         """
@@ -66,7 +70,8 @@ class PageGetter:
             hash_url=None, 
             cache=0,
             content_sha1=None,
-            confirm_cache_write=False):
+            confirm_cache_write=False,
+            check_only_tld=False):
         """
         Make a cached HTTP Request.
 
@@ -116,6 +121,15 @@ class PageGetter:
             url = convertToUTF8(url)
         if hash_url is not None and not isinstance(hash_url, str):
             hash_url = convertToUTF8(hash_url)
+        # check negitive cache
+        host = _parse(url)[1]
+        # if check_only_tld is true then parse the url down to the top level domain
+        if check_only_tld:
+            host_split = host.split('.', host.count('.')-1)
+            host = host_split[len(host_split)-1]
+        if host in self.negitive_cache:
+            if not self.negitive_cache[host]['timeout'] < time.time():
+                return self.negitive_cache[host]['error'].raiseException()
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
@@ -128,10 +142,13 @@ class PageGetter:
                 agent])).hexdigest()
 
         d = self.rq.getPage(url, **request_kwargs)
-        d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
+        d.addCallback(self._checkForStaleContent, content_sha1, request_hash, host)
+        d.addErrback(self._getPageErrback, host)
         return d
 
-    def _checkForStaleContent(self, data, content_sha1, request_hash):
+    def _checkForStaleContent(self, data, content_sha1, request_hash, host):
+        if host in self.negitive_cache:
+            del self.negitive_cache[host]
         if "content-sha1" not in data:
             data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
@@ -139,3 +156,20 @@ class PageGetter:
             raise StaleContentException(content_sha1)
         else:
             return data
+            
+    def _getPageErrback(self, error, host):
+        if not host in self.negitive_cache:
+            self.negitive_cache[host] = {
+                'timeout': time.time() + 300,
+                'retries': 1,
+                'error': error
+            }
+        else:
+            if self.negitive_cache[host]['retries'] <= 5:
+                self.negitive_cache[host]['timeout'] = time.time() + 600
+                self.negitive_cache[host]['retries'] += 1
+            else:
+                self.negitive_cache[host]['timeout'] = time.time() + 3600
+                self.negitive_cache[host]['retries'] += 1
+            self.negitive_cache[host]['error'] = error
+        error.raiseException()
