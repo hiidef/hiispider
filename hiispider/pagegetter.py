@@ -36,6 +36,8 @@ LOGGER = logging.getLogger("main")
 
 class PageGetter:
     
+    negitive_cache = {}
+    
     def __init__(self, 
         cassandra_client, 
         cassandra_cf_cache,
@@ -83,7 +85,8 @@ class PageGetter:
             hash_url=None, 
             cache=0,
             content_sha1=None,
-            confirm_cache_write=False):
+            confirm_cache_write=False,
+            check_only_tld=False):
         """
         Make a cached HTTP Request.
 
@@ -114,7 +117,8 @@ class PageGetter:
          * *content_sha1* -- SHA-1 hash of content. If this matches the 
            hash of data returned by the resource, raises a 
            StaleContentException.  
-         * *confirm_cache_write* -- Wait to confirm cache write before returning.       
+         * *confirm_cache_write* -- Wait to confirm cache write before returning.
+         * *check_only_tld* -- for negitive cache, check only the top level domain name
         """ 
         request_kwargs = {
             "method":method.upper(), 
@@ -132,6 +136,16 @@ class PageGetter:
             url = convertToUTF8(url)
         if hash_url is not None and not isinstance(hash_url, str):
             hash_url = convertToUTF8(hash_url)
+        # check negitive cache
+        host = _parse(url)[1]
+        # if check_only_tld is true then parse the url down to the top level domain
+        if check_only_tld:
+            host_split = host.split('.', host.count('.')-1)
+            host = host_split[len(host_split)-1]
+        if host in self.negitive_cache:
+            if not self.negitive_cache[host]['timeout'] < time.time():
+                LOGGER.error('Found %s in negitive cache, raising last known exception' % host)
+                return self.negitive_cache[host]['error'].raiseException()
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
@@ -348,8 +362,29 @@ class PageGetter:
             request_hash, 
             url, 
             error))
+        try:
+            status = int(error.value.status)
+        except:
+            value = 500
+        if status >= 500:
+            if not host in self.negitive_cache:
+                LOGGER.error('Adding %s to negitive cache' % host)
+                self.negitive_cache[host] = {
+                    'timeout': time.time() + 300,
+                    'retries': 1,
+                    'error': error
+                }
+            else:
+                if self.negitive_cache[host]['retries'] <= 5:
+                    self.negitive_cache[host]['timeout'] = time.time() + 600
+                    self.negitive_cache[host]['retries'] += 1
+                else:
+                    self.negitive_cache[host]['timeout'] = time.time() + 3600
+                    self.negitive_cache[host]['retries'] += 1
+                self.negitive_cache[host]['error'] = error
+                LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
         if http_history is None:
-            http_history = {} 
+            http_history = {}
         if "request-failures" not in http_history:
             http_history["request-failures"] = [str(int(self.time_offset + time.time()))]
         else:

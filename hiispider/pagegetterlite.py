@@ -180,5 +180,5 @@ class PageGetter:
                     self.negitive_cache[host]['timeout'] = time.time() + 3600
                     self.negitive_cache[host]['retries'] += 1
                 self.negitive_cache[host]['error'] = error
-                LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, negitive_cache[host]['retries']))
+                LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
         error.raiseException()
