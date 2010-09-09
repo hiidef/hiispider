@@ -158,7 +158,6 @@ class PageGetter:
             return data
             
     def _getPageErrback(self, error, host):
-        import pdb;pdb.set_trace()
         try:
             status = int(error.value.status)
         except:
