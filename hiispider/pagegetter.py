@@ -7,7 +7,6 @@ import logging
 import time
 import copy
 from twisted.internet.defer import maybeDeferred, DeferredList
-from twisted.protocols.memcache import MemCacheProtocol, DEFAULT_PORT
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8, convertToUnicode
 from .exceptions import StaleContentException
@@ -38,23 +37,26 @@ LOGGER = logging.getLogger("main")
 class PageGetter:
     
     def __init__(self, 
-        memcached_hosts=None,
+        cassandra_client, 
+        cassandra_cf_cache,
+        cassandra_http,
+        cassandra_headers,
         time_offset=0,
         rq=None):
         """
         Create an Cassandra based HTTP cache.
 
         **Arguments:**
-         * *memcached_hosst* -- list of memcached hosts /w ports ['127.0.0.1:11211'].
-
+            * *cassandra_client* -- Cassandra client object.
+            * *cassandra_cf_cache -- Cassandra CF to use for the HTTP cache.
         **Keyword arguments:**
          * *rq* -- Request Queuer object. (Default ``None``)      
 
         """
-        # Create Memcached client
-        self.memc_ClientCreator = protocol.ClientCreator(
-            reactor, MemCacheProtocol)
-        self.memc = yield self.memc_ClientCreator.connectTCP(self.memcached_host, self.memcached_port)
+        self.cassandra_client = cassandra_client
+        self.cassandra_cf_cache = cassandra_cf_cache
+        self.cassandra_http = cassandra_http
+        self.cassandra_headers = cassandra_headers
         self.time_offset = time_offset
         if rq is None:
             self.rq = RequestQueuer()
