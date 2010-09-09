@@ -158,18 +158,24 @@ class PageGetter:
             return data
             
     def _getPageErrback(self, error, host):
-        if not host in self.negitive_cache:
-            self.negitive_cache[host] = {
-                'timeout': time.time() + 300,
-                'retries': 1,
-                'error': error
-            }
-        else:
-            if self.negitive_cache[host]['retries'] <= 5:
-                self.negitive_cache[host]['timeout'] = time.time() + 600
-                self.negitive_cache[host]['retries'] += 1
+        import pdb;pdb.set_trace()
+        try:
+            status = int(error.value.status)
+        except:
+            value = 500
+        if status >= 500:
+            if not host in self.negitive_cache:
+                self.negitive_cache[host] = {
+                    'timeout': time.time() + 300,
+                    'retries': 1,
+                    'error': error
+                }
             else:
-                self.negitive_cache[host]['timeout'] = time.time() + 3600
-                self.negitive_cache[host]['retries'] += 1
-            self.negitive_cache[host]['error'] = error
+                if self.negitive_cache[host]['retries'] <= 5:
+                    self.negitive_cache[host]['timeout'] = time.time() + 600
+                    self.negitive_cache[host]['retries'] += 1
+                else:
+                    self.negitive_cache[host]['timeout'] = time.time() + 3600
+                    self.negitive_cache[host]['retries'] += 1
+                self.negitive_cache[host]['error'] = error
         error.raiseException()
