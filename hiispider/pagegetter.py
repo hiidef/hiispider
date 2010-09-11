@@ -374,7 +374,7 @@ class PageGetter:
         try:
             status = int(error.value.status)
         except:
-            value = 500
+            status = 500
         if status >= 500:
             if not host in self.negitive_cache:
                 LOGGER.error('Adding %s to negitive cache' % host)
