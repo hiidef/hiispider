@@ -11,6 +11,8 @@ from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8, convertToUnicode
 from .exceptions import StaleContentException
 import zlib
+from twisted.web.client import _parse
+
 
 class ReportedFailure(twisted.python.failure.Failure):
     pass
@@ -172,7 +174,8 @@ class PageGetter:
                 request_hash, 
                 url, 
                 confirm_cache_write,
-                request_kwargs)
+                request_kwargs,
+                host=host)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
             return d
         elif cache == 0:
@@ -193,7 +196,8 @@ class PageGetter:
                 request_hash, 
                 url, 
                 request_kwargs,
-                confirm_cache_write)  
+                confirm_cache_write,
+                host=host)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d
         elif cache == 1:
@@ -205,7 +209,8 @@ class PageGetter:
                 request_hash, 
                 url, 
                 request_kwargs,
-                confirm_cache_write)    
+                confirm_cache_write,
+                host=host)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d      
     
@@ -267,7 +272,8 @@ class PageGetter:
                     url,
                     request_kwargs, 
                     confirm_cache_write,
-                    http_history=http_history)
+                    http_history=http_history,
+                    host=host)
                 return d
         modified_request_kwargs = copy.deepcopy(request_kwargs)
         # At this point, cached data may or may not be stale.
@@ -324,7 +330,8 @@ class PageGetter:
             url, 
             request_kwargs, 
             confirm_cache_write,
-            http_history=None):
+            http_history=None,
+            host=None):
         try:
             error.raiseException()
         except StaleContentException, e:
@@ -347,7 +354,8 @@ class PageGetter:
             url, 
             confirm_cache_write,
             request_kwargs,
-            http_history=http_history)
+            http_history=http_history,
+            host=host)
         return d        
     
     def _requestWithNoCacheHeadersErrback(self, 
@@ -356,7 +364,8 @@ class PageGetter:
             url, 
             confirm_cache_write,
             request_kwargs,
-            http_history=None):
+            http_history=None,
+            host=None):
         LOGGER.error(error.value.__dict__)
         LOGGER.error("Unable to get request %s for URL %s.\n%s" % (
             request_hash, 
