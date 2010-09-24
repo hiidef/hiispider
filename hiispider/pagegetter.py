@@ -39,6 +39,7 @@ LOGGER = logging.getLogger("main")
 class PageGetter:
     
     negitive_cache = {}
+    negitive_req_cache = {}
     
     def __init__(self, 
         cassandra_client, 
@@ -145,9 +146,14 @@ class PageGetter:
             host_split = host.split('.', host.count('.')-1)
             host = host_split[len(host_split)-1]
         if host in self.negitive_cache:
-            if not self.negitive_cache[host]['timeout'] < time.time():
+            if self.negitive_cache[host]['timeout'] > time.time():
                 LOGGER.error('Found %s in negitive cache, raising last known exception' % host)
                 return self.negitive_cache[host]['error'].raiseException()
+            else:
+                try:
+                    del self.negitive_cache[host]
+                except:
+                    pass
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
@@ -158,6 +164,17 @@ class PageGetter:
             request_hash = hashlib.sha1(cjson.encode([
                 hash_url, 
                 agent])).hexdigest()
+        # check to see if the request hash is in the negitive_req_cache
+        if request_hash in self.negitive_req_cache:
+            if self.negitive_req_cache[request_hash]['timeout'] > time.time():
+                LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
+                return self.negitive_req_cache[hash_url]['error'].raiseException()
+            else:
+                try:
+                    LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
+                    del self.negitive_req_cache[request_hash]
+                except:
+                    pass
         if request_kwargs["method"] != "GET":
             d = self.rq.getPage(url, **request_kwargs)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
@@ -191,7 +208,8 @@ class PageGetter:
                 url,  
                 request_kwargs,
                 confirm_cache_write,
-                content_sha1)
+                content_sha1,
+                host=host)
             d.addErrback(self._requestWithNoCacheHeaders, 
                 request_hash, 
                 url, 
@@ -238,7 +256,8 @@ class PageGetter:
             url, 
             request_kwargs,
             confirm_cache_write,
-            content_sha1):
+            content_sha1,
+            host=None):
         headers = cjson.decode(zlib.decompress(headers.column.value))
         LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
         http_history = {}
@@ -375,7 +394,24 @@ class PageGetter:
             status = int(error.value.status)
         except:
             status = 500
-        if status >= 500:
+        if status >= 400 and status < 500:
+            if not request_hash in self.negitive_req_cache:
+                LOGGER.error('Adding request hash %s to negitive request cache' % request_hash)
+                self.negitive_req_cache[request_hash] = {
+                    'timeout': time.time() + 600,
+                    'retries': 1,
+                    'error': error
+                }
+            else:
+                if self.negitive_req_cache[request_hash]['retries'] <= 5:
+                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 1200
+                    self.negitive_req_cache[request_hash]['retries'] += 1
+                else:
+                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 7200
+                    self.negitive_req_cache[request_hash]['retries'] += 1
+                self.negitive_req_cache[request_hash]['error'] = error
+                LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, self.negitive_req_cache[request_hash]['retries']))
+        elif status >= 500:
             if not host in self.negitive_cache:
                 LOGGER.error('Adding %s to negitive cache' % host)
                 self.negitive_cache[host] = {
@@ -494,7 +530,7 @@ class PageGetter:
             confirm_cache_write,
             http_history=None):
         if len(data["response"]) == 0:
-            return self._storeDataErrback(Failure(exc_value=Exception("Response data is of length 0")), response_data, request_hash)
+            return self._storeDataErrback(Failure(exc_value=Exception("Response data is of length 0")), data, request_hash)
         #data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
         if http_history is None:
             http_history = {} 
