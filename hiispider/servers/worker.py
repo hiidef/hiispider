@@ -8,7 +8,7 @@ from MySQLdb.cursors import DictCursor
 from twisted.internet import reactor, protocol, task
 from twisted.enterprise import adbapi
 from twisted.web import server
-from twisted.protocols.memcache import MemCacheProtocol, DEFAULT_PORT
+import txredisapi
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
 from twisted.internet.threads import deferToThread
 from uuid import UUID, uuid4
@@ -49,7 +49,7 @@ class WorkerServer(CassandraServer):
             amqp_vhost=None,
             amqp_queue=None,
             amqp_exchange=None,
-            memcached_host=None,
+            redis_hosts=None,
             scheduler_server=None,
             scheduler_server_port=5001,
             service_mapping=None,
@@ -57,7 +57,6 @@ class WorkerServer(CassandraServer):
             amqp_port=5672,
             amqp_prefetch_count=200,
             mysql_port=3306,
-            memcached_port=11211,
             max_simultaneous_requests=100,
             max_requests_per_host_per_second=0,
             max_simultaneous_requests_per_host=0,
@@ -84,11 +83,8 @@ class WorkerServer(CassandraServer):
         self.cassandra_http=cassandra_http
         self.cassandra_headers=cassandra_headers
         self.cassandra_content=cassandra_content
-        # Create Memcached client
-        self.memcached_host = memcached_host
-        self.memcached_port = memcached_port
-        self.memc_ClientCreator = protocol.ClientCreator(
-            reactor, MemCacheProtocol)
+        # Redis
+        self.redis_hosts = redis_hosts
         # Resource Mappings
         self.service_mapping = service_mapping
         self.service_args_mapping = service_args_mapping
@@ -130,9 +126,9 @@ class WorkerServer(CassandraServer):
     @inlineCallbacks
     def _start(self):
         yield self.getNetworkAddress()
-        LOGGER.info('Connecting to memcache.')
-        # Create memcached client
-        self.memc = yield self.memc_ClientCreator.connectTCP(self.memcached_host, self.memcached_port)
+        LOGGER.info('Connecting to redis.')
+        # Create redis client
+        self.redis = yield txredisapi.RedisShardingConnection(self.redis_hosts)
         LOGGER.info('Connecting to broker.')
         self.conn = yield AMQP.createClient(
             self.amqp_host,
@@ -182,12 +178,7 @@ class WorkerServer(CassandraServer):
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
-    
-    
-    @inlineCallbacks
-    def reconnectMemcache(self):
-        self.memc = yield self.memc_ClientCreator.connectTCP(self.memcached_host, self.memcached_port)
-        
+                
     def dequeue(self):
         LOGGER.debug('Pending Deuque: %s / Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.pending_dequeue, self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if len(self.job_queue) <= self.amqp_prefetch_count and not self.pending_dequeue:
@@ -233,7 +224,7 @@ class WorkerServer(CassandraServer):
                     job['kwargs'] = self.mapKwargs(job)
                 if not job.has_key('delivery_tag'):
                     job['delivery_tag'] = msg.delivery_tag
-                # If function asked for fast_cache, try to fetch it from memcache
+                # If function asked for fast_cache, try to fetch it from redis
                 # while it's queued. Go ahead and add it to the queue in the meantime
                 # to speed things up.
                 job["reservation_fast_cache"] = None
@@ -272,10 +263,9 @@ class WorkerServer(CassandraServer):
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        # Save account info in memcached for up to 7 days
         if job.has_key('exposed_function'):
             del(job['exposed_function'])
-        d = self.memc.set(job['uuid'], simplejson.dumps(job), 60*60*24*7)
+        d = self.redis.set(job['uuid'], simplejson.dumps(job))
         d.addCallback(self._executeJobCallback2)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
@@ -288,16 +278,7 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Queued Jobs: %d / Active Jobs: %d' % (len(self.job_queue), len(self.active_jobs)))
         LOGGER.debug('Active Jobs List: %s' % repr(self.active_jobs))
         self.pending_dequeue = False
-        if 'not connected' in str(error):
-            LOGGER.info('Attempting to reconnect to memcached...')
-            d = self.reconnectMemcache()
-            d.addCallback(self._reconnectMemcacheCallback)
-            return d
-        else:
-            return error
-            
-    def _reconnectMemcacheCallback(self, data):
-        return
+        return error
         
     def _basicAckCallback(self, data):
         return
@@ -307,23 +288,23 @@ class WorkerServer(CassandraServer):
         return
         
     def getJob(self, uuid, delivery_tag):
-        d = self.memc.get(uuid)
+        d = self.redis.get(uuid)
         d.addCallback(self._getJobCallback, uuid, delivery_tag)
-        d.addErrback(self.workerErrback, 'Get Job', delivery_tag)
+        d.addErrback(self._getJobErrback, uuid, delivery_tag)
         return d
     
+    def _getJobErrback(self, account, uuid, delivery_tag):
+        LOGGER.debug('Could not find uuid in redis: %s' % uuid)
+        sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
+        d = self.mysql.runQuery(sql)
+        d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
+        d.addErrback(self.workerErrback, uuid, delivery_tag)
+        return d
+        
     def _getJobCallback(self, account, uuid, delivery_tag):
         job = account[1]
-        if not job:
-            LOGGER.debug('Could not find uuid in memcached: %s' % uuid)
-            sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
-            d = self.mysql.runQuery(sql)
-            d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
-            d.addErrback(self.workerErrback, 'Get Job Callback', delivery_tag)
-            return d
-        else:
-            LOGGER.debug('Found uuid in memcached: %s' % uuid)
-            return simplejson.loads(job)
+        LOGGER.debug('Found uuid in redis: %s' % uuid)
+        return simplejson.loads(job)
     
     def getAccountMySQL(self, spider_info, uuid, delivery_tag):
         if spider_info:
@@ -390,7 +371,7 @@ class WorkerServer(CassandraServer):
         raise Exception(message)
     
     def getReservationFastCache(self, uuid):
-        d = self.memc.get("%s_fc" % uuid)
+        d = self.redis.get("%s_fc" % uuid)
         d.addCallback(self._getReservationFastCacheCallback, uuid)
         d.addErrback(self._getReservationFastCacheErrback, uuid)
         return d
@@ -413,7 +394,7 @@ class WorkerServer(CassandraServer):
             raise Exception("ReservationFastCache must be a string.")
         if uuid is None:
             return None
-        d = self.memc.set("%s_fc" % uuid, data, 60*60*24*7)
+        d = self.redis.set("%s_fc" % uuid, data)
         d.addCallback(self._setReservationFastCacheCallback, uuid)
         d.addErrback(self._setReservationFastCacheErrback)
     
