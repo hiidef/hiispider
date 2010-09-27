@@ -165,16 +165,16 @@ class PageGetter:
                 hash_url, 
                 agent])).hexdigest()
         # check to see if the request hash is in the negitive_req_cache
-        if request_hash in self.negitive_req_cache:
-            if self.negitive_req_cache[request_hash]['timeout'] > time.time():
-                LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
-                return self.negitive_req_cache[hash_url]['error'].raiseException()
-            else:
-                try:
-                    LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
-                    del self.negitive_req_cache[request_hash]
-                except:
-                    pass
+        # if request_hash in self.negitive_req_cache:
+        #     if self.negitive_req_cache[request_hash]['timeout'] > time.time():
+        #         LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
+        #         return self.negitive_req_cache[hash_url]['error'].raiseException()
+        #     else:
+        #         try:
+        #             LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
+        #             del self.negitive_req_cache[request_hash]
+        #         except:
+        #             pass
         if request_kwargs["method"] != "GET":
             d = self.rq.getPage(url, **request_kwargs)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
@@ -394,24 +394,24 @@ class PageGetter:
             status = int(error.value.status)
         except:
             status = 500
-        if status >= 400 and status < 500:
-            if not request_hash in self.negitive_req_cache:
-                LOGGER.error('Adding request hash %s to negitive request cache' % request_hash)
-                self.negitive_req_cache[request_hash] = {
-                    'timeout': time.time() + 600,
-                    'retries': 1,
-                    'error': error
-                }
-            else:
-                if self.negitive_req_cache[request_hash]['retries'] <= 5:
-                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 1200
-                    self.negitive_req_cache[request_hash]['retries'] += 1
-                else:
-                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 7200
-                    self.negitive_req_cache[request_hash]['retries'] += 1
-                self.negitive_req_cache[request_hash]['error'] = error
-                LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, self.negitive_req_cache[request_hash]['retries']))
-        elif status >= 500:
+        # if status >= 400 and status < 500:
+        #     if not request_hash in self.negitive_req_cache:
+        #         LOGGER.error('Adding request hash %s to negitive request cache' % request_hash)
+        #         self.negitive_req_cache[request_hash] = {
+        #             'timeout': time.time() + 600,
+        #             'retries': 1,
+        #             'error': error
+        #         }
+        #     else:
+        #         if self.negitive_req_cache[request_hash]['retries'] <= 5:
+        #             self.negitive_req_cache[request_hash]['timeout'] = time.time() + 1200
+        #             self.negitive_req_cache[request_hash]['retries'] += 1
+        #         else:
+        #             self.negitive_req_cache[request_hash]['timeout'] = time.time() + 7200
+        #             self.negitive_req_cache[request_hash]['retries'] += 1
+        #         self.negitive_req_cache[request_hash]['error'] = error
+        #         LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, self.negitive_req_cache[request_hash]['retries']))
+        if status >= 500:
             if not host in self.negitive_cache:
                 LOGGER.error('Adding %s to negitive cache' % host)
                 self.negitive_cache[host] = {
