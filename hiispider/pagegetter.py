@@ -148,7 +148,7 @@ class PageGetter:
         if host in self.negitive_cache:
             if self.negitive_cache[host]['timeout'] > time.time():
                 LOGGER.error('Found %s in negitive cache, raising last known exception' % host)
-                return self.negitive_cache[host]['error'].raiseException()
+                return self.negitive_cache[host]['error']
             else:
                 try:
                     del self.negitive_cache[host]
@@ -168,7 +168,7 @@ class PageGetter:
         if request_hash in self.negitive_req_cache:
             if self.negitive_req_cache[request_hash]['timeout'] > time.time():
                 LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
-                return self.negitive_req_cache[hash_url]['error'].raiseException()
+                return self.negitive_req_cache[hash_url]['error']
             else:
                 try:
                     LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
@@ -411,7 +411,7 @@ class PageGetter:
                     self.negitive_req_cache[request_hash]['retries'] += 1
                 self.negitive_req_cache[request_hash]['error'] = error
                 LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, self.negitive_req_cache[request_hash]['retries']))
-        elif status >= 500:
+        if status >= 500:
             if not host in self.negitive_cache:
                 LOGGER.error('Adding %s to negitive cache' % host)
                 self.negitive_cache[host] = {

@@ -135,17 +135,17 @@ class CassandraServer(BaseServer):
         except:
             pass
         # save error in a error column in the content CF
-        data = {
-            'msg': error.getErrorMessage(),
-            'traceback': error.getTraceback(),
-            'timestamp': datetime.now().isoformat(),
-        }
-        encoded_data = zlib.compress(cjson.encode(data))
-        self.cassandra_client.insert(
-            uuid,
-            self.cassandra_cf_content,
-            encoded_data,
-            column=self.cassandra_content_error)
+        # data = {
+        #     'msg': error.getErrorMessage(),
+        #     'traceback': error.getTraceback(),
+        #     'timestamp': datetime.now().isoformat(),
+        # }
+        # encoded_data = zlib.compress(cjson.encode(data))
+        # self.cassandra_client.insert(
+        #     uuid,
+        #     self.cassandra_cf_content,
+        #     encoded_data,
+        #     column=self.cassandra_content_error)
         return error
 
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
