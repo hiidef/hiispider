@@ -3,7 +3,7 @@ import zlib
 from datetime import datetime
 import urllib
 from uuid import uuid4
-from twisted.internet.defer import DeferredList
+from twisted.internet.defer import DeferredList, inlineCallbacks
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
@@ -11,9 +11,11 @@ from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
 from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
 from ..exceptions import DeleteReservationException
+import txredisapi
+
 
 class CassandraServer(BaseServer):
-    
+    @inlineCallbacks
     def __init__(self,
                  aws_access_key_id=None,
                  aws_secret_access_key=None,
@@ -27,6 +29,7 @@ class CassandraServer(BaseServer):
                  cassandra_http=None,
                  cassandra_headers=None,
                  cassandra_error='error',
+                 redis_hosts=None,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
                  max_simultaneous_requests_per_host=0,
@@ -56,11 +59,14 @@ class CassandraServer(BaseServer):
         self.cassandra_factory = ManagedCassandraClientFactory()
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
+        # Create redis client
+        self.redis_client = yield txredisapi.RedisShardingConnection(self.redis_hosts)
         self.pg = PageGetter(
             self.cassandra_client, 
             self.cassandra_cf_cache,
             self.cassandra_http,
             self.cassandra_headers,
+            redis_client=self.redis_client,
             rq=self.rq)
         
     def executeReservation(self, function_name, **kwargs):

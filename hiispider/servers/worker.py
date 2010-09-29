@@ -8,7 +8,6 @@ from MySQLdb.cursors import DictCursor
 from twisted.internet import reactor, protocol, task
 from twisted.enterprise import adbapi
 from twisted.web import server
-import txredisapi
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
 from twisted.internet.threads import deferToThread
 from uuid import UUID, uuid4
@@ -112,6 +111,7 @@ class WorkerServer(CassandraServer):
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
+            redis_hosts=redis_hosts,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
             max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
@@ -126,9 +126,6 @@ class WorkerServer(CassandraServer):
     @inlineCallbacks
     def _start(self):
         yield self.getNetworkAddress()
-        LOGGER.info('Connecting to redis.')
-        # Create redis client
-        self.redis = yield txredisapi.RedisShardingConnection(self.redis_hosts)
         LOGGER.info('Connecting to broker.')
         self.conn = yield AMQP.createClient(
             self.amqp_host,
@@ -265,7 +262,7 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
             del(job['exposed_function'])
-        d = self.redis.set(job['uuid'], simplejson.dumps(job))
+        d = self.redis_client.set(job['uuid'], simplejson.dumps(job))
         d.addCallback(self._executeJobCallback2)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
@@ -288,7 +285,7 @@ class WorkerServer(CassandraServer):
         return
         
     def getJob(self, uuid, delivery_tag):
-        d = self.redis.get(uuid)
+        d = self.redis_client.get(uuid)
         d.addCallback(self._getJobCallback, uuid, delivery_tag)
         d.addErrback(self._getJobErrback, uuid, delivery_tag)
         return d
@@ -371,7 +368,7 @@ class WorkerServer(CassandraServer):
         raise Exception(message)
     
     def getReservationFastCache(self, uuid):
-        d = self.redis.get("%s_fc" % uuid)
+        d = self.redis_client.get("fastcache:%s" % uuid)
         d.addCallback(self._getReservationFastCacheCallback, uuid)
         d.addErrback(self._getReservationFastCacheErrback, uuid)
         return d
@@ -394,7 +391,7 @@ class WorkerServer(CassandraServer):
             raise Exception("ReservationFastCache must be a string.")
         if uuid is None:
             return None
-        d = self.redis.set("%s_fc" % uuid, data)
+        d = self.redis_client.set("fastcache:%s" % uuid, data)
         d.addCallback(self._setReservationFastCacheCallback, uuid)
         d.addErrback(self._setReservationFastCacheErrback)
     

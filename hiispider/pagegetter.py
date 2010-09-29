@@ -1,20 +1,20 @@
 import cjson
-import twisted.python.failure
+# import twisted.python.failure
 import datetime
 import dateutil.parser
-import hashlib
+from hashlib import sha1
 import logging
 import time
 import copy
-from twisted.internet.defer import maybeDeferred, DeferredList
+from twisted.internet.defer import maybeDeferred, DeferredList, inlineCallbacks
 from .requestqueuer import RequestQueuer
-from .unicodeconverter import convertToUTF8, convertToUnicode
+from .unicodeconverter import convertToUTF8
 from .exceptions import StaleContentException
-import zlib
 from twisted.web.client import _parse
+from twisted.python.failure import Failure
 
 
-class ReportedFailure(twisted.python.failure.Failure):
+class ReportedFailure(Failure):
     pass
 
 # A UTC class.
@@ -46,6 +46,7 @@ class PageGetter:
         cassandra_cf_cache,
         cassandra_http,
         cassandra_headers,
+        redis_client,
         time_offset=0,
         rq=None):
         """
@@ -62,19 +63,103 @@ class PageGetter:
         self.cassandra_cf_cache = cassandra_cf_cache
         self.cassandra_http = cassandra_http
         self.cassandra_headers = cassandra_headers
+        self.redis_client = redis_client
         self.time_offset = time_offset
         if rq is None:
             self.rq = RequestQueuer()
         else:
             self.rq = rq
     
-    # def clearCache(self):
-    #     """
-    #     Clear the S3 bucket containing the S3 cache.
-    #     """
-    #     d = self.s3.emptyBucket(self.aws_s3_http_cache_bucket)
-    #     return d
+    def _getPageCallback(self, data, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        if request_kwargs["method"] != "GET":
+            d = self.rq.getPage(url, **request_kwargs)
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
+            return d
+        if cache == -1:
+            # Cache mode -1. Bypass cache entirely.
+            LOGGER.debug("Getting request %s for URL %s." % (request_hash, url))
+            d = self.rq.getPage(url, **request_kwargs)
+            d.addCallback(self._returnFreshData, 
+                request_hash, 
+                url,  
+                confirm_cache_write)
+            d.addErrback(self._requestWithNoCacheHeadersErrback,
+                request_hash, 
+                url, 
+                confirm_cache_write,
+                request_kwargs,
+                host=host)
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
+            return d
+        elif cache == 0:
+            # Cache mode 0. Check cache, send cached headers, possibly use cached data.
+            # Check if there is a cache entry, return headers.
+            headers_key = 'headers:%s' % request_hash
+            LOGGER.debug("Checking redis headers key %s for URL %s." % (request_hash, url))
+            d = self.redis_client.get(headers_key)
+            d.addCallback(self._checkCacheHeaders, 
+                request_hash,
+                url,  
+                request_kwargs,
+                confirm_cache_write,
+                content_sha1,
+                host=host)
+            d.addErrback(self._requestWithNoCacheHeaders, 
+                request_hash, 
+                url, 
+                request_kwargs,
+                confirm_cache_write,
+                host=host)
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
+            return d
+        elif cache == 1:
+            # Cache mode 1. Use cache immediately, if possible.
+            LOGGER.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
+            d = self.getCachedData(request_hash)
+            d.addCallback(self._returnCachedData, request_hash)
+            d.addErrback(self._requestWithNoCacheHeaders, 
+                request_hash, 
+                url, 
+                request_kwargs,
+                confirm_cache_write,
+                host=host)
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
+            return d
+                    
+    def _negitiveReqCacheCallback(self, negitive_req_cahe_item, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        negitive_req_cache_item = cjson.decode(negitive_req_cahe_item)
+        if negitive_req_cache_item['timeout'] > time.time():
+            LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
+            return negitive_req_cache_item['error']
+        else:
+            LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
+            self.redis_client.delete(negitive_req_cache_key)
+        d = self._getPageCallback(None, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        return d
         
+    def checkNegitiveReqCache(self, data, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        d = self.redis_client.get(negitive_req_cache_key)
+        d.addCallback(self._negitiveReqCacheCallback, negitive_req_cache_key, url, request_hash, cache, content_sha1, confirm_cache_write, host)
+        d.addErrback(self._getPageCallback, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        return d
+        
+    def _negitiveCacheCallback(self, negitive_cache_host, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        negitive_cache_host = cjson.decode(negitive_cache_host)
+        if negitive_cache_host['timeout'] > time.time():
+            LOGGER.error('Found in negitive cache, raising last known exception')
+            return negitive_cache_host['error']
+        else:
+            LOGGER.error('Removing host %s from the negitive cache' % request_hash)
+            self.redis_client.delete(negitive_cache_host_key)
+        d = self.checkNegitiveReqCache(None, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        return d
+        
+    def checkNegitiveCache(self, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        d = self.redis_client.get(negitive_cache_host_key)
+        d.addCallback(self._negitiveCacheCallback, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        d.addErrback(self.checkNegitiveReqCache, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        return d
+    
     def getPage(self, 
             url, 
             method='GET', 
@@ -145,108 +230,48 @@ class PageGetter:
         if check_only_tld:
             host_split = host.split('.', host.count('.')-1)
             host = host_split[len(host_split)-1]
-        if host in self.negitive_cache:
-            if self.negitive_cache[host]['timeout'] > time.time():
-                LOGGER.error('Found %s in negitive cache, raising last known exception' % host)
-                return self.negitive_cache[host]['error']
-            else:
-                try:
-                    del self.negitive_cache[host]
-                except:
-                    pass
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
-            request_hash = hashlib.sha1(cjson.encode([
+            request_hash = sha1(cjson.encode([
                 url, 
                 agent])).hexdigest()
         else:
-            request_hash = hashlib.sha1(cjson.encode([
+            request_hash = sha1(cjson.encode([
                 hash_url, 
                 agent])).hexdigest()
-        # check to see if the request hash is in the negitive_req_cache
-        if request_hash in self.negitive_req_cache:
-            if self.negitive_req_cache[request_hash]['timeout'] > time.time():
-                LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
-                return self.negitive_req_cache[hash_url]['error']
-            else:
-                try:
-                    LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
-                    del self.negitive_req_cache[request_hash]
-                except:
-                    pass
-        if request_kwargs["method"] != "GET":
-            d = self.rq.getPage(url, **request_kwargs)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-        if cache == -1:
-            # Cache mode -1. Bypass cache entirely.
-            LOGGER.debug("Getting request %s for URL %s." % (request_hash, url))
-            d = self.rq.getPage(url, **request_kwargs)
-            d.addCallback(self._returnFreshData, 
-                request_hash, 
-                url,  
-                confirm_cache_write)
-            d.addErrback(self._requestWithNoCacheHeadersErrback,
-                request_hash, 
-                url, 
-                confirm_cache_write,
-                request_kwargs,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-        elif cache == 0:
-            # Cache mode 0. Check cache, send cached headers, possibly use cached data.
-            LOGGER.debug("Checking Cassandra head object request %s for URL %s." % (request_hash, url))
-            # Check if there is a cache entry, return headers.
-            d = self.cassandra_client.get(
+        negitive_cache_host_key = 'negitive_cache:%s' % host
+        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
+        d = self.checkNegitiveCache(
+                negitive_cache_host_key,
+                negitive_req_cache_key,
+                url,
                 request_hash,
-                self.cassandra_cf_cache,
-                column=self.cassandra_headers)
-            d.addCallback(self._checkCacheHeaders, 
-                request_hash,
-                url,  
                 request_kwargs,
-                confirm_cache_write,
+                cache,
                 content_sha1,
-                host=host)
-            d.addErrback(self._requestWithNoCacheHeaders, 
-                request_hash, 
-                url, 
-                request_kwargs,
                 confirm_cache_write,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
-            return d
-        elif cache == 1:
-            # Cache mode 1. Use cache immediately, if possible.
-            LOGGER.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
-            d = self.getCachedData(request_hash)
-            d.addCallback(self._returnCachedData, request_hash)
-            d.addErrback(self._requestWithNoCacheHeaders, 
-                request_hash, 
-                url, 
-                request_kwargs,
-                confirm_cache_write,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
-            return d      
+                host,
+            )
+        return d
     
     def getCachedData(self, request_hash):
-        d = self.cassandra_client.get_slice(
-                request_hash,
-                self.cassandra_cf_cache,
-                names=(self.cassandra_headers, self.cassandra_http))
+        headers_key = 'headers:%s' % request_hash
+        http_key = 'http:%s' % request_hash
+        deferreds = []
+        deferreds.append(self.redis_client.get(headers_key))
+        deferreds.append(self.redis_client.get(http_key))
+        d = DeferredList(deferreds, consumeErrors=True)        
         d.addCallback(self._getCachedDataCallback)
         return d
     
     def _getCachedDataCallback(self, cached_data):
-        response = cjson.decode(zlib.decompress(cached_data[1].column.value))
+        response = cjson.decode(cached_data[1][1])
         if len(response) == 0:
             raise Exception("Empty cached data.")
         data = {
-            "headers": cjson.decode(zlib.decompress(cached_data[0].column.value)),
-            "response": response
+            "headers": cjson.decode(cached_data[0][1]),
+            "response": response,
         }
         return data
     
@@ -258,7 +283,7 @@ class PageGetter:
             confirm_cache_write,
             content_sha1,
             host=None):
-        headers = cjson.decode(zlib.decompress(headers.column.value))
+        headers = cjson.decode(headers)
         LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
         http_history = {}
         #if "content-length" in headers and int(headers["content-length"][0]) == 0:
@@ -331,7 +356,7 @@ class PageGetter:
             http_history=None):
         LOGGER.debug("Got request %s for URL %s." % (request_hash, url))
         data["pagegetter-cache-hit"] = False
-        data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
+        data["content-sha1"] = sha1(data["response"]).hexdigest()
         if http_history is not None and "content-sha1" in http_history:
             if http_history["content-sha1"] == data["content-sha1"]:
                 return data
@@ -354,12 +379,12 @@ class PageGetter:
         try:
             error.raiseException()
         except StaleContentException, e:
-            LOGGER.debug("Raising StaleContentException (2) on %s" % request_hash)
+            LOGGER.debug("Raising StaleContentException (2) on %s\nError: %s" % (request_hash, str(e)))
             raise StaleContentException()
-        except Exception, e:
+        except Exception:
             pass
         # No header stored in the cache. Make the request.
-        LOGGER.debug("Unable to find header for request %s on Cassandra, fetching from %s." % (request_hash, url))
+        LOGGER.debug("Unable to find header for request %s on redis, fetching from %s." % (request_hash, url))
         d = self.rq.getPage(url, **request_kwargs)
         d.addCallback(
             self._returnFreshData, 
@@ -377,6 +402,50 @@ class PageGetter:
             host=host)
         return d        
     
+    @inlineCallbacks
+    def setNegitiveReqCache(self, request_hash):
+        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
+        if not (yield self.redis_client.exists(negitive_req_cache_key)):
+            negitive_req_cache_item = {
+                'timeout': time.time() + 1800,
+                'retries': 1,
+                'error': error
+            }
+        else:
+            negitive_req_cache_item = yield self.redis_client.get(negitive_req_cache_key)
+            negitive_req_cache_item = cjson.decode(negitive_req_cache_item)
+            if negitive_req_cache_item['retries'] <= 5:
+                negitive_req_cache_item['timeout'] = time.time() + 3600
+                negitive_req_cache_item['retries'] += 1
+            else:
+                negitive_req_cache_item['timeout'] = time.time() + 10800
+                negitive_req_cache_item['retries'] += 1
+            negitive_req_cache_item['error'] = error
+        LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, negitive_req_cache_item['retries']))
+        yield self.redis_client.set(negitive_req_cache_key, cjson.encode(negitive_req_cache_item))
+        
+    @inlineCallbacks
+    def setNegitiveCache(self, host):
+        negitive_cache_key = 'negitive_cache:%s' % host
+        if not (yield self.redis_client.exists(negitive_cache_key)):
+            negitive_cache_item = {
+                'timeout': time.time() + 300,
+                'retries': 1,
+                'error': error
+            }
+        else:
+            negitive_cache_item = yield self.redis_client.get(negitive_cache_key)
+            negitive_cache_item = cjson.decode(negitive_cache_item)
+            if negitive_cache_item['retries'] <= 5:
+                negitive_cache_item['timeout'] = time.time() + 600
+                negitive_cache_item['retries'] += 1
+            else:
+                negitive_cache_item['timeout'] = time.time() + 3600
+                negitive_cache_item['retries'] += 1
+            negitive_cache_item['error'] = error
+        LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, negitive_cache_item['retries']))
+        yield self.redis_client.set(negitive_cache_key, cjson.encode(negitive_cache_item))
+        
     def _requestWithNoCacheHeadersErrback(self, 
             error,     
             request_hash, 
@@ -395,39 +464,9 @@ class PageGetter:
         except:
             status = 500
         if status >= 400 and status < 500:
-            if not request_hash in self.negitive_req_cache:
-                LOGGER.error('Adding request hash %s to negitive request cache' % request_hash)
-                self.negitive_req_cache[request_hash] = {
-                    'timeout': time.time() + 600,
-                    'retries': 1,
-                    'error': error
-                }
-            else:
-                if self.negitive_req_cache[request_hash]['retries'] <= 5:
-                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 1200
-                    self.negitive_req_cache[request_hash]['retries'] += 1
-                else:
-                    self.negitive_req_cache[request_hash]['timeout'] = time.time() + 7200
-                    self.negitive_req_cache[request_hash]['retries'] += 1
-                self.negitive_req_cache[request_hash]['error'] = error
-                LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, self.negitive_req_cache[request_hash]['retries']))
+            self.setNegitiveReqCache(request_hash)
         if status >= 500:
-            if not host in self.negitive_cache:
-                LOGGER.error('Adding %s to negitive cache' % host)
-                self.negitive_cache[host] = {
-                    'timeout': time.time() + 300,
-                    'retries': 1,
-                    'error': error
-                }
-            else:
-                if self.negitive_cache[host]['retries'] <= 5:
-                    self.negitive_cache[host]['timeout'] = time.time() + 600
-                    self.negitive_cache[host]['retries'] += 1
-                else:
-                    self.negitive_cache[host]['timeout'] = time.time() + 3600
-                    self.negitive_cache[host]['retries'] += 1
-                self.negitive_cache[host]['error'] = error
-                LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
+            self.setNegitiveCache(host)
         if http_history is None:
             http_history = {}
         if "request-failures" not in http_history:
@@ -435,17 +474,15 @@ class PageGetter:
         else:
             http_history["request-failures"].append(str(int(self.time_offset + time.time())))
         http_history["request-failures"] = http_history["request-failures"][-3:]
-        LOGGER.debug("Writing data for failed request %s to Cassandra." % request_hash)
+        LOGGER.debug("Writing data for failed request %s to redis." % request_hash)
         headers = {}
         headers["request-failures"] = ",".join(http_history["request-failures"])
-        d = self.cassandra_client.batch_insert(
-            request_hash,
-            self.cassandra_cf_cache,
-            {
-                self.cassandra_http: zlib.compress(cjson.encode(""), 1),
-                self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
-            },
-        )
+        headers_key = 'headers:%s' % request_hash
+        http_key = 'http:%s' % request_hash
+        deferreds = []
+        deferreds.append(self.redis_client.set(headers_key, cjson.encode(headers)))
+        deferreds.append(self.redis_client.set(http_key, cjson.encode("")))
+        d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._requestWithNoCacheHeadersErrbackCallback, error)
             return d       
@@ -486,15 +523,12 @@ class PageGetter:
             else:
                 http_history["request-failures"].append(str(int(self.time_offset + time.time())))
             http_history["request-failures"] = http_history["request-failures"][-3:]
-            LOGGER.debug("Writing data for failed request %s to Cassandra. %s" % (request_hash, error))
+            LOGGER.debug("Writing data for failed request %s to redis. %s" % (request_hash, error))
             headers = {}
             headers["request-failures"] = ",".join(http_history["request-failures"])
-            encoded_data = zlib.compress(cjson.encode(headers), 1)
-            d = self.cassandra_client.insert(
-                request_hash, 
-                self.cassandra_cf_cache,
-                encoded_data,
-                column=self.cassandra_headers)
+            encoded_data = cjson.encode(headers)
+            headers_key = 'headers:%s' % request_hash
+            d = self.redis_client.set(headers_key, encoded_data)
             if confirm_cache_write:
                 d.addCallback(self._handleRequestWithCacheHeadersErrorCallback, error)
                 return d
@@ -512,7 +546,7 @@ class PageGetter:
             data["content-sha1"] = data["headers"]["content-sha1"][0]
             del data["headers"]["content-sha1"]
         else:
-            data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
+            data["content-sha1"] = sha1(data["response"]).hexdigest()
         if "cache-expires" in data["headers"]:
             data["headers"]["expires"] = data["headers"]["cache-expires"]
             del data["headers"]["cache-expires"]
@@ -531,7 +565,7 @@ class PageGetter:
             http_history=None):
         if len(data["response"]) == 0:
             return self._storeDataErrback(Failure(exc_value=Exception("Response data is of length 0")), data, request_hash)
-        #data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
+        #data["content-sha1"] = sha1(data["response"]).hexdigest()
         if http_history is None:
             http_history = {} 
         if "content-sha1" not in http_history:
@@ -541,7 +575,6 @@ class PageGetter:
         if data["content-sha1"] != http_history["content-sha1"]:
             http_history["content-changes"].append(str(int(self.time_offset + time.time())))
         http_history["content-changes"] = http_history["content-changes"][-10:]
-        LOGGER.debug("Writing data for request %s to Cassandra." % request_hash)
         headers = {}
         http_history["content-changes"] = filter(lambda x:len(x) > 0, http_history["content-changes"])
         headers["content-changes"] = ",".join(http_history["content-changes"])
@@ -556,15 +589,14 @@ class PageGetter:
         if "last-modified" in data["headers"]:
             headers["cache-last-modified"] = data["headers"]["last-modified"][0]
         if "content-type" in data["headers"]:
-            content_type = data["headers"]["content-type"][0]
-        d = self.cassandra_client.batch_insert(
-            request_hash, 
-            self.cassandra_cf_cache, 
-            {
-                self.cassandra_http: zlib.compress(cjson.encode(data["response"]), 1),
-                self.cassandra_headers: zlib.compress(cjson.encode(headers), 1),
-            },
-        )
+            headers["content_type"] = data["headers"]["content-type"][0]
+        headers_key = 'headers:%s' % request_hash
+        http_key = 'http:%s' % request_hash
+        LOGGER.debug("Writing data for request %s to redis." % request_hash)
+        deferreds = []
+        deferreds.append(self.redis_client.set(headers_key, cjson.encode(headers)))
+        deferreds.append(self.redis_client.set(http_key, cjson.encode(data["response"])))
+        d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._storeDataCallback, data)
             d.addErrback(self._storeDataErrback, data, request_hash)
@@ -580,7 +612,7 @@ class PageGetter:
 
     def _checkForStaleContent(self, data, content_sha1, request_hash):
         if "content-sha1" not in data:
-            data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
+            data["content-sha1"] = sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
             LOGGER.debug("Raising StaleContentException (4) on %s" % request_hash)
             raise StaleContentException(content_sha1)
