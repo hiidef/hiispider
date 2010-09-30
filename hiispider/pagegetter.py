@@ -1,12 +1,12 @@
 import cjson
-# import twisted.python.failure
+import cPickle as pickle
 import datetime
 import dateutil.parser
 from hashlib import sha1
 import logging
 import time
 import copy
-from twisted.internet.defer import maybeDeferred, DeferredList, inlineCallbacks
+from twisted.internet.defer import maybeDeferred, DeferredList
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8
 from .exceptions import StaleContentException
@@ -70,7 +70,7 @@ class PageGetter:
         else:
             self.rq = rq
     
-    def _getPageCallback(self, data, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+    def _getPageCallback(self, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if request_kwargs["method"] != "GET":
             d = self.rq.getPage(url, **request_kwargs)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
@@ -104,12 +104,6 @@ class PageGetter:
                 confirm_cache_write,
                 content_sha1,
                 host=host)
-            d.addErrback(self._requestWithNoCacheHeaders, 
-                request_hash, 
-                url, 
-                request_kwargs,
-                confirm_cache_write,
-                host=host)
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d
         elif cache == 1:
@@ -126,38 +120,38 @@ class PageGetter:
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d
                     
-    def _negitiveReqCacheCallback(self, negitive_req_cahe_item, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        negitive_req_cache_item = cjson.decode(negitive_req_cahe_item)
-        if negitive_req_cache_item['timeout'] > time.time():
-            LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
-            return negitive_req_cache_item['error']
-        else:
-            LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
-            self.redis_client.delete(negitive_req_cache_key)
-        d = self._getPageCallback(None, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+    def _negitiveReqCacheCallback(self, negitive_req_cache_item, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        if negitive_req_cache_item:
+            negitive_req_cache_item = pickle.loads(negitive_req_cache_item)
+            if negitive_req_cache_item['timeout'] > time.time():
+                LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
+                return negitive_req_cache_item['error']
+            else:
+                LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
+                self.redis_client.delete(negitive_req_cache_key)
+        d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
     def checkNegitiveReqCache(self, data, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         d = self.redis_client.get(negitive_req_cache_key)
-        d.addCallback(self._negitiveReqCacheCallback, negitive_req_cache_key, url, request_hash, cache, content_sha1, confirm_cache_write, host)
-        d.addErrback(self._getPageCallback, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+        d.addCallback(self._negitiveReqCacheCallback, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
     def _negitiveCacheCallback(self, negitive_cache_host, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        negitive_cache_host = cjson.decode(negitive_cache_host)
-        if negitive_cache_host['timeout'] > time.time():
-            LOGGER.error('Found in negitive cache, raising last known exception')
-            return negitive_cache_host['error']
-        else:
-            LOGGER.error('Removing host %s from the negitive cache' % request_hash)
-            self.redis_client.delete(negitive_cache_host_key)
+        if negitive_cache_host:
+            negitive_cache_host = pickle.loads(negitive_cache_host)
+            if negitive_cache_host['timeout'] > time.time():
+                LOGGER.error('Found in negitive cache, raising last known exception')
+                return negitive_cache_host['error']
+            else:
+                LOGGER.error('Removing host %s from the negitive cache' % request_hash)
+                self.redis_client.delete(negitive_cache_host_key)
         d = self.checkNegitiveReqCache(None, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
     def checkNegitiveCache(self, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         d = self.redis_client.get(negitive_cache_host_key)
         d.addCallback(self._negitiveCacheCallback, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        d.addErrback(self.checkNegitiveReqCache, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
     
     def getPage(self, 
@@ -283,70 +277,81 @@ class PageGetter:
             confirm_cache_write,
             content_sha1,
             host=None):
-        headers = cjson.decode(headers)
-        LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
-        http_history = {}
-        #if "content-length" in headers and int(headers["content-length"][0]) == 0:
-        #    raise Exception("Zero Content length, do not use as cache.")
-        if "content-sha1" in headers:
-            http_history["content-sha1"] = headers["content-sha1"][0]
-        # Filter?
-        if "request-failures" in headers:
-            request_failures = headers["request-failures"].split(",")
-            if len(request_failures) > 0:
-                http_history["request-failures"] = request_failures
-        if "content-changes" in headers:
-            content_changes = headers["content-changes"].split(",")
-            if len(content_changes) > 0:
-                http_history["content-changes"] = content_changes
-        # If cached data is not stale, return it.
-        if "cache-expires" in headers:
-            expires = dateutil.parser.parse(headers["cache-expires"][0])
-            now = datetime.datetime.now(UTC)
-            if expires > now:
-                if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
-                    LOGGER.debug("Raising StaleContentException (1) on %s" % request_hash)
-                    raise StaleContentException()
-                LOGGER.debug("Cached data %s for URL %s is not stale. Getting from Cassandra." % (request_hash, url))
-                d = self.getCachedData(request_hash)
-                d.addCallback(self._returnCachedData, request_hash)
-                d.addErrback(
-                    self._requestWithNoCacheHeaders, 
-                    request_hash, 
-                    url,
-                    request_kwargs, 
-                    confirm_cache_write,
-                    http_history=http_history,
-                    host=host)
-                return d
-        modified_request_kwargs = copy.deepcopy(request_kwargs)
-        # At this point, cached data may or may not be stale.
-        # If cached data has an etag header, include it in the request.
-        if "cache-etag" in headers:
-            modified_request_kwargs["etag"] = headers["cache-etag"][0]
-        # If cached data has a last-modified header, include it in the request.
-        if "cache-last-modified" in headers:
-            modified_request_kwargs["last_modified"] = headers["cache-last-modified"][0]
-        LOGGER.debug("Requesting %s for URL %s with etag and last-modified headers." % (request_hash, url))
-        # Make the request. A callback means a 20x response. An errback 
-        # could be a 30x response, indicating the cache is not stale.
-        d = self.rq.getPage(url, **modified_request_kwargs)
-        d.addCallback(
-            self._returnFreshData, 
-            request_hash,
-            url, 
-            confirm_cache_write,
-            http_history=http_history)
-        d.addErrback(
-            self._handleRequestWithCacheHeadersError, 
-            request_hash, 
-            url, 
-            request_kwargs, 
-            confirm_cache_write,
-            headers,
-            http_history,
-            content_sha1)
-        return d
+        if not headers:
+            d = self._requestWithNoCacheHeaders(
+                None,
+                request_hash, 
+                url,
+                request_kwargs,
+                confirm_cache_write,
+                host=host,
+            )
+            return d
+        else:
+            headers = cjson.decode(headers)
+            LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
+            http_history = {}
+            #if "content-length" in headers and int(headers["content-length"][0]) == 0:
+            #    raise Exception("Zero Content length, do not use as cache.")
+            if "content-sha1" in headers:
+                http_history["content-sha1"] = headers["content-sha1"][0]
+            # Filter?
+            if "request-failures" in headers:
+                request_failures = headers["request-failures"].split(",")
+                if len(request_failures) > 0:
+                    http_history["request-failures"] = request_failures
+            if "content-changes" in headers:
+                content_changes = headers["content-changes"].split(",")
+                if len(content_changes) > 0:
+                    http_history["content-changes"] = content_changes
+            # If cached data is not stale, return it.
+            if "cache-expires" in headers:
+                expires = dateutil.parser.parse(headers["cache-expires"][0])
+                now = datetime.datetime.now(UTC)
+                if expires > now:
+                    if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
+                        LOGGER.debug("Raising StaleContentException (1) on %s" % request_hash)
+                        raise StaleContentException()
+                    LOGGER.debug("Cached data %s for URL %s is not stale. Getting from Cassandra." % (request_hash, url))
+                    d = self.getCachedData(request_hash)
+                    d.addCallback(self._returnCachedData, request_hash)
+                    d.addErrback(
+                        self._requestWithNoCacheHeaders, 
+                        request_hash, 
+                        url,
+                        request_kwargs, 
+                        confirm_cache_write,
+                        http_history=http_history,
+                        host=host)
+                    return d
+            modified_request_kwargs = copy.deepcopy(request_kwargs)
+            # At this point, cached data may or may not be stale.
+            # If cached data has an etag header, include it in the request.
+            if "cache-etag" in headers:
+                modified_request_kwargs["etag"] = headers["cache-etag"][0]
+            # If cached data has a last-modified header, include it in the request.
+            if "cache-last-modified" in headers:
+                modified_request_kwargs["last_modified"] = headers["cache-last-modified"][0]
+            LOGGER.debug("Requesting %s for URL %s with etag and last-modified headers." % (request_hash, url))
+            # Make the request. A callback means a 20x response. An errback 
+            # could be a 30x response, indicating the cache is not stale.
+            d = self.rq.getPage(url, **modified_request_kwargs)
+            d.addCallback(
+                self._returnFreshData, 
+                request_hash,
+                url, 
+                confirm_cache_write,
+                http_history=http_history)
+            d.addErrback(
+                self._handleRequestWithCacheHeadersError, 
+                request_hash, 
+                url, 
+                request_kwargs, 
+                confirm_cache_write,
+                headers,
+                http_history,
+                content_sha1)
+            return d
         
     def _returnFreshData(self, 
             data, 
@@ -400,51 +405,70 @@ class PageGetter:
             request_kwargs,
             http_history=http_history,
             host=host)
-        return d        
-    
-    @inlineCallbacks
-    def setNegitiveReqCache(self, request_hash):
-        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
-        if not (yield self.redis_client.exists(negitive_req_cache_key)):
-            negitive_req_cache_item = {
-                'timeout': time.time() + 1800,
-                'retries': 1,
-                'error': error
-            }
-        else:
-            negitive_req_cache_item = yield self.redis_client.get(negitive_req_cache_key)
-            negitive_req_cache_item = cjson.decode(negitive_req_cache_item)
+        return d
+        
+    def _negitiveCacheWriteCallback(self, data):
+        return
+        
+    def _negitiveCacheWriteErrback(self, error):
+        LOGGER.error('Error writing to negitive cache: %s' % str(error))
+        return
+        
+    def _setNegitiveReqCacheCallback(self, data, error, negitive_req_cache_key):
+        if data:
+            negitive_req_cache_item = pickle.loads(data)
             if negitive_req_cache_item['retries'] <= 5:
                 negitive_req_cache_item['timeout'] = time.time() + 3600
                 negitive_req_cache_item['retries'] += 1
             else:
                 negitive_req_cache_item['timeout'] = time.time() + 10800
                 negitive_req_cache_item['retries'] += 1
-            negitive_req_cache_item['error'] = error
-        LOGGER.error('Updating negitive request cache for requset hash %s which has failed %d times' % (host, negitive_req_cache_item['retries']))
-        yield self.redis_client.set(negitive_req_cache_key, cjson.encode(negitive_req_cache_item))
-        
-    @inlineCallbacks
-    def setNegitiveCache(self, host):
-        negitive_cache_key = 'negitive_cache:%s' % host
-        if not (yield self.redis_client.exists(negitive_cache_key)):
-            negitive_cache_item = {
-                'timeout': time.time() + 300,
-                'retries': 1,
-                'error': error
-            }
         else:
-            negitive_cache_item = yield self.redis_client.get(negitive_cache_key)
-            negitive_cache_item = cjson.decode(negitive_cache_item)
+            negitive_req_cache_item = {
+                'timeout': time.time() + 1800,
+                'retries': 1,
+            }
+        negitive_req_cache_item['error'] = error
+        LOGGER.error('Updating negitive request cache %s which has failed %d times' % (negitive_req_cache_key, negitive_req_cache_item['retries']))
+        negitive_req_cache_item_pickle = pickle.dumps(negitive_req_cache_item)
+        d = self.redis_client.set(negitive_req_cache_key, negitive_req_cache_item_pickle)
+        d.addCallback(self._negitiveCacheWriteCallback)
+        d.addErrback(self._negitiveCacheWriteErrback)
+        return d
+            
+    def setNegitiveReqCache(self, error, request_hash):
+        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
+        d = self.redis_client.get(negitive_req_cache_key)
+        d.addCallback(self._setNegitiveReqCacheCallback, error, negitive_req_cache_key)
+        return d
+
+    def _setNegitiveCacheCallback(self, data, error, host, negitive_cache_key):
+        if data:
+            negitive_cache_item = pickle.loads(data)
             if negitive_cache_item['retries'] <= 5:
                 negitive_cache_item['timeout'] = time.time() + 600
                 negitive_cache_item['retries'] += 1
             else:
                 negitive_cache_item['timeout'] = time.time() + 3600
                 negitive_cache_item['retries'] += 1
-            negitive_cache_item['error'] = error
+        else:
+            negitive_cache_item = {
+                'timeout': time.time() + 300,
+                'retries': 1,
+            }
+        negitive_cache_item['error'] = error
         LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, negitive_cache_item['retries']))
-        yield self.redis_client.set(negitive_cache_key, cjson.encode(negitive_cache_item))
+        negitive_cache_item_pickle = pickle.dumps(negitive_cache_item)
+        d = self.redis_client.set(negitive_cache_key, negitive_cache_item_pickle)
+        d.addCallback(self._negitiveCacheWriteCallback)
+        d.addErrback(self._negitiveCacheWriteErrback)
+        return d
+            
+    def setNegitiveCache(self, error, host):
+        negitive_cache_key = 'negitive_cache:%s' % host
+        d = self.redis_client.get(negitive_cache_key)
+        d.addCallback(self._setNegitiveCacheCallback, error, host, negitive_cache_key)
+        return d
         
     def _requestWithNoCacheHeadersErrback(self, 
             error,     
@@ -464,9 +488,9 @@ class PageGetter:
         except:
             status = 500
         if status >= 400 and status < 500:
-            self.setNegitiveReqCache(request_hash)
+            self.setNegitiveReqCache(error, request_hash)
         if status >= 500:
-            self.setNegitiveCache(host)
+            self.setNegitiveCache(error, host)
         if http_history is None:
             http_history = {}
         if "request-failures" not in http_history:
