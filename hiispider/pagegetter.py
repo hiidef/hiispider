@@ -122,7 +122,7 @@ class PageGetter:
                     
     def _negitiveReqCacheCallback(self, negitive_req_cache_item, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if negitive_req_cache_item:
-            negitive_req_cache_item = pickle.loads(negitive_req_cache_item)
+            negitive_req_cache_item = pickle.loads(str(negitive_req_cache_item))
             if negitive_req_cache_item['timeout'] > time.time():
                 LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
                 return negitive_req_cache_item['error']
@@ -139,7 +139,7 @@ class PageGetter:
         
     def _negitiveCacheCallback(self, negitive_cache_host, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if negitive_cache_host:
-            negitive_cache_host = pickle.loads(negitive_cache_host)
+            negitive_cache_host = pickle.loads(str(negitive_cache_host))
             if negitive_cache_host['timeout'] > time.time():
                 LOGGER.error('Found in negitive cache, raising last known exception')
                 return negitive_cache_host['error']
@@ -306,8 +306,8 @@ class PageGetter:
                     http_history["content-changes"] = content_changes
             # If cached data is not stale, return it.
             if "cache-expires" in headers:
-                expires = dateutil.parser.parse(headers["cache-expires"][0])
-                now = datetime.datetime.now(UTC)
+                expires = time.mktime(dateutil.parser.parse(headers["cache-expires"][0]).timetuple())
+                now = time.mktime(datetime.datetime.now(UTC).timetuple())
                 if expires > now:
                     if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                         LOGGER.debug("Raising StaleContentException (1) on %s" % request_hash)
@@ -328,10 +328,10 @@ class PageGetter:
             # At this point, cached data may or may not be stale.
             # If cached data has an etag header, include it in the request.
             if "cache-etag" in headers:
-                modified_request_kwargs["etag"] = headers["cache-etag"][0]
+                modified_request_kwargs["etag"] = headers["cache-etag"]
             # If cached data has a last-modified header, include it in the request.
             if "cache-last-modified" in headers:
-                modified_request_kwargs["last_modified"] = headers["cache-last-modified"][0]
+                modified_request_kwargs["last_modified"] = headers["cache-last-modified"]
             LOGGER.debug("Requesting %s for URL %s with etag and last-modified headers." % (request_hash, url))
             # Make the request. A callback means a 20x response. An errback 
             # could be a 30x response, indicating the cache is not stale.
@@ -416,7 +416,7 @@ class PageGetter:
         
     def _setNegitiveReqCacheCallback(self, data, error, negitive_req_cache_key):
         if data:
-            negitive_req_cache_item = pickle.loads(data)
+            negitive_req_cache_item = pickle.loads(str(data))
             if negitive_req_cache_item['retries'] <= 5:
                 negitive_req_cache_item['timeout'] = time.time() + 3600
                 negitive_req_cache_item['retries'] += 1
@@ -444,7 +444,7 @@ class PageGetter:
 
     def _setNegitiveCacheCallback(self, data, error, host, negitive_cache_key):
         if data:
-            negitive_cache_item = pickle.loads(data)
+            negitive_cache_item = pickle.loads(str(data))
             if negitive_cache_item['retries'] <= 5:
                 negitive_cache_item['timeout'] = time.time() + 600
                 negitive_cache_item['retries'] += 1

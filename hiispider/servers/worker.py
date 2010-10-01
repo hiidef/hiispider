@@ -370,22 +370,16 @@ class WorkerServer(CassandraServer):
     def getReservationFastCache(self, uuid):
         d = self.redis_client.get("fastcache:%s" % uuid)
         d.addCallback(self._getReservationFastCacheCallback, uuid)
-        d.addErrback(self._getReservationFastCacheErrback, uuid)
         return d
         
-    def _getReservationFastCacheCallback(self, data, uuid):
-        flags, value = data
+    def _getReservationFastCacheCallback(self, value, uuid):
         if value:
             LOGGER.debug("Successfully got Fast Cache for %s" % uuid)
             return value
         else:
-            LOGGER.debug("Could not get Fast Cache (2) for %s" % uuid)
+            LOGGER.debug("Could not get Fast Cache for %s" % uuid)
             return None
-    
-    def _getReservationFastCacheErrback(self, error, uuid):
-        LOGGER.debug("Could not get Fast Cache (1) for %s" % uuid)
-        return None
-    
+        
     def setReservationFastCache(self, uuid, data):
         if not isinstance(data, str):
             raise Exception("ReservationFastCache must be a string.")
