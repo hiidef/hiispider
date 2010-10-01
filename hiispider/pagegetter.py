@@ -567,7 +567,7 @@ class PageGetter:
         data["status"] = 304
         data["message"] = "Not Modified"
         if "content-sha1" in data["headers"]:
-            data["content-sha1"] = data["headers"]["content-sha1"][0]
+            data["content-sha1"] = data["headers"]["content-sha1"]
             del data["headers"]["content-sha1"]
         else:
             data["content-sha1"] = sha1(data["response"]).hexdigest()
