@@ -213,6 +213,8 @@ class RequestQueuer(object):
         if method.lower() == "post":
             headers["content-type"] = "application/x-www-form-urlencoded"
         if last_modified is not None:
+            if isinstance(last_modified, (list, tuple)):
+                last_modified = last_modified[0]
             time_tuple = dateutil.parser.parse(last_modified).timetuple()
             time_string = time.strftime("%a, %d %b %Y %T %z", time_tuple)
             headers['If-Modified-Since'] = time_string

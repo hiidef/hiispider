@@ -294,7 +294,10 @@ class PageGetter:
             #if "content-length" in headers and int(headers["content-length"][0]) == 0:
             #    raise Exception("Zero Content length, do not use as cache.")
             if "content-sha1" in headers:
-                http_history["content-sha1"] = headers["content-sha1"][0]
+                if isinstance(headers["content-sha1"], (list, tuple)):
+                    http_history["content-sha1"] = headers["content-sha1"][0]
+                else:
+                    http_history["content-sha1"] = headers["content-sha1"]
             # Filter?
             if "request-failures" in headers:
                 request_failures = headers["request-failures"].split(",")
@@ -306,7 +309,9 @@ class PageGetter:
                     http_history["content-changes"] = content_changes
             # If cached data is not stale, return it.
             if "cache-expires" in headers:
-                expires = time.mktime(dateutil.parser.parse(headers["cache-expires"][0]).timetuple())
+                if isinstance(headers["cache-expires"], (list, tuple)):
+                    headers["cache-expires"] = headers["cache-expires"][0]
+                expires = time.mktime(dateutil.parser.parse(headers["cache-expires"]).timetuple())
                 now = time.mktime(datetime.datetime.now(UTC).timetuple())
                 if expires > now:
                     if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
@@ -524,7 +529,11 @@ class PageGetter:
             previous_headers,
             http_history,
             content_sha1):
-        if error.value.status == "304":
+        try:
+            status = int(error.value.status)
+        except:
+            status = 500
+        if status == "304":
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                 LOGGER.debug("Raising StaleContentException (3) on %s" % request_hash)
                 raise StaleContentException()
@@ -603,17 +612,33 @@ class PageGetter:
         http_history["content-changes"] = filter(lambda x:len(x) > 0, http_history["content-changes"])
         headers["content-changes"] = ",".join(http_history["content-changes"])
         headers["content-sha1"] = data["content-sha1"]
-        if "cache-control" in data["headers"]: 
-            if "no-cache" in data["headers"]["cache-control"][0]:
-                return data
+        if "cache-control" in data["headers"]:
+            if isinstance(data["headers"]["cache-control"], (list, tuple)):
+                if "no-cache" in data["headers"]["cache-control"][0]:
+                    return data
+            else:
+                if "no-cache" in data["headers"]["cache-control"]:
+                    return data
         if "expires" in data["headers"]:
-            headers["cache-expires"] = data["headers"]["expires"][0]
+            if isinstance(data["headers"]["expires"], (list, tuple)):
+                headers["cache-expires"] = data["headers"]["expires"][0]
+            else:
+                headers["cache-expires"] = data["headers"]["expires"]
         if "etag" in data["headers"]:
-            headers["cache-etag"] = data["headers"]["etag"][0]
+            if isinstance(data["headers"]["etag"], (list, tuple)):
+                headers["cache-etag"] = data["headers"]["etag"][0]
+            else:
+                headers["cache-etag"] = data["headers"]["etag"]
         if "last-modified" in data["headers"]:
-            headers["cache-last-modified"] = data["headers"]["last-modified"][0]
+            if isinstance(data["headers"]["last-modified"], (list, tuple)):
+                headers["cache-last-modified"] = data["headers"]["last-modified"][0]
+            else:
+                headers["cache-last-modified"] = data["headers"]["last-modified"]
         if "content-type" in data["headers"]:
-            headers["content_type"] = data["headers"]["content-type"][0]
+            if isinstance(data["headers"]["content-type"], (list, tuple)):
+                headers["content_type"] = data["headers"]["content-type"][0]
+            else:
+                headers["content_type"] = data["headers"]["content-type"]
         headers_key = 'headers:%s' % request_hash
         http_key = 'http:%s' % request_hash
         LOGGER.debug("Writing data for request %s to redis." % request_hash)
