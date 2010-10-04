@@ -262,12 +262,22 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
             del(job['exposed_function'])
-        d = self.redis_client.set(job['uuid'], simplejson.dumps(job))
-        d.addCallback(self._executeJobCallback2)
+        # Only cache this when the cache is empty
+        d = self.getJobCache(job['uuid'])
+        d.addCallback(self._executeJobCallback2, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
         
-    def _executeJobCallback2(self, data):
+    def _executeJobCallback2(self, data, job):
+        if data is None:
+            d = self.setJobCache(job)
+            d.addCallback(self._executeJobCallback3)
+            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+            return d
+        else:
+            return None
+
+    def _executeJobCallback3(self, data):
         return
         
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
@@ -395,3 +405,33 @@ class WorkerServer(CassandraServer):
     def _setReservationFastCacheErrback(self, error):
         LOGGER.error(str(error))
         
+    def getJobCache(self, uuid):
+        """Search for job info in redis cache. Returns None if not found."""
+        d = self.redis_client.get(uuid)
+        d.addCallback(self._getJobCacheCallback)
+        d.addErrback(self._getJobCacheErrback)
+        return d
+
+    def _getJobCacheErrback(self, error):
+        return None
+
+    def _getJobCacheCallback(self, data):
+        return simplejson.loads(data)
+
+    def setJobCache(self, job):
+        """Set job cache in redis. Expires at now + 7 days."""
+        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
+        d = self.redis_client.set(job['uuid'], simplejson.dumps(job))
+        d.addCallback(self._setJobCacheCallback, job)
+        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+        return d
+        
+    def _setJobCacheCallback(self, data, job):
+        d = self.redis_client.expire(job['uuid'], 60*60*24*7)
+        d.addCallback(self._setJobCacheCallback2)
+        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+        return d
+
+    def _setJobCacheCallback2(self, data):
+        return
+
