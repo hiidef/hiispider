@@ -38,8 +38,8 @@ LOGGER = logging.getLogger("main")
 
 class PageGetter:
     
-    negitive_cache = {}
-    negitive_req_cache = {}
+    negative_cache = {}
+    negative_req_cache = {}
     
     def __init__(self, 
         cassandra_client, 
@@ -120,38 +120,38 @@ class PageGetter:
             d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
             return d
                     
-    def _negitiveReqCacheCallback(self, negitive_req_cache_item, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if negitive_req_cache_item:
-            negitive_req_cache_item = pickle.loads(str(negitive_req_cache_item))
-            if negitive_req_cache_item['timeout'] > time.time():
-                LOGGER.error('Found request hash %s in negitive request cache, raising last known exception' % request_hash)
-                return negitive_req_cache_item['error']
+    def _negativeReqCacheCallback(self, negative_req_cache_item, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        if negative_req_cache_item:
+            negative_req_cache_item = pickle.loads(str(negative_req_cache_item))
+            if negative_req_cache_item['timeout'] > time.time():
+                LOGGER.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
+                return negative_req_cache_item['error']
             else:
-                LOGGER.error('Removing request hash %s from the negitive request cache' % request_hash)
-                self.redis_client.delete(negitive_req_cache_key)
+                LOGGER.error('Removing request hash %s from the negative request cache' % request_hash)
+                self.redis_client.delete(negative_req_cache_key)
         d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
-    def checkNegitiveReqCache(self, data, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        d = self.redis_client.get(negitive_req_cache_key)
-        d.addCallback(self._negitiveReqCacheCallback, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+    def checkNegativeReqCache(self, data, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        d = self.redis_client.get(negative_req_cache_key)
+        d.addCallback(self._negativeReqCacheCallback, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
-    def _negitiveCacheCallback(self, negitive_cache_host, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if negitive_cache_host:
-            negitive_cache_host = pickle.loads(str(negitive_cache_host))
-            if negitive_cache_host['timeout'] > time.time():
-                LOGGER.error('Found in negitive cache, raising last known exception')
-                return negitive_cache_host['error']
+    def _negativeCacheCallback(self, negative_cache_host, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        if negative_cache_host:
+            negative_cache_host = pickle.loads(str(negative_cache_host))
+            if negative_cache_host['timeout'] > time.time():
+                LOGGER.error('Found in negative cache, raising last known exception')
+                return negative_cache_host['error']
             else:
-                LOGGER.error('Removing host %s from the negitive cache' % request_hash)
-                self.redis_client.delete(negitive_cache_host_key)
-        d = self.checkNegitiveReqCache(None, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+                LOGGER.error('Removing host %s from the negative cache' % request_hash)
+                self.redis_client.delete(negative_cache_host_key)
+        d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
-    def checkNegitiveCache(self, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        d = self.redis_client.get(negitive_cache_host_key)
-        d.addCallback(self._negitiveCacheCallback, negitive_cache_host_key, negitive_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
+    def checkNegativeCache(self, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        d = self.redis_client.get(negative_cache_host_key)
+        d.addCallback(self._negativeCacheCallback, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
     
     def getPage(self, 
@@ -200,7 +200,7 @@ class PageGetter:
            hash of data returned by the resource, raises a 
            StaleContentException.  
          * *confirm_cache_write* -- Wait to confirm cache write before returning.
-         * *check_only_tld* -- for negitive cache, check only the top level domain name
+         * *check_only_tld* -- for negative cache, check only the top level domain name
         """ 
         request_kwargs = {
             "method":method.upper(), 
@@ -218,7 +218,7 @@ class PageGetter:
             url = convertToUTF8(url)
         if hash_url is not None and not isinstance(hash_url, str):
             hash_url = convertToUTF8(hash_url)
-        # check negitive cache
+        # check negative cache
         host = _parse(url)[1]
         # if check_only_tld is true then parse the url down to the top level domain
         if check_only_tld:
@@ -234,11 +234,11 @@ class PageGetter:
             request_hash = sha1(cjson.encode([
                 hash_url, 
                 agent])).hexdigest()
-        negitive_cache_host_key = 'negitive_cache:%s' % host
-        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
-        d = self.checkNegitiveCache(
-                negitive_cache_host_key,
-                negitive_req_cache_key,
+        negative_cache_host_key = 'negative_cache:%s' % host
+        negative_req_cache_key = 'negative_req_cache:%s' % request_hash
+        d = self.checkNegativeCache(
+                negative_cache_host_key,
+                negative_req_cache_key,
                 url,
                 request_hash,
                 request_kwargs,
@@ -412,67 +412,67 @@ class PageGetter:
             host=host)
         return d
         
-    def _negitiveCacheWriteCallback(self, data):
+    def _negativeCacheWriteCallback(self, data):
         return
         
-    def _negitiveCacheWriteErrback(self, error):
-        LOGGER.error('Error writing to negitive cache: %s' % str(error))
+    def _negativeCacheWriteErrback(self, error):
+        LOGGER.error('Error writing to negative cache: %s' % str(error))
         return
         
-    def _setNegitiveReqCacheCallback(self, data, error, negitive_req_cache_key):
+    def _setNegativeReqCacheCallback(self, data, error, negative_req_cache_key):
         if data:
-            negitive_req_cache_item = pickle.loads(str(data))
-            if negitive_req_cache_item['retries'] <= 5:
-                negitive_req_cache_item['timeout'] = time.time() + 3600
-                negitive_req_cache_item['retries'] += 1
+            negative_req_cache_item = pickle.loads(str(data))
+            if negative_req_cache_item['retries'] <= 5:
+                negative_req_cache_item['timeout'] = time.time() + 3600
+                negative_req_cache_item['retries'] += 1
             else:
-                negitive_req_cache_item['timeout'] = time.time() + 10800
-                negitive_req_cache_item['retries'] += 1
+                negative_req_cache_item['timeout'] = time.time() + 10800
+                negative_req_cache_item['retries'] += 1
         else:
-            negitive_req_cache_item = {
+            negative_req_cache_item = {
                 'timeout': time.time() + 1800,
                 'retries': 1,
             }
-        negitive_req_cache_item['error'] = error
-        LOGGER.error('Updating negitive request cache %s which has failed %d times' % (negitive_req_cache_key, negitive_req_cache_item['retries']))
-        negitive_req_cache_item_pickle = pickle.dumps(negitive_req_cache_item)
-        d = self.redis_client.set(negitive_req_cache_key, negitive_req_cache_item_pickle)
-        d.addCallback(self._negitiveCacheWriteCallback)
-        d.addErrback(self._negitiveCacheWriteErrback)
+        negative_req_cache_item['error'] = error
+        LOGGER.error('Updating negative request cache %s which has failed %d times' % (negative_req_cache_key, negative_req_cache_item['retries']))
+        negative_req_cache_item_pickle = pickle.dumps(negative_req_cache_item)
+        d = self.redis_client.set(negative_req_cache_key, negative_req_cache_item_pickle)
+        d.addCallback(self._negativeCacheWriteCallback)
+        d.addErrback(self._negativeCacheWriteErrback)
         return d
             
-    def setNegitiveReqCache(self, error, request_hash):
-        negitive_req_cache_key = 'negitive_req_cache:%s' % request_hash
-        d = self.redis_client.get(negitive_req_cache_key)
-        d.addCallback(self._setNegitiveReqCacheCallback, error, negitive_req_cache_key)
+    def setNegativeReqCache(self, error, request_hash):
+        negative_req_cache_key = 'negative_req_cache:%s' % request_hash
+        d = self.redis_client.get(negative_req_cache_key)
+        d.addCallback(self._setNegativeReqCacheCallback, error, negative_req_cache_key)
         return d
 
-    def _setNegitiveCacheCallback(self, data, error, host, negitive_cache_key):
+    def _setNegativeCacheCallback(self, data, error, host, negative_cache_key):
         if data:
-            negitive_cache_item = pickle.loads(str(data))
-            if negitive_cache_item['retries'] <= 5:
-                negitive_cache_item['timeout'] = time.time() + 600
-                negitive_cache_item['retries'] += 1
+            negative_cache_item = pickle.loads(str(data))
+            if negative_cache_item['retries'] <= 5:
+                negative_cache_item['timeout'] = time.time() + 600
+                negative_cache_item['retries'] += 1
             else:
-                negitive_cache_item['timeout'] = time.time() + 3600
-                negitive_cache_item['retries'] += 1
+                negative_cache_item['timeout'] = time.time() + 3600
+                negative_cache_item['retries'] += 1
         else:
-            negitive_cache_item = {
+            negative_cache_item = {
                 'timeout': time.time() + 300,
                 'retries': 1,
             }
-        negitive_cache_item['error'] = error
-        LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, negitive_cache_item['retries']))
-        negitive_cache_item_pickle = pickle.dumps(negitive_cache_item)
-        d = self.redis_client.set(negitive_cache_key, negitive_cache_item_pickle)
-        d.addCallback(self._negitiveCacheWriteCallback)
-        d.addErrback(self._negitiveCacheWriteErrback)
+        negative_cache_item['error'] = error
+        LOGGER.error('Updating negative cache for host %s which has failed %d times' % (host, negative_cache_item['retries']))
+        negative_cache_item_pickle = pickle.dumps(negative_cache_item)
+        d = self.redis_client.set(negative_cache_key, negative_cache_item_pickle)
+        d.addCallback(self._negativeCacheWriteCallback)
+        d.addErrback(self._negativeCacheWriteErrback)
         return d
             
-    def setNegitiveCache(self, error, host):
-        negitive_cache_key = 'negitive_cache:%s' % host
-        d = self.redis_client.get(negitive_cache_key)
-        d.addCallback(self._setNegitiveCacheCallback, error, host, negitive_cache_key)
+    def setNegativeCache(self, error, host):
+        negative_cache_key = 'negative_cache:%s' % host
+        d = self.redis_client.get(negative_cache_key)
+        d.addCallback(self._setNegativeCacheCallback, error, host, negative_cache_key)
         return d
         
     def _requestWithNoCacheHeadersErrback(self, 
@@ -493,9 +493,9 @@ class PageGetter:
         except:
             status = 500
         if status >= 400 and status < 500:
-            self.setNegitiveReqCache(error, request_hash)
+            self.setNegativeReqCache(error, request_hash)
         if status >= 500:
-            self.setNegitiveCache(error, host)
+            self.setNegativeCache(error, host)
         if http_history is None:
             http_history = {}
         if "request-failures" not in http_history:
@@ -510,7 +510,7 @@ class PageGetter:
         http_key = 'http:%s' % request_hash
         deferreds = []
         deferreds.append(self.redis_client.set(headers_key, cjson.encode(headers)))
-        deferreds.append(self.redis_client.set(http_key, cjson.encode("")))
+        deferreds.append(self.redis_client.delete(http_key, cjson.encode("")))
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._requestWithNoCacheHeadersErrbackCallback, error)
@@ -533,7 +533,7 @@ class PageGetter:
             status = int(error.value.status)
         except:
             status = 500
-        if status == "304":
+        if status == 304:
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                 LOGGER.debug("Raising StaleContentException (3) on %s" % request_hash)
                 raise StaleContentException()

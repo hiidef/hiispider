@@ -28,6 +28,7 @@ class InterfaceServer(CassandraServer):
             cassandra_content=None,
             cassandra_http=None,
             cassandra_headers=None,
+            redis_hosts=None,
             scheduler_server=None,
             scheduler_server_port=5001,
             max_simultaneous_requests=50,
@@ -45,6 +46,8 @@ class InterfaceServer(CassandraServer):
         self.cassandra_http=cassandra_http
         self.cassandra_headers=cassandra_headers
         self.cassandra_content=cassandra_content
+        # Redis
+        self.redis_hosts = redis_hosts
         self.aws_access_key_id=aws_access_key_id
         self.aws_secret_access_key=aws_secret_access_key
         resource = Resource()
@@ -64,6 +67,7 @@ class InterfaceServer(CassandraServer):
             cassandra_content=cassandra_content,
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
+            redis_hosts=redis_hosts,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
             max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
