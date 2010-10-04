@@ -6,6 +6,7 @@ from hashlib import sha1
 import logging
 import time
 import copy
+from zlib import compress, decompress
 from twisted.internet.defer import maybeDeferred, DeferredList
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8
@@ -125,7 +126,7 @@ class PageGetter:
             negative_req_cache_item = pickle.loads(str(negative_req_cache_item))
             if negative_req_cache_item['timeout'] > time.time():
                 LOGGER.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
-                return negative_req_cache_item['error']
+                inegative_req_cache_item['error'].raiseException()
             else:
                 LOGGER.error('Removing request hash %s from the negative request cache' % request_hash)
                 self.redis_client.delete(negative_req_cache_key)
@@ -142,7 +143,7 @@ class PageGetter:
             negative_cache_host = pickle.loads(str(negative_cache_host))
             if negative_cache_host['timeout'] > time.time():
                 LOGGER.error('Found in negative cache, raising last known exception')
-                return negative_cache_host['error']
+                 negative_cache_host['error'].raiseException()
             else:
                 LOGGER.error('Removing host %s from the negative cache' % request_hash)
                 self.redis_client.delete(negative_cache_host_key)
@@ -260,11 +261,11 @@ class PageGetter:
         return d
     
     def _getCachedDataCallback(self, cached_data):
-        response = cjson.decode(cached_data[1][1])
+        response = cjson.decode(decompress(cached_data[1][1]))
         if len(response) == 0:
             raise Exception("Empty cached data.")
         data = {
-            "headers": cjson.decode(cached_data[0][1]),
+            "headers": cjson.decode(decompress(cached_data[0][1])),
             "response": response,
         }
         return data
@@ -288,7 +289,6 @@ class PageGetter:
             )
             return d
         else:
-            headers = cjson.decode(headers)
             LOGGER.debug("Got Cassandra object request %s for URL %s." % (request_hash, url))
             http_history = {}
             #if "content-length" in headers and int(headers["content-length"][0]) == 0:
@@ -509,8 +509,8 @@ class PageGetter:
         headers_key = 'headers:%s' % request_hash
         http_key = 'http:%s' % request_hash
         deferreds = []
-        deferreds.append(self.redis_client.set(headers_key, cjson.encode(headers)))
-        deferreds.append(self.redis_client.delete(http_key, cjson.encode("")))
+        deferreds.append(self.redis_client.set(headers_key, compress(cjson.encode(headers), 1)))
+        deferreds.append(self.redis_client.delete(http_key, compress(cjson.encode(""), 1)))
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._requestWithNoCacheHeadersErrbackCallback, error)
@@ -559,9 +559,8 @@ class PageGetter:
             LOGGER.debug("Writing data for failed request %s to redis. %s" % (request_hash, error))
             headers = {}
             headers["request-failures"] = ",".join(http_history["request-failures"])
-            encoded_data = cjson.encode(headers)
             headers_key = 'headers:%s' % request_hash
-            d = self.redis_client.set(headers_key, encoded_data)
+            d = self.redis_client.set(headers_key, compress(cjson.encode(headers), 1))
             if confirm_cache_write:
                 d.addCallback(self._handleRequestWithCacheHeadersErrorCallback, error)
                 return d
@@ -643,8 +642,8 @@ class PageGetter:
         http_key = 'http:%s' % request_hash
         LOGGER.debug("Writing data for request %s to redis." % request_hash)
         deferreds = []
-        deferreds.append(self.redis_client.set(headers_key, cjson.encode(headers)))
-        deferreds.append(self.redis_client.set(http_key, cjson.encode(data["response"])))
+        deferreds.append(self.redis_client.set(headers_key, compress(cjson.encode(headers), 1)))
+        deferreds.append(self.redis_client.set(http_key, compress(cjson.encode(data["response"]), 1)))
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._storeDataCallback, data)
