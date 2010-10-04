@@ -126,7 +126,7 @@ class PageGetter:
             negative_req_cache_item = pickle.loads(str(negative_req_cache_item))
             if negative_req_cache_item['timeout'] > time.time():
                 LOGGER.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
-                inegative_req_cache_item['error'].raiseException()
+                negative_req_cache_item['error'].raiseException()
             else:
                 LOGGER.error('Removing request hash %s from the negative request cache' % request_hash)
                 self.redis_client.delete(negative_req_cache_key)
@@ -143,7 +143,7 @@ class PageGetter:
             negative_cache_host = pickle.loads(str(negative_cache_host))
             if negative_cache_host['timeout'] > time.time():
                 LOGGER.error('Found in negative cache, raising last known exception')
-                 negative_cache_host['error'].raiseException()
+                negative_cache_host['error'].raiseException()
             else:
                 LOGGER.error('Removing host %s from the negative cache' % request_hash)
                 self.redis_client.delete(negative_cache_host_key)
