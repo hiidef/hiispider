@@ -182,7 +182,7 @@ class WorkerServer(CassandraServer):
                 
     def dequeue(self):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        while len(self.job_queue) <= self.amqp_prefetch_count + self.queue_requests:
+        while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
             LOGGER.debug('Fetching from queue')
             d = self.queue.get()
