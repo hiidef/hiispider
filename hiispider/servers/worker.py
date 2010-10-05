@@ -160,7 +160,7 @@ class WorkerServer(CassandraServer):
         self.queue = yield self.conn.queue("hiispider_consumer")
         yield CassandraServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
+        self.jobsloop.start(0.1)
         LOGGER.info('Starting dequeueing thread...')
         self.dequeue()
     
