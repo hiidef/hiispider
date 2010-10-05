@@ -29,7 +29,8 @@ class WorkerServer(CassandraServer):
     job_queue_a = job_queue.append
     jobsloop = None
     dequeueloop = None
-    
+    queue_requests = 0
+
     def __init__(self,
             aws_access_key_id=None,
             aws_secret_access_key=None,
@@ -181,8 +182,8 @@ class WorkerServer(CassandraServer):
                 
     def dequeue(self):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        new_requests = 0
-        while len(self.job_queue) <= self.amqp_prefetch_count + new_requests:
+        while len(self.job_queue) <= self.amqp_prefetch_count + self.queue_requests:
+            self.queue_requests += 1
             LOGGER.debug('Fetching from queue')
             d = self.queue.get()
             d.addCallback(self._dequeueCallback)
@@ -190,8 +191,10 @@ class WorkerServer(CassandraServer):
             
     def _dequeueErrback(self, error):
         LOGGER.error('Dequeue Error: %s' % error)
+        self.queue_requests -= 1
         
     def _dequeueCallback(self, msg):
+        self.queue_requests -= 1
         if msg.delivery_tag:
             LOGGER.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
             d = self.chan.basic_ack(msg.delivery_tag)
