@@ -56,7 +56,7 @@ class WorkerServer(CassandraServer):
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
-            amqp_prefetch_count=200,
+            amqp_prefetch_count=1000,
             mysql_port=3306,
             max_simultaneous_requests=100,
             max_requests_per_host_per_second=0,
