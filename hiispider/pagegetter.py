@@ -425,7 +425,12 @@ class PageGetter:
             host=host)
         return d
         
-    def _negativeCacheWriteCallback(self, data):
+    def _negativeCacheWriteCallback(self, data, key):
+        d = self.redis_client.expire(key, 60*60*24)
+        d.addCallback(self._negativeCacheWriteCallback2)
+        return d
+        
+    def _negativeCacheWriteCallback2(self, data):
         return
         
     def _negativeCacheWriteErrback(self, error):
@@ -450,7 +455,7 @@ class PageGetter:
         LOGGER.error('Updating negative request cache %s which has failed %d times' % (negative_req_cache_key, negative_req_cache_item['retries']))
         negative_req_cache_item_pickle = compress(pickle.dumps(negative_req_cache_item), 1)
         d = self.redis_client.set(negative_req_cache_key, negative_req_cache_item_pickle)
-        d.addCallback(self._negativeCacheWriteCallback)
+        d.addCallback(self._negativeCacheWriteCallback, negative_req_cache_key)
         d.addErrback(self._negativeCacheWriteErrback)
         return d
             
@@ -478,7 +483,7 @@ class PageGetter:
         LOGGER.error('Updating negative cache for host %s which has failed %d times' % (host, negative_cache_item['retries']))
         negative_cache_item_pickle = compress(pickle.dumps(negative_cache_item), 1)
         d = self.redis_client.set(negative_cache_key, negative_cache_item_pickle)
-        d.addCallback(self._negativeCacheWriteCallback)
+        d.addCallback(self._negativeCacheWriteCallback, negative_cache_key)
         d.addErrback(self._negativeCacheWriteErrback)
         return d
             
