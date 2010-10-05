@@ -30,6 +30,7 @@ class CassandraServer(BaseServer):
                  cassandra_headers=None,
                  cassandra_error='error',
                  redis_hosts=None,
+                 disable_negative_cache=False,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
                  max_simultaneous_requests_per_host=0,
@@ -67,6 +68,7 @@ class CassandraServer(BaseServer):
             self.cassandra_http,
             self.cassandra_headers,
             redis_client=self.redis_client,
+            disable_negative_cache=disable_negative_cache,
             rq=self.rq)
         
     def executeReservation(self, function_name, **kwargs):

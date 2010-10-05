@@ -39,8 +39,6 @@ LOGGER = logging.getLogger("main")
 
 class PageGetter:
     
-    negative_cache = {}
-    negative_req_cache = {}
     
     def __init__(self, 
         cassandra_client, 
@@ -48,6 +46,7 @@ class PageGetter:
         cassandra_http,
         cassandra_headers,
         redis_client,
+        disable_negative_cache=False,
         time_offset=0,
         rq=None):
         """
@@ -65,6 +64,7 @@ class PageGetter:
         self.cassandra_http = cassandra_http
         self.cassandra_headers = cassandra_headers
         self.redis_client = redis_client
+        self.disable_negative_cache = disable_negative_cache
         self.time_offset = time_offset
         if rq is None:
             self.rq = RequestQueuer()
@@ -122,14 +122,15 @@ class PageGetter:
             return d
                     
     def _negativeReqCacheCallback(self, negative_req_cache_item, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if negative_req_cache_item:
-            negative_req_cache_item = pickle.loads(str(decompress(negative_req_cache_item)))
-            if negative_req_cache_item['timeout'] > time.time():
-                LOGGER.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
-                negative_req_cache_item['error'].raiseException()
-            else:
-                LOGGER.error('Removing request hash %s from the negative request cache' % request_hash)
-                self.redis_client.delete(negative_req_cache_key)
+        if not self.disable_negative_cache:
+            if negative_req_cache_item:
+                negative_req_cache_item = pickle.loads(str(decompress(negative_req_cache_item)))
+                if negative_req_cache_item['timeout'] > time.time():
+                    LOGGER.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
+                    negative_req_cache_item['error'].raiseException()
+                else:
+                    LOGGER.error('Removing request hash %s from the negative request cache' % request_hash)
+                    self.redis_client.delete(negative_req_cache_key)
         d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
@@ -139,14 +140,15 @@ class PageGetter:
         return d
         
     def _negativeCacheCallback(self, negative_cache_host, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if negative_cache_host:
-            negative_cache_host = pickle.loads(str(decompress(negative_cache_host)))
-            if negative_cache_host['timeout'] > time.time():
-                LOGGER.error('Found in negative cache, raising last known exception')
-                negative_cache_host['error'].raiseException()
-            else:
-                LOGGER.error('Removing host %s from the negative cache' % request_hash)
-                self.redis_client.delete(negative_cache_host_key)
+        if not self.disable_negative_cache:
+            if negative_cache_host:
+                negative_cache_host = pickle.loads(str(decompress(negative_cache_host)))
+                if negative_cache_host['timeout'] > time.time():
+                    LOGGER.error('Found in negative cache, raising last known exception')
+                    negative_cache_host['error'].raiseException()
+                else:
+                    LOGGER.error('Removing host %s from the negative cache' % request_hash)
+                    self.redis_client.delete(negative_cache_host_key)
         d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
         
