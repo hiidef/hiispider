@@ -28,7 +28,7 @@ class WorkerServer(CassandraServer):
     job_queue = []
     job_queue_a = job_queue.append
     jobsloop = None
-    pending_dequeue = False
+    dequeueloop = None
     
     def __init__(self,
             aws_access_key_id=None,
@@ -160,9 +160,10 @@ class WorkerServer(CassandraServer):
         self.queue = yield self.conn.queue("hiispider_consumer")
         yield CassandraServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.1)
+        self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
-        self.dequeue()
+        self.dequeueloop = task.LoopingCall(self.dequee)
+        self.dequeueloop.start(1)
     
     @inlineCallbacks
     def shutdown(self):
@@ -179,21 +180,16 @@ class WorkerServer(CassandraServer):
         yield chan0.connection_close()
                 
     def dequeue(self):
-        LOGGER.debug('Pending Deuque: %s / Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.pending_dequeue, self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        if len(self.job_queue) <= self.amqp_prefetch_count and not self.pending_dequeue:
-            self.pending_dequeue = True
+        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
+        new_requests = 0
+        while len(self.job_queue) <= self.amqp_prefetch_count + new_requests:
             LOGGER.debug('Fetching from queue')
             d = self.queue.get()
             d.addCallback(self._dequeueCallback)
             d.addErrback(self._dequeueErrback)
-        else:
-            reactor.callLater(1, self.dequeue)
             
     def _dequeueErrback(self, error):
         LOGGER.error('Dequeue Error: %s' % error)
-        self.pending_dequeue = False
-        reactor.callLater(0, self.dequeue)
-        return error
         
     def _dequeueCallback(self, msg):
         if msg.delivery_tag:
@@ -233,8 +229,6 @@ class WorkerServer(CassandraServer):
                 self.job_queue_a(job)
             else:
                 LOGGER.error("Could not find function %s." % job['function_name'])
-        self.pending_dequeue = False
-        reactor.callLater(0, self.dequeue)
     
     def _dequeueCallback4(self, data, job):
         job["reservation_fast_cache"] = data
@@ -286,7 +280,6 @@ class WorkerServer(CassandraServer):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
         LOGGER.debug('Queued Jobs: %d / Active Jobs: %d' % (len(self.job_queue), len(self.active_jobs)))
         LOGGER.debug('Active Jobs List: %s' % repr(self.active_jobs))
-        self.pending_dequeue = False
         return error
         
     def _basicAckCallback(self, data):
