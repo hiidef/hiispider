@@ -57,7 +57,7 @@ class WorkerServer(CassandraServer):
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
-            amqp_prefetch_count=1000,
+            amqp_prefetch_count=200,
             mysql_port=3306,
             max_simultaneous_requests=100,
             max_requests_per_host_per_second=0,
@@ -164,7 +164,7 @@ class WorkerServer(CassandraServer):
         self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(1)
+        self.dequeueloop.start(0.2)
     
     @inlineCallbacks
     def shutdown(self):
