@@ -423,7 +423,8 @@ class WorkerServer(CassandraServer):
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
         # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
-        d = self.redis_client.set(job['uuid'], compress(cjson.encode(job)))
+        job_data = compress(cjson.encode(job), 1)
+        d = self.redis_client.set(job['uuid'], job_data)
         d.addCallback(self._setJobCacheCallback, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
