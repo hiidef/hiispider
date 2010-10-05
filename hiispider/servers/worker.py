@@ -162,7 +162,7 @@ class WorkerServer(CassandraServer):
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
-        self.dequeueloop = task.LoopingCall(self.dequee)
+        self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(1)
     
     @inlineCallbacks
