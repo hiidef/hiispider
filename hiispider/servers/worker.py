@@ -168,13 +168,14 @@ class WorkerServer(CassandraServer):
         self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(0.2)
+        self.dequeueloop.start(1)
     
     @inlineCallbacks
     def shutdown(self):
         LOGGER.debug("Closing connection")
         try:
             self.jobsloop.cancel()
+            self.dequeueloop.cancel()
         except:
             pass
         # Shut things down
