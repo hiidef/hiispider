@@ -1,4 +1,4 @@
-import cjson
+import simplejson
 import twisted.python.failure
 import datetime
 import dateutil.parser
@@ -134,11 +134,11 @@ class PageGetter:
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
-            request_hash = hashlib.sha1(cjson.encode([
+            request_hash = hashlib.sha1(simplejson.dumps([
                 url, 
                 agent])).hexdigest()
         else:
-            request_hash = hashlib.sha1(cjson.encode([
+            request_hash = hashlib.sha1(simplejson.dumps([
                 hash_url, 
                 agent])).hexdigest()
 
