@@ -12,7 +12,6 @@ from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inline
 from twisted.internet.threads import deferToThread
 from uuid import UUID, uuid4
 from zlib import compress, decompress
-import cjson
 import pprint
 import simplejson
 
@@ -23,7 +22,7 @@ class WorkerServer(CassandraServer):
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 40
+    simultaneous_jobs = 50
     jobs_complete = 0
     job_queue = []
     job_queue_a = job_queue.append
@@ -312,7 +311,7 @@ class WorkerServer(CassandraServer):
         return d
         
     def _getJobCallback(self, account, uuid, delivery_tag):
-        job = cjson.decode(decompress(account))
+        job = simplejson.loads(decompress(account))
         LOGGER.debug('Found uuid in redis: %s' % uuid)
         return job
     
@@ -419,12 +418,12 @@ class WorkerServer(CassandraServer):
         return None
 
     def _getJobCacheCallback(self, data):
-        return cjson.decode(decompress(data))
+        return simplejson.loads(decompress(data))
 
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
         # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
-        job_data = compress(cjson.encode(job), 1)
+        job_data = compress(simplejson.dumps(job), 1)
         d = self.redis_client.set(job['uuid'], job_data)
         d.addCallback(self._setJobCacheCallback, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])

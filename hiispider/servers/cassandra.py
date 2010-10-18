@@ -1,4 +1,4 @@
-import cjson
+import simplejson
 import zlib
 from datetime import datetime
 import urllib
@@ -117,7 +117,7 @@ class CassandraServer(BaseServer):
         # If we have an place to store the response on Cassandra, do it.
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            encoded_data = zlib.compress(cjson.encode(data))
+            encoded_data = zlib.compress(simplejson.dumps(data))
             d = self.cassandra_client.insert(
                 uuid,
                 self.cassandra_cf_content, 
@@ -148,7 +148,7 @@ class CassandraServer(BaseServer):
         #     'traceback': error.getTraceback(),
         #     'timestamp': datetime.now().isoformat(),
         # }
-        # encoded_data = zlib.compress(cjson.encode(data))
+        # encoded_data = zlib.compress(simplejson.dumps(data))
         # self.cassandra_client.insert(
         #     uuid,
         #     self.cassandra_cf_content,
