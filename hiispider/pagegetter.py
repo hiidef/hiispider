@@ -510,6 +510,8 @@ class PageGetter:
             status = int(error.value.status)
         except:
             status = 500
+        if host == 'tumblr.com' and status == 400:
+            status = 500
         if status >= 400 and status < 500:
             self.setNegativeReqCache(error, request_hash)
         if status >= 500:
