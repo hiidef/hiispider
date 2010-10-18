@@ -13,6 +13,7 @@ from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
+import simplejson
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -165,7 +166,7 @@ class BaseServer(object):
                 'traceback': error.getTraceback(),
                 'timestamp': datetime.now().isoformat(),
             }
-            encoded_data = zlib.compress(cjson.encode(data))
+            encoded_data = zlib.compress(simplejson.dumps(data))
             self.cassandra_client.insert(
                 uuid,
                 self.cassandra_cf_content,
@@ -184,7 +185,7 @@ class BaseServer(object):
         # If we have an place to store the response on Cassandra, do it.
         if self.cassandra_cf_content is not None:
             LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            encoded_data = zlib.compress(cjson.encode(data))
+            encoded_data = zlib.compress(simplejson.dumps(data))
             d = self.cassandra_client.insert(
                 uuid,
                 self.cassandra_cf_content, 

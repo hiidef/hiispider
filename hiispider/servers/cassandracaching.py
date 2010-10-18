@@ -1,5 +1,3 @@
-import cjson
-import zlib
 from datetime import datetime
 import urllib
 from uuid import uuid4
