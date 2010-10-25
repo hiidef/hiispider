@@ -51,6 +51,7 @@ class WorkerServer(CassandraServer):
             amqp_queue=None,
             amqp_exchange=None,
             redis_hosts=None,
+            pagecahce_hosts=None,
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
@@ -87,6 +88,8 @@ class WorkerServer(CassandraServer):
         self.cassandra_content=cassandra_content
         # Redis
         self.redis_hosts = redis_hosts
+        # Pagecache
+        self.pagecahce_hosts = pagecahce_hosts
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -117,6 +120,7 @@ class WorkerServer(CassandraServer):
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
             redis_hosts=redis_hosts,
+            pagecahce_hosts=pagecahce_hosts
             disable_negative_cache=disable_negative_cache,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
