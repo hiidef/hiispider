@@ -61,7 +61,8 @@ class CassandraServer(BaseServer):
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
         # Create redis client
-        self.redis_client = yield txredisapi.RedisShardingConnection(self.redis_hosts)
+        self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
+        # Setup pagegetter
         self.pg = PageGetter(
             self.cassandra_client, 
             self.cassandra_cf_cache,
