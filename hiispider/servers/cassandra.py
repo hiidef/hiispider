@@ -30,7 +30,7 @@ class CassandraServer(BaseServer):
                  cassandra_headers=None,
                  cassandra_error='error',
                  redis_hosts=None,
-                 pagecahce_hosts=None,
+                 pagecache_hosts=None,
                  disable_negative_cache=False,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
@@ -62,9 +62,10 @@ class CassandraServer(BaseServer):
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
         # Create redis client
-        self.redis_client = yield txredisapi.RedisShardingConnection(self.redis_hosts)
+        self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
         # Create pagecache client
-        self.pagecache_client = yield txredisapi.RedisShardingConnection(self.pagecahce_hosts)
+        self.pagecache_client = yield txredisapi.RedisShardingConnection(pagecache_hosts)
+        # Setup pagegetter
         self.pg = PageGetter(
             self.cassandra_client, 
             self.cassandra_cf_cache,

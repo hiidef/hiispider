@@ -51,10 +51,11 @@ class WorkerServer(CassandraServer):
             amqp_queue=None,
             amqp_exchange=None,
             redis_hosts=None,
-            pagecahce_hosts=None,
+            pagecache_hosts=None,
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
+            pagecache_web_server=None,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -89,7 +90,8 @@ class WorkerServer(CassandraServer):
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
-        self.pagecahce_hosts = pagecahce_hosts
+        self.pagecache_hosts = pagecache_hosts
+        self.pagecache_web_server = pagecache_web_server
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -120,7 +122,7 @@ class WorkerServer(CassandraServer):
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
             redis_hosts=redis_hosts,
-            pagecahce_hosts=pagecahce_hosts
+            pagecache_hosts=pagecache_hosts,
             disable_negative_cache=disable_negative_cache,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
@@ -265,6 +267,8 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         
     def _executeJobCallback(self, data, job):
+        if data and 'username' in job:
+            self.pg.getPage('%s/%s?pr=True' % (self.pagecache_web_server, job['username']))
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
@@ -308,16 +312,25 @@ class WorkerServer(CassandraServer):
     
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
+        sql = """SELECT username, host, account_id, type 
+            FROM spider_service, auth_user, content_userprofile 
+            WHERE uuid = '%s' 
+            AND auth_user.id=spider_service.user_id
+            AND auth_user.id=content_userprofile.user_id
+        """ % uuid
         d = self.mysql.runQuery(sql)
         d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
         d.addErrback(self.workerErrback, uuid, delivery_tag)
         return d
         
     def _getJobCallback(self, account, uuid, delivery_tag):
-        job = simplejson.loads(decompress(account))
-        LOGGER.debug('Found uuid in redis: %s' % uuid)
-        return job
+        if account:
+            job = simplejson.loads(decompress(account))
+            LOGGER.debug('Found uuid in redis: %s' % uuid)
+            return job
+        else:
+            d = self._getJobErrback(account, uuid, delivery_tag)
+            return d
     
     def getAccountMySQL(self, spider_info, uuid, delivery_tag):
         if spider_info:
@@ -341,6 +354,7 @@ class WorkerServer(CassandraServer):
         job['function_name'] = function_name
         job['uuid'] = uuid
         job['account'] = account
+        job['username'] = spider_info[0]['username']
         job['delivery_tag'] = delivery_tag
         return job
     
