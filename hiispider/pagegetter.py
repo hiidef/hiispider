@@ -237,18 +237,15 @@ class PageGetter:
             host = host_split[len(host_split)-1]
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
-        if hash_url is None:
-            request_hash = sha1(simplejson.dumps([
-                url, 
-                agent])).hexdigest()
-        else:
-            request_hash = sha1(simplejson.dumps([
-                hash_url, 
-                agent])).hexdigest()
+        hash_items = [hash_url or url, agent]
         if postdata:
-            negative_req_cache_key = 'negative_req_cache:%s' % sha1('%s:%s' % (request_hash, repr(postdata)))
-        else:
-            negative_req_cache_key = 'negative_req_cache:%s' % request_hash
+            hash_items.append(repr(postdata))
+        if headers:
+            hash_items.append(repr(headers))
+        if cookies:
+            hash_items.append(repro(cookies))
+        request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
+        negative_req_cache_key = 'negative_req_cache:%s' % request_hash
         negative_cache_host_key = 'negative_cache:%s' % host
         d = self.checkNegativeCache(
                 negative_cache_host_key,
