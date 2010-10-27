@@ -243,7 +243,7 @@ class PageGetter:
         if headers:
             hash_items.append(repr(headers))
         if cookies:
-            hash_items.append(repro(cookies))
+            hash_items.append(repr(cookies))
         request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
         negative_req_cache_key = 'negative_req_cache:%s' % request_hash
         negative_cache_host_key = 'negative_cache:%s' % host
