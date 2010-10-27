@@ -241,7 +241,10 @@ class PageGetter:
         if postdata:
             hash_items.append(repr(postdata))
         if headers:
-            hash_items.append(repr(headers))
+            items = headers['Authorization'].split(',')
+            oauth_headers = [item for item in items if item.find('oauth_consumer_key') > -1 or item.find('oauth_token') > -1 or item.find('oauth_token_secret') > -1]
+            if oauth_headers:
+                hash_items.append(repr(oauth_headers))
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
