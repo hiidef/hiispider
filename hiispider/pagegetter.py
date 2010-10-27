@@ -240,9 +240,12 @@ class PageGetter:
         hash_items = [hash_url or url, agent]
         if postdata:
             hash_items.append(repr(postdata))
-        if headers:
+        if headers and 'Authorization' in headers:
             items = headers['Authorization'].split(',')
-            oauth_headers = [item for item in items if item.find('oauth_consumer_key') > -1 or item.find('oauth_token') > -1 or item.find('oauth_token_secret') > -1]
+            oauth_headers = [item for item in items
+                if item.find('oauth_consumer_key') > -1 or
+                item.find('oauth_token') > -1 or
+                item.find('oauth_token_secret') > -1]
             if oauth_headers:
                 hash_items.append(repr(oauth_headers))
         if cookies:
