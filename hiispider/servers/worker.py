@@ -3,14 +3,12 @@ from .base import LOGGER
 from ..resources import WorkerResource
 from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
-from ..resources import InterfaceResource, ExposedResource
 from MySQLdb.cursors import DictCursor
-from twisted.internet import reactor, protocol, task
+from twisted.internet import reactor, task
 from twisted.enterprise import adbapi
 from twisted.web import server
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
-from twisted.internet.threads import deferToThread
-from uuid import UUID, uuid4
+from twisted.internet.defer import inlineCallbacks
+from uuid import UUID
 from zlib import compress, decompress
 import pprint
 import simplejson
