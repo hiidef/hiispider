@@ -224,7 +224,7 @@ class WorkerServer(CassandraServer):
                 # while it's queued. Go ahead and add it to the queue in the meantime
                 # to speed things up.
                 job["reservation_fast_cache"] = None
-                if self.functions[job['function_name']]["check_reservation_fast_cache"]:
+                if job['exposed_function']["check_reservation_fast_cache"]:
                     d = self.getReservationFastCache(job['uuid'])
                     d.addCallback(self._dequeueCallback4, job)
                 self.job_queue_a(job)
@@ -334,12 +334,13 @@ class WorkerServer(CassandraServer):
                 if key in job['account']:
                     job['account'][self.service_args_mapping[service_name][key]] = job['account'][key]
         # apply job fields to req and optional kwargs
-        for arg in job['exposed_function']['required_arguments']:
+        exposed_function = self.functions[job['function_name']]
+        for arg in exposed_function['required_arguments']:
             if arg in job:
                 kwargs[str(arg)] = job[arg]
             elif arg in job['account']:
                 kwargs[str(arg)] = job['account'][arg]
-        for arg in job['exposed_function']['optional_arguments']:
+        for arg in exposed_function['optional_arguments']:
             if arg in job['account']:
                 kwargs[str(arg)] = job['account'][arg]
         LOGGER.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
