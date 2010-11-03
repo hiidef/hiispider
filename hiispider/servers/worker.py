@@ -221,11 +221,6 @@ class WorkerServer(CassandraServer):
         if job is not None:
             if job['function_name'] in self.functions:
                 LOGGER.debug('Successfully pulled job off of AMQP queue')
-                job['exposed_function'] = self.functions[job['function_name']]
-                if not job.has_key('kwargs'):
-                    job['kwargs'] = self.mapKwargs(job)
-                if not job.has_key('delivery_tag'):
-                    job['delivery_tag'] = msg.delivery_tag
                 # If function asked for fast_cache, try to fetch it from redis
                 # while it's queued. Go ahead and add it to the queue in the meantime
                 # to speed things up.
@@ -250,6 +245,7 @@ class WorkerServer(CassandraServer):
                 uuid = job["uuid"]
             else:
                 # assign a temp uuid
+                # TODO: where is msg coming from here?
                 uuid = UUID(bytes=msg.content.body).hex
             d = self.callExposedFunction(
                 exposed_function["function"],
@@ -263,25 +259,6 @@ class WorkerServer(CassandraServer):
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        if job.has_key('exposed_function'):
-            del(job['exposed_function'])
-        # Only cache this when the cache is empty
-        d = self.getJobCache(job['uuid'])
-        d.addCallback(self._executeJobCallback2, job)
-        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        return d
-
-    def _executeJobCallback2(self, data, job):
-        if data is None:
-            d = self.setJobCache(job)
-            d.addCallback(self._executeJobCallback3)
-            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-            return d
-        else:
-            return None
-
-    def _executeJobCallback3(self, data):
-        return
 
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
@@ -338,6 +315,17 @@ class WorkerServer(CassandraServer):
         job['uuid'] = uuid
         job['account'] = account
         job['delivery_tag'] = delivery_tag
+        if job['function_name'] in self.functions:
+            job['exposed_function'] = self.functions[job['function_name']]
+            if not job.has_key('kwargs'):
+                job['kwargs'] = self.mapKwargs(job)
+            if not job.has_key('delivery_tag'):
+                job['delivery_tag'] = delivery_tag
+        d = self.setJobCache(job)
+        d.addCallback(self._createJobCallback, job)
+        return d
+
+    def _createJobCallback(self, data, job):
         return job
 
     def mapKwargs(self, job):
@@ -422,8 +410,16 @@ class WorkerServer(CassandraServer):
 
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
-        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
+        exposed_function = None
+        if job.has_key('exposed_function'):
+            # Remove exposed_function for dumping to json
+            # deepcopy would fail, so we just cache, remove, and restore
+            exposed_function = job['exposed_function']
+            del(job['exposed_function'])
         job_data = compress(simplejson.dumps(job), 1)
+        if exposed_function:
+            job['exposed_function'] = exposed_function
+        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
         d = self.redis_client.set(job['uuid'], job_data)
         d.addCallback(self._setJobCacheCallback, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
