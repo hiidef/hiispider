@@ -1,6 +1,8 @@
 import pprint
 import urllib
 from uuid import uuid4
+from MySQLdb.cursors import DictCursor
+from twisted.enterprise import adbapi
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from twisted.internet.threads import deferToThread
 from twisted.web.resource import Resource
@@ -38,7 +40,23 @@ class InterfaceServer(CassandraServer):
             port=5000, 
             log_file='interfaceserver.log',
             log_directory=None,
-            log_level="debug"):
+            log_level="debug",
+            mysql_username=None,
+            mysql_password=None,
+            mysql_host=None,
+            mysql_database=None,
+            mysql_port=3306,
+            ):
+        # Create MySQL connection.
+        self.mysql = adbapi.ConnectionPool(
+            "MySQLdb",
+            db=mysql_database,
+            port=mysql_port,
+            user=mysql_username,
+            passwd=mysql_password,
+            host=mysql_host,
+            cp_reconnect=True,
+            cursorclass=DictCursor)
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace

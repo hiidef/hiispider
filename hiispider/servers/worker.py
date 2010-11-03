@@ -3,14 +3,12 @@ from .base import LOGGER
 from ..resources import WorkerResource
 from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
-from ..resources import InterfaceResource, ExposedResource
 from MySQLdb.cursors import DictCursor
-from twisted.internet import reactor, protocol, task
+from twisted.internet import reactor, task
 from twisted.enterprise import adbapi
 from twisted.web import server
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
-from twisted.internet.threads import deferToThread
-from uuid import UUID, uuid4
+from twisted.internet.defer import inlineCallbacks
+from uuid import UUID
 from zlib import compress, decompress
 import pprint
 import simplejson
@@ -18,7 +16,7 @@ import simplejson
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 class WorkerServer(CassandraServer):
-    
+
     public_ip = None
     local_ip = None
     network_information = {}
@@ -33,7 +31,7 @@ class WorkerServer(CassandraServer):
     def __init__(self,
             aws_access_key_id=None,
             aws_secret_access_key=None,
-            cassandra_server=None, 
+            cassandra_server=None,
             cassandra_keyspace=None,
             cassandra_cf_cache=None,
             cassandra_cf_content=None,
@@ -124,11 +122,11 @@ class WorkerServer(CassandraServer):
             log_file=log_file,
             log_directory=log_directory,
             log_level=log_level)
-    
+
     def start(self):
         reactor.callWhenRunning(self._start)
         return self.start_deferred
-    
+
     @inlineCallbacks
     def _start(self):
         yield self.getNetworkAddress()
@@ -151,9 +149,9 @@ class WorkerServer(CassandraServer):
             auto_delete=False)
         # Create Exchange
         yield self.chan.exchange_declare(
-            exchange=self.amqp_exchange, 
-            type="fanout", 
-            durable=False, 
+            exchange=self.amqp_exchange,
+            type="fanout",
+            durable=False,
             auto_delete=False)
         yield self.chan.queue_bind(
             queue=self.amqp_queue,
@@ -168,7 +166,7 @@ class WorkerServer(CassandraServer):
         LOGGER.info('Starting dequeueing thread...')
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(1)
-    
+
     @inlineCallbacks
     def shutdown(self):
         LOGGER.debug("Closing connection")
@@ -183,7 +181,7 @@ class WorkerServer(CassandraServer):
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
-                
+
     def dequeue(self):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
@@ -192,11 +190,11 @@ class WorkerServer(CassandraServer):
             d = self.queue.get()
             d.addCallback(self._dequeueCallback)
             d.addErrback(self._dequeueErrback)
-            
+
     def _dequeueErrback(self, error):
         LOGGER.error('Dequeue Error: %s' % error)
         self.queue_requests -= 1
-        
+
     def _dequeueCallback(self, msg):
         self.queue_requests -= 1
         if msg.delivery_tag:
@@ -207,7 +205,7 @@ class WorkerServer(CassandraServer):
             return d
         else:
             self._dequeueCallback2(data=True, msg=msg)
-        
+
     def _dequeueCallback2(self, data, msg):
         LOGGER.debug('fetched msg from queue: %s' % repr(msg))
         # Get the hex version of the UUID from byte string we were sent
@@ -215,31 +213,27 @@ class WorkerServer(CassandraServer):
         d = self.getJob(uuid, msg.delivery_tag)
         d.addCallback(self._dequeueCallback3, msg)
         d.addErrback(self._dequeueErrback)
-    
+
     def _dequeueCallback3(self, job, msg):
         # Load custom function.
         if job is not None:
             if job['function_name'] in self.functions:
                 LOGGER.debug('Successfully pulled job off of AMQP queue')
                 job['exposed_function'] = self.functions[job['function_name']]
-                if not job.has_key('kwargs'):
-                    job['kwargs'] = self.mapKwargs(job)
-                if not job.has_key('delivery_tag'):
-                    job['delivery_tag'] = msg.delivery_tag
                 # If function asked for fast_cache, try to fetch it from redis
                 # while it's queued. Go ahead and add it to the queue in the meantime
                 # to speed things up.
                 job["reservation_fast_cache"] = None
-                if self.functions[job['function_name']]["check_reservation_fast_cache"]:
+                if job['exposed_function']["check_reservation_fast_cache"]:
                     d = self.getReservationFastCache(job['uuid'])
                     d.addCallback(self._dequeueCallback4, job)
                 self.job_queue_a(job)
             else:
                 LOGGER.error("Could not find function %s." % job['function_name'])
-    
+
     def _dequeueCallback4(self, data, job):
         job["reservation_fast_cache"] = data
-    
+
     def executeJobs(self):
         while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
             job = self.job_queue.pop(0)
@@ -250,58 +244,40 @@ class WorkerServer(CassandraServer):
                 uuid = job["uuid"]
             else:
                 # assign a temp uuid
+                # TODO: where is msg coming from here?
                 uuid = UUID(bytes=msg.content.body).hex
             d = self.callExposedFunction(
-                exposed_function["function"], 
-                kwargs, 
+                exposed_function["function"],
+                kwargs,
                 function_name,
                 reservation_fast_cache=job["reservation_fast_cache"],
                 uuid=uuid)
             d.addCallback(self._executeJobCallback, job)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        
+
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        if job.has_key('exposed_function'):
-            del(job['exposed_function'])
-        # Only cache this when the cache is empty
-        d = self.getJobCache(job['uuid'])
-        d.addCallback(self._executeJobCallback2, job)
-        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        return d
-        
-    def _executeJobCallback2(self, data, job):
-        if data is None:
-            d = self.setJobCache(job)
-            d.addCallback(self._executeJobCallback3)
-            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-            return d
-        else:
-            return None
 
-    def _executeJobCallback3(self, data):
-        return
-        
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
         LOGGER.debug('Queued Jobs: %d / Active Jobs: %d' % (len(self.job_queue), len(self.active_jobs)))
         LOGGER.debug('Active Jobs List: %s' % repr(self.active_jobs))
         return error
-        
+
     def _basicAckCallback(self, data):
         return
-        
+
     def basicAckErrback(self, error):
         LOGGER.error('basic_ack Error: %s' % (error))
         return
-        
+
     def getJob(self, uuid, delivery_tag):
         d = self.redis_client.get(uuid)
         d.addCallback(self._getJobCallback, uuid, delivery_tag)
         d.addErrback(self._getJobErrback, uuid, delivery_tag)
         return d
-    
+
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
         sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
@@ -309,12 +285,12 @@ class WorkerServer(CassandraServer):
         d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
         d.addErrback(self.workerErrback, uuid, delivery_tag)
         return d
-        
+
     def _getJobCallback(self, account, uuid, delivery_tag):
         job = simplejson.loads(decompress(account))
         LOGGER.debug('Found uuid in redis: %s' % uuid)
         return job
-    
+
     def getAccountMySQL(self, spider_info, uuid, delivery_tag):
         if spider_info:
             account_type = spider_info[0]['type'].split('/')[0]
@@ -325,7 +301,7 @@ class WorkerServer(CassandraServer):
             return d
         LOGGER.debug('No spider_info given for uuid %s' % uuid)
         return None
-    
+
     def createJob(self, account_info, spider_info, uuid, delivery_tag):
         job = {}
         account = account_info[0]
@@ -338,8 +314,17 @@ class WorkerServer(CassandraServer):
         job['uuid'] = uuid
         job['account'] = account
         job['delivery_tag'] = delivery_tag
+        if not job.has_key('kwargs'):
+            job['kwargs'] = self.mapKwargs(job)
+        if not job.has_key('delivery_tag'):
+            job['delivery_tag'] = delivery_tag
+        d = self.setJobCache(job)
+        d.addCallback(self._createJobCallback, job)
+        return d
+
+    def _createJobCallback(self, data, job):
         return job
-    
+
     def mapKwargs(self, job):
         kwargs = {}
         service_name = job['function_name'].split('/')[0]
@@ -349,23 +334,24 @@ class WorkerServer(CassandraServer):
                 if key in job['account']:
                     job['account'][self.service_args_mapping[service_name][key]] = job['account'][key]
         # apply job fields to req and optional kwargs
-        for arg in job['exposed_function']['required_arguments']:
+        exposed_function = self.functions[job['function_name']]
+        for arg in exposed_function['required_arguments']:
             if arg in job:
                 kwargs[str(arg)] = job[arg]
             elif arg in job['account']:
                 kwargs[str(arg)] = job['account'][arg]
-        for arg in job['exposed_function']['optional_arguments']:
+        for arg in exposed_function['optional_arguments']:
             if arg in job['account']:
                 kwargs[str(arg)] = job['account'][arg]
         LOGGER.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
         return kwargs
-        
+
     def getNetworkAddress(self):
         d = getNetworkAddress()
         d.addCallback(self._getNetworkAddressCallback)
         d.addErrback(self._getNetworkAddressErrback)
         return d
-    
+
     def _getNetworkAddressCallback(self, data):
         if "public_ip" in data:
             self.public_ip = data["public_ip"]
@@ -373,17 +359,17 @@ class WorkerServer(CassandraServer):
         if "local_ip" in data:
             self.local_ip = data["local_ip"]
             self.network_information["local_ip"] = self.local_ip
-    
+
     def _getNetworkAddressErrback(self, error):
         message = "Could not get network address."
         LOGGER.error(message)
         raise Exception(message)
-    
+
     def getReservationFastCache(self, uuid):
         d = self.redis_client.get("fastcache:%s" % uuid)
         d.addCallback(self._getReservationFastCacheCallback, uuid)
         return d
-        
+
     def _getReservationFastCacheCallback(self, value, uuid):
         if value:
             LOGGER.debug("Successfully got Fast Cache for %s" % uuid)
@@ -391,7 +377,7 @@ class WorkerServer(CassandraServer):
         else:
             LOGGER.debug("Could not get Fast Cache for %s" % uuid)
             return None
-        
+
     def setReservationFastCache(self, uuid, data):
         if not isinstance(data, str):
             raise Exception("ReservationFastCache must be a string.")
@@ -400,13 +386,13 @@ class WorkerServer(CassandraServer):
         d = self.redis_client.set("fastcache:%s" % uuid, data)
         d.addCallback(self._setReservationFastCacheCallback, uuid)
         d.addErrback(self._setReservationFastCacheErrback)
-    
+
     def _setReservationFastCacheCallback(self, data, uuid):
         LOGGER.debug("Successfully set Fast Cache for %s" % uuid)
-        
+
     def _setReservationFastCacheErrback(self, error):
         LOGGER.error(str(error))
-        
+
     def getJobCache(self, uuid):
         """Search for job info in redis cache. Returns None if not found."""
         d = self.redis_client.get(uuid)
@@ -422,13 +408,13 @@ class WorkerServer(CassandraServer):
 
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
-        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
         job_data = compress(simplejson.dumps(job), 1)
+        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
         d = self.redis_client.set(job['uuid'], job_data)
         d.addCallback(self._setJobCacheCallback, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
-        
+
     def _setJobCacheCallback(self, data, job):
         d = self.redis_client.expire(job['uuid'], 60*60*24*7)
         d.addCallback(self._setJobCacheCallback2)
@@ -437,4 +423,3 @@ class WorkerServer(CassandraServer):
 
     def _setJobCacheCallback2(self, data):
         return
-
