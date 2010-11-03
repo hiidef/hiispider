@@ -221,6 +221,7 @@ class WorkerServer(CassandraServer):
         if job is not None:
             if job['function_name'] in self.functions:
                 LOGGER.debug('Successfully pulled job off of AMQP queue')
+                job['exposed_function'] = self.functions[job['function_name']]
                 # If function asked for fast_cache, try to fetch it from redis
                 # while it's queued. Go ahead and add it to the queue in the meantime
                 # to speed things up.
@@ -315,12 +316,10 @@ class WorkerServer(CassandraServer):
         job['uuid'] = uuid
         job['account'] = account
         job['delivery_tag'] = delivery_tag
-        if job['function_name'] in self.functions:
-            job['exposed_function'] = self.functions[job['function_name']]
-            if not job.has_key('kwargs'):
-                job['kwargs'] = self.mapKwargs(job)
-            if not job.has_key('delivery_tag'):
-                job['delivery_tag'] = delivery_tag
+        if not job.has_key('kwargs'):
+            job['kwargs'] = self.mapKwargs(job)
+        if not job.has_key('delivery_tag'):
+            job['delivery_tag'] = delivery_tag
         d = self.setJobCache(job)
         d.addCallback(self._createJobCallback, job)
         return d
@@ -410,15 +409,7 @@ class WorkerServer(CassandraServer):
 
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
-        exposed_function = None
-        if job.has_key('exposed_function'):
-            # Remove exposed_function for dumping to json
-            # deepcopy would fail, so we just cache, remove, and restore
-            exposed_function = job['exposed_function']
-            del(job['exposed_function'])
         job_data = compress(simplejson.dumps(job), 1)
-        if exposed_function:
-            job['exposed_function'] = exposed_function
         # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
         d = self.redis_client.set(job['uuid'], job_data)
         d.addCallback(self._setJobCacheCallback, job)
