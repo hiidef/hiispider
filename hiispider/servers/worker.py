@@ -51,11 +51,12 @@ class WorkerServer(CassandraServer):
             amqp_queue=None,
             amqp_exchange=None,
             redis_hosts=None,
-            pagecache_hosts=None,
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
             pagecache_web_server=None,
+            pagecache_web_server_host=None,
+            pagecache_web_server_xtra_params,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -90,8 +91,9 @@ class WorkerServer(CassandraServer):
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
-        self.pagecache_hosts = pagecache_hosts
         self.pagecache_web_server = pagecache_web_server
+        self.pagecache_web_server_host = pagecache_web_server_host
+        self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -122,7 +124,6 @@ class WorkerServer(CassandraServer):
             cassandra_http=cassandra_http,
             cassandra_headers=cassandra_headers,
             redis_hosts=redis_hosts,
-            pagecache_hosts=pagecache_hosts,
             disable_negative_cache=disable_negative_cache,
             max_simultaneous_requests=max_simultaneous_requests,
             max_requests_per_host_per_second=max_requests_per_host_per_second,
@@ -267,8 +268,14 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         
     def _executeJobCallback(self, data, job):
-        if data and 'username' in job:
-            self.pg.getPage('%s/%s?pr=True' % (self.pagecache_web_server, job['username']))
+        if self.pagecache_web_server and data and 'username' in job:
+            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
+            if self.pagecache_web_server_xtra_params:
+                pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
+            headers = None
+            if self.pagecache_web_server_host:
+                headers = {'host' self.pagecache_web_server_host}
+            self.pg.getPage(pagecache_url, headers=headers, cache=-1)
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
