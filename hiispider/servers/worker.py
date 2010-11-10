@@ -269,6 +269,7 @@ class WorkerServer(CassandraServer):
         
     def _executeJobCallback(self, data, job):
         if self.pagecache_web_server and data and 'username' in job:
+            import pdb; pdb.set_trace() # DEBUG
             pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
             if self.pagecache_web_server_xtra_params:
                 pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
