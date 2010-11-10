@@ -268,27 +268,28 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         
     def _executeJobCallback(self, data, job):
+        deferreds = []
         if self.pagecache_web_server and data and 'username' in job:
-            import pdb; pdb.set_trace() # DEBUG
             pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
             if self.pagecache_web_server_xtra_params:
                 pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
             headers = None
             if self.pagecache_web_server_host:
                 headers = {'host': self.pagecache_web_server_host}
-            self.pg.getPage(pagecache_url, headers=headers, cache=-1)
+            deferreds.append(self.pg.getPage(pagecache_url, headers=headers, cache=-1))
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
             del(job['exposed_function'])
         # Only cache this when the cache is empty
-        d = self.getJobCache(job['uuid'])
+        deferreds.append(self.getJobCache(job['uuid']))
+        d = DeferredList(deferreds, consumeErrors=True)
         d.addCallback(self._executeJobCallback2, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
         
     def _executeJobCallback2(self, data, job):
-        if data is None:
+        if data[len(data)-1][0] and data[len(data)-1][1] is None:
             d = self.setJobCache(job)
             d.addCallback(self._executeJobCallback3)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
