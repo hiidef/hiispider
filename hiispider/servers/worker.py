@@ -56,7 +56,7 @@ class WorkerServer(CassandraServer):
             scheduler_server_port=5001,
             pagecache_web_server=None,
             pagecache_web_server_host=None,
-            pagecache_web_server_xtra_params,
+            pagecache_web_server_xtra_params=None,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
