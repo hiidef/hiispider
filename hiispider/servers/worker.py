@@ -276,7 +276,7 @@ class WorkerServer(CassandraServer):
             headers = None
             if self.pagecache_web_server_host:
                 headers = {'host': self.pagecache_web_server_host}
-            deferreds.append(self.pg.getPage(pagecache_url, headers=headers, cache=-1))
+            deferreds.append(self.pg.getPage(pagecache_url, headers=headers))
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
