@@ -52,6 +52,9 @@ class WorkerServer(CassandraServer):
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
+            pagecache_web_server=None,
+            pagecache_web_server_host=None,
+            pagecache_web_server_xtra_params=None,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -85,6 +88,10 @@ class WorkerServer(CassandraServer):
         self.cassandra_content=cassandra_content
         # Redis
         self.redis_hosts = redis_hosts
+        # Pagecache
+        self.pagecache_web_server = pagecache_web_server
+        self.pagecache_web_server_host = pagecache_web_server_host
+        self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -240,12 +247,7 @@ class WorkerServer(CassandraServer):
             exposed_function = job["exposed_function"]
             kwargs = job["kwargs"]
             function_name = job["function_name"]
-            if job.has_key('uuid'):
-                uuid = job["uuid"]
-            else:
-                # assign a temp uuid
-                # TODO: where is msg coming from here?
-                uuid = UUID(bytes=msg.content.body).hex
+            uuid = job["uuid"]
             d = self.callExposedFunction(
                 exposed_function["function"],
                 kwargs,
@@ -258,6 +260,22 @@ class WorkerServer(CassandraServer):
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
+        if self.pagecache_web_server and data and 'username' in job:
+            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
+            if self.pagecache_web_server_xtra_params:
+                pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
+            headers = None
+            if self.pagecache_web_server_host:
+                headers = {'host': self.pagecache_web_server_host}
+            d = self.pg.getPage(pagecache_url, headers=headers)
+            d.addCallback(self._executeJobCallback2, pagecache_url)
+            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+            return d
+        return None
+
+    def _executeJobCallback2(self, data, pagecache_url):
+        LOGGER.debug('Invalidated pagecache for %s' % pagecache_url)
+        return None
 
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
@@ -280,16 +298,25 @@ class WorkerServer(CassandraServer):
 
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
+        sql = """SELECT username, host, account_id, type 
+            FROM spider_service, auth_user, content_userprofile 
+            WHERE uuid = '%s' 
+            AND auth_user.id=spider_service.user_id
+            AND auth_user.id=content_userprofile.user_id
+        """ % uuid
         d = self.mysql.runQuery(sql)
         d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
         d.addErrback(self.workerErrback, uuid, delivery_tag)
         return d
 
     def _getJobCallback(self, account, uuid, delivery_tag):
-        job = simplejson.loads(decompress(account))
-        LOGGER.debug('Found uuid in redis: %s' % uuid)
-        return job
+        if account:
+            job = simplejson.loads(decompress(account))
+            LOGGER.debug('Found uuid in redis: %s' % uuid)
+            return job
+        else:
+            d = self._getJobErrback(account, uuid, delivery_tag)
+            return d
 
     def getAccountMySQL(self, spider_info, uuid, delivery_tag):
         if spider_info:
@@ -313,6 +340,7 @@ class WorkerServer(CassandraServer):
         job['function_name'] = function_name
         job['uuid'] = uuid
         job['account'] = account
+        job['username'] = spider_info[0]['username']
         job['delivery_tag'] = delivery_tag
         if not job.has_key('kwargs'):
             job['kwargs'] = self.mapKwargs(job)
