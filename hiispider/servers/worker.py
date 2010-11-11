@@ -54,6 +54,9 @@ class WorkerServer(CassandraServer):
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
+            pagecache_web_server=None,
+            pagecache_web_server_host=None,
+            pagecache_web_server_xtra_params=None,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -87,6 +90,10 @@ class WorkerServer(CassandraServer):
         self.cassandra_content=cassandra_content
         # Redis
         self.redis_hosts = redis_hosts
+        # Pagecache
+        self.pagecache_web_server = pagecache_web_server
+        self.pagecache_web_server_host = pagecache_web_server_host
+        self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -261,18 +268,28 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         
     def _executeJobCallback(self, data, job):
+        deferreds = []
+        if self.pagecache_web_server and data and 'username' in job:
+            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
+            if self.pagecache_web_server_xtra_params:
+                pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
+            headers = None
+            if self.pagecache_web_server_host:
+                headers = {'host': self.pagecache_web_server_host}
+            deferreds.append(self.pg.getPage(pagecache_url, headers=headers))
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if job.has_key('exposed_function'):
             del(job['exposed_function'])
         # Only cache this when the cache is empty
-        d = self.getJobCache(job['uuid'])
+        deferreds.append(self.getJobCache(job['uuid']))
+        d = DeferredList(deferreds, consumeErrors=True)
         d.addCallback(self._executeJobCallback2, job)
         d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
         return d
         
     def _executeJobCallback2(self, data, job):
-        if data is None:
+        if data[len(data)-1][0] and data[len(data)-1][1] is None:
             d = self.setJobCache(job)
             d.addCallback(self._executeJobCallback3)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
@@ -304,16 +321,25 @@ class WorkerServer(CassandraServer):
     
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = "SELECT account_id, type FROM spider_service WHERE uuid = '%s'" % uuid
+        sql = """SELECT username, host, account_id, type 
+            FROM spider_service, auth_user, content_userprofile 
+            WHERE uuid = '%s' 
+            AND auth_user.id=spider_service.user_id
+            AND auth_user.id=content_userprofile.user_id
+        """ % uuid
         d = self.mysql.runQuery(sql)
         d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
         d.addErrback(self.workerErrback, uuid, delivery_tag)
         return d
         
     def _getJobCallback(self, account, uuid, delivery_tag):
-        job = simplejson.loads(decompress(account))
-        LOGGER.debug('Found uuid in redis: %s' % uuid)
-        return job
+        if account:
+            job = simplejson.loads(decompress(account))
+            LOGGER.debug('Found uuid in redis: %s' % uuid)
+            return job
+        else:
+            d = self._getJobErrback(account, uuid, delivery_tag)
+            return d
     
     def getAccountMySQL(self, spider_info, uuid, delivery_tag):
         if spider_info:
@@ -337,6 +363,7 @@ class WorkerServer(CassandraServer):
         job['function_name'] = function_name
         job['uuid'] = uuid
         job['account'] = account
+        job['username'] = spider_info[0]['username']
         job['delivery_tag'] = delivery_tag
         return job
     
