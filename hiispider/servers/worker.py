@@ -260,8 +260,8 @@ class WorkerServer(CassandraServer):
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        if self.pagecache_web_server and data and 'username' in job:
-            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['username'])
+        if self.pagecache_web_server and data and 'site_username' in job:
+            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['site_username'])
             if self.pagecache_web_server_xtra_params:
                 pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
             headers = None
@@ -340,7 +340,7 @@ class WorkerServer(CassandraServer):
         job['function_name'] = function_name
         job['uuid'] = uuid
         job['account'] = account
-        job['username'] = spider_info[0]['username']
+        job['site_username'] = spider_info[0]['username']
         job['delivery_tag'] = delivery_tag
         if not job.has_key('kwargs'):
             job['kwargs'] = self.mapKwargs(job)
