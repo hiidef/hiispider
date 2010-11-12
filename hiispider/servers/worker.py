@@ -298,9 +298,9 @@ class WorkerServer(CassandraServer):
 
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = """SELECT username, host, account_id, type 
-            FROM spider_service, auth_user, content_userprofile 
-            WHERE uuid = '%s' 
+        sql = """SELECT username, host, account_id, type
+            FROM spider_service, auth_user, content_userprofile
+            WHERE uuid = '%s'
             AND auth_user.id=spider_service.user_id
             AND auth_user.id=content_userprofile.user_id
         """ % uuid
@@ -341,11 +341,8 @@ class WorkerServer(CassandraServer):
         job['uuid'] = uuid
         job['account'] = account
         job['site_username'] = spider_info[0]['username']
+        job['kwargs'] = self.mapKwargs(job)
         job['delivery_tag'] = delivery_tag
-        if not job.has_key('kwargs'):
-            job['kwargs'] = self.mapKwargs(job)
-        if not job.has_key('delivery_tag'):
-            job['delivery_tag'] = delivery_tag
         d = self.setJobCache(job)
         d.addCallback(self._createJobCallback, job)
         return d
