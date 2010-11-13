@@ -340,12 +340,8 @@ class WorkerServer(CassandraServer):
         job['function_name'] = function_name
         job['uuid'] = uuid
         job['account'] = account
-<<<<<<< Updated upstream
-        job['site_username'] = spider_info[0]['username']
         job['kwargs'] = self.mapKwargs(job)
-=======
         job['spider_info'] = spider_info[0]
->>>>>>> Stashed changes
         job['delivery_tag'] = delivery_tag
         d = self.setJobCache(job)
         d.addCallback(self._createJobCallback, job)
