@@ -6,7 +6,9 @@ import time
 import pprint
 from decimal import Decimal
 from uuid import uuid4
+from MySQLdb import OperationalError
 from twisted.web.resource import Resource
+from twisted.enterprise import adbapi
 from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
@@ -369,3 +371,21 @@ class BaseServer(object):
             kwargs, 
             function_name)
         return d
+
+class SmartConnectionPool(adbapi.ConnectionPool):
+    def _runInteraction(self, *args, **kwargs):
+        try:
+            d = adbapi.ConnectionPool._runInteraction(self, *args, **kwargs)
+        except OperationalError, e:
+            errmsg = str(e).lower()
+            messages = (
+                "lost connection to mysql server during query",
+                "server has gone away",
+            )
+            for msg in messages:
+                if msg in errmsg:
+                    return adbapi.ConnectionPool._runInteraction(self, *args, **kwargs)
+            raise
+        return d
+
+
