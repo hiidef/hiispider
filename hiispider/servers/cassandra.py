@@ -15,13 +15,12 @@ import txredisapi
 
 
 class CassandraServer(BaseServer):
-    @inlineCallbacks
     def __init__(self,
                  aws_access_key_id=None,
                  aws_secret_access_key=None,
                  cassandra_server=None,
                  cassandra_port=9160,
-                 cassandra_keyspace=None, 
+                 cassandra_keyspace=None,
                  cassandra_cf_cache=None,
                  cassandra_cf_content=None,
                  cassandra_content=None,
@@ -59,19 +58,22 @@ class CassandraServer(BaseServer):
         self.cassandra_content_error = cassandra_content_error
         self.cassandra_factory = ManagedCassandraClientFactory()
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
+        self.disable_negative_cache = disable_negative_cache
+        self.setup_redis_client_and_pg(redis_hosts)
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
-        # Create redis client
+
+    @inlineCallbacks
+    def setup_redis_client_and_pg(self, redis_hosts):
         self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
-        # Setup pagegetter
         self.pg = PageGetter(
-            self.cassandra_client, 
+            self.cassandra_client,
             self.cassandra_cf_cache,
             self.cassandra_http,
             self.cassandra_headers,
             redis_client=self.redis_client,
-            disable_negative_cache=disable_negative_cache,
+            disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
-        
+
     def executeReservation(self, function_name, **kwargs):
         uuid = None
         if not isinstance(function_name, str):
@@ -85,9 +87,9 @@ class CassandraServer(BaseServer):
         if function["interval"] > 0:
             uuid = uuid4().hex
         d = self.callExposedFunction(
-            self.functions[function_name]["function"], 
-            kwargs, 
-            function_name, 
+            self.functions[function_name]["function"],
+            kwargs,
+            function_name,
             uuid=uuid)
         d.addCallback(self._executeReservationCallback, function_name, uuid)
         d.addErrback(self._executeReservationErrback, function_name, uuid)
@@ -102,7 +104,7 @@ class CassandraServer(BaseServer):
     def _executeReservationErrback(self, error, function_name, uuid):
         LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
         return error
-    
+
     def deleteReservation(self, uuid, function_name="Unknown"):
         LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
         d = self.cassandra_client.remove(uuid, self.cassandra_cf_content)
@@ -112,7 +114,7 @@ class CassandraServer(BaseServer):
     def _deleteReservationCallback(self, data, function_name, uuid):
         LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
         return True
-        
+
     def _callExposedFunctionCallback(self, data, function_name, uuid):
         data = BaseServer._callExposedFunctionCallback(self, data, function_name, uuid)
         # If we have an place to store the response on Cassandra, do it.
@@ -121,12 +123,12 @@ class CassandraServer(BaseServer):
             encoded_data = zlib.compress(simplejson.dumps(data))
             d = self.cassandra_client.insert(
                 uuid,
-                self.cassandra_cf_content, 
+                self.cassandra_cf_content,
                 encoded_data,
                 column=self.cassandra_content)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
-        
+
     def _callExposedFunctionErrback(self, error, function_name, uuid):
         error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
         try:
@@ -134,7 +136,7 @@ class CassandraServer(BaseServer):
         except DeleteReservationException:
             if uuid is not None:
                 self.deleteReservation(uuid)
-            message = """Error with %s, %s.\n%s            
+            message = """Error with %s, %s.\n%s
             Reservation deleted at request of the function.""" % (
                 function_name,
                 uuid,
