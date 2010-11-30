@@ -235,7 +235,6 @@ class PageGetter:
         if check_only_tld:
             host_split = host.split('.', host.count('.')-1)
             host = host_split[len(host_split)-1]
-        LOGGER.error('host: %s     check_only_tld: %s' % (host, check_only_tld))
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         hash_items = [hash_url or url, agent]

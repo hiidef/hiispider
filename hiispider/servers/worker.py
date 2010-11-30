@@ -12,8 +12,10 @@ from uuid import UUID
 from zlib import compress, decompress
 import pprint
 import simplejson
+import random
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
+
 
 class WorkerServer(CassandraServer):
 
@@ -52,7 +54,7 @@ class WorkerServer(CassandraServer):
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
-            pagecache_web_server=None,
+            pagecache_web_servers=None,
             pagecache_web_server_host=None,
             pagecache_web_server_xtra_params=None,
             service_mapping=None,
@@ -89,7 +91,7 @@ class WorkerServer(CassandraServer):
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
-        self.pagecache_web_server = pagecache_web_server
+        self.pagecache_web_servers = pagecache_web_servers.split(';')
         self.pagecache_web_server_host = pagecache_web_server_host
         self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
         # Negative Cache Disabled?
@@ -260,8 +262,9 @@ class WorkerServer(CassandraServer):
     def _executeJobCallback(self, data, job):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        if self.pagecache_web_server and data and 'spider_info' in job and 'username' in job['spider_info']:
-            pagecache_url = '%s/%s' % (self.pagecache_web_server, job['spider_info']['username'])
+        if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
+            pagecache_web_server = random.choice(self.pagecache_web_servers)
+            pagecache_url = '%s/%s' % (pagecache_web_server, job['spider_info']['username'])
             if self.pagecache_web_server_xtra_params:
                 pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
             headers = None
