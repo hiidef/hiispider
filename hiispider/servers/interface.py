@@ -9,7 +9,7 @@ from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
 from .cassandra import CassandraServer
-from .base import LOGGER
+from .base import LOGGER, SmartConnectionPool
 from ..resources import InterfaceResource
 from ..evaluateboolean import evaluateBoolean
 import zlib
@@ -48,7 +48,7 @@ class InterfaceServer(CassandraServer):
             mysql_port=3306,
             ):
         # Create MySQL connection.
-        self.mysql = adbapi.ConnectionPool(
+        self.mysql = SmartConnectionPool(
             "MySQLdb",
             db=mysql_database,
             port=mysql_port,
