@@ -264,7 +264,7 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
             pagecache_web_server = random.choice(self.pagecache_web_servers)
-            pagecache_url = '%s/%s' % (pagecache_web_server, job['spider_info']['username'])
+            pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
             if self.pagecache_web_server_xtra_params:
                 pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
             headers = None
