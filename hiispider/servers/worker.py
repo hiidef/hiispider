@@ -265,7 +265,7 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
             pagecache_web_server = random.choice(self.pagecache_web_servers)
-            if 'spider_info' in job and 'host' in job['spider_info']:
+            if 'spider_info' in job and 'host' in job['spider_info'] and job['spider_info']['host']:
                 LOGGER.debug('Using custom host "%s" for pagecache invalidation' % job['spider_info']['host'])
                 pagecache_url = 'http://%s' % (pagecache_web_server)
                 headers = {'host': job['spider_info']['host']}
