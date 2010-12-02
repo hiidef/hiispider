@@ -263,21 +263,16 @@ class WorkerServer(CassandraServer):
         self.jobs_complete += 1
         headers = None
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        #if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
-        #    pagecache_web_server = random.choice(self.pagecache_web_servers)
-        #    if 'spider_info' in job and 'host' in job['spider_info'] and job['spider_info']['host']:
-        #        LOGGER.debug('Using custom host "%s" for pagecache invalidation' % job['spider_info']['host'])
-        #        pagecache_url = 'http://%s' % (pagecache_web_server)
-        #        headers = {'host': job['spider_info']['host']}
-        #    else:
-        #        pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
-        #        headers = {'host': self.pagecache_web_server_host}
-        #    if self.pagecache_web_server_xtra_params:
-        #        pagecache_url = '%s?%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
-        #    d = self.pg.getPage(pagecache_url, headers=headers)
-        #    d.addCallback(self._executeJobCallback2, pagecache_url)
-        #    d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        #    return d
+        if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
+           pagecache_web_server = random.choice(self.pagecache_web_servers)
+           pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
+           headers = {'host': self.pagecache_web_server_host}
+           if self.pagecache_web_server_xtra_params:
+               pagecache_url = '%s%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
+           d = self.pg.getPage(pagecache_url, headers=headers)
+           d.addCallback(self._executeJobCallback2, pagecache_url)
+           d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+           return d
         return None
 
     def _executeJobCallback2(self, data, pagecache_url):
