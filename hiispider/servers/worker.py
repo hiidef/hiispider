@@ -13,6 +13,7 @@ from zlib import compress, decompress
 import pprint
 import simplejson
 import random
+from hashlib import sha256
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -91,7 +92,7 @@ class WorkerServer(CassandraServer):
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
-        self.pagecache_web_servers = pagecache_web_servers.split(';')
+        self.pagecache_web_servers = pagecache_web_servers
         self.pagecache_web_server_host = pagecache_web_server_host
         self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
         # Negative Cache Disabled?
@@ -260,23 +261,31 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
 
     def _executeJobCallback(self, data, job):
-        self.jobs_complete += 1
-        headers = None
-        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
-           pagecache_web_server = random.choice(self.pagecache_web_servers)
-           pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
-           headers = {'host': self.pagecache_web_server_host}
-           if self.pagecache_web_server_xtra_params:
+            headers = None
+            if 'host' in job['spider_info'] and job['spider_info']['host']:
+                cache_key = job['spider_info']['host']
+            elif:
+                cache_key = 'http://%s/%s' % (pagecache_web_server_host, job['spider_info']['username'])
+            cache_key = sha256(cache_key).hex_digest()
+            pagecache_web_server = random.choice(self.pagecache_web_servers)
+            pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
+            headers = {'host': self.pagecache_web_server_host}
+            if self.pagecache_web_server_xtra_params:
                pagecache_url = '%s%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
-           d = self.pg.getPage(pagecache_url, headers=headers)
-           d.addCallback(self._executeJobCallback2, pagecache_url)
-           d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-           return d
+            pagecache_url = '%s%s' % (pagecache_url, cache_key)
+            d = self.pg.getPage(pagecache_url, headers=headers)
+            d.addCallback(self._executeJobCallback2, pagecache_url)
+            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+            return d
+        self.jobs_complete += 1
+        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None
 
     def _executeJobCallback2(self, data, pagecache_url):
         LOGGER.debug('Invalidated pagecache for %s' % pagecache_url)
+        self.jobs_complete += 1
+        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None
 
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
