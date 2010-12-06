@@ -265,7 +265,7 @@ class WorkerServer(CassandraServer):
             headers = None
             if 'host' in job['spider_info'] and job['spider_info']['host']:
                 cache_key = job['spider_info']['host']
-            elif:
+            else:
                 cache_key = 'http://%s/%s' % (pagecache_web_server_host, job['spider_info']['username'])
             cache_key = sha256(cache_key).hex_digest()
             pagecache_web_server = random.choice(self.pagecache_web_servers)
