@@ -4,7 +4,7 @@ setup(
 
     name = "HiiSpider",
 
-    version = "0.7.12",
+    version = "0.7.13",
 
     packages = find_packages(),
 
