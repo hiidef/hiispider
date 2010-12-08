@@ -13,7 +13,6 @@ from uuid import UUID
 from zlib import compress, decompress
 import pprint
 import simplejson
-import random
 from hashlib import sha256
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -31,6 +30,7 @@ class WorkerServer(CassandraServer):
     jobsloop = None
     dequeueloop = None
     queue_requests = 0
+    amqp_pagecache_queue_size = 0
 
     def __init__(self,
             aws_access_key_id=None,
@@ -57,9 +57,7 @@ class WorkerServer(CassandraServer):
             disable_negative_cache=False,
             scheduler_server=None,
             scheduler_server_port=5001,
-            pagecache_web_servers=None,
             pagecache_web_server_host=None,
-            pagecache_web_server_xtra_params=None,
             service_mapping=None,
             service_args_mapping=None,
             amqp_port=5672,
@@ -94,9 +92,8 @@ class WorkerServer(CassandraServer):
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
-        self.pagecache_web_servers = pagecache_web_servers
         self.pagecache_web_server_host = pagecache_web_server_host
-        self.pagecache_web_server_xtra_params = pagecache_web_server_xtra_params
+        self.amqp_pagecache_vhost = amqp_pagecache_vhost
         # Negative Cache Disabled?
         self.disable_negative_cache = disable_negative_cache
         # Resource Mappings
@@ -109,7 +106,6 @@ class WorkerServer(CassandraServer):
         # AMQP connection parameters
         self.amqp_host = amqp_host
         self.amqp_vhost = amqp_vhost
-        self.amqp_pagecache_vhost = amqp_pagecache_vhost
         self.amqp_port = amqp_port
         self.amqp_username = amqp_username
         self.amqp_password = amqp_password
@@ -205,6 +201,8 @@ class WorkerServer(CassandraServer):
         LOGGER.info('Starting dequeueing thread...')
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(1)
+        self.pagecachestatusloop = task.LoopingCall(self.pagecacheQueueStatusCheck)
+        self.pagecachestatusloop.start(60)
 
     @inlineCallbacks
     def shutdown(self):
@@ -225,6 +223,17 @@ class WorkerServer(CassandraServer):
         yield self.pagecache_chan.channel_close()
         pagecache_chan0 = yield self.pagecache_conn.channel(0)
         yield pagecache_chan0.connection_close()
+        
+    @inlineCallbacks
+    def pagecacheQueueStatusCheck(self):
+        yield self.pagecache_chan.queue_bind(
+            queue=self.amqp_queue,
+            exchange=self.amqp_exchange)
+        pagecache_queue_status = yield self.pagecache_chan.queue_declare(
+            queue=self.amqp_queue,
+            passive=True)
+        self.amqp_pagecache_queue_size = pagecache_queue_status.fields[1]
+        LOGGER.debug('Pagecache queue size: %d' % self.amqp_pagecache_queue_size)
 
     def dequeue(self):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
@@ -295,8 +304,11 @@ class WorkerServer(CassandraServer):
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
 
     def _executeJobCallback(self, data, job):
-        if self.pagecache_web_servers and data and 'spider_info' in job and 'username' in job['spider_info']:
-            headers = None
+        if self.amqp_pagecache_vhost and  \
+          self.amqp_pagecache_queue_size <= 100000 and \
+          data and \
+          'spider_info' in job \
+          and 'username' in job['spider_info']:
             if 'host' in job['spider_info'] and job['spider_info']['host']:
                 cache_key = job['spider_info']['host']
             else:
