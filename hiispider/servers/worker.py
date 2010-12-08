@@ -3,6 +3,7 @@ from .base import LOGGER
 from ..resources import WorkerResource
 from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
+from txamqp.content import Content
 from MySQLdb.cursors import DictCursor
 from twisted.internet import reactor, task
 from twisted.enterprise import adbapi
@@ -49,6 +50,7 @@ class WorkerServer(CassandraServer):
             amqp_username=None,
             amqp_password=None,
             amqp_vhost=None,
+            amqp_pagecache_vhost=None,
             amqp_queue=None,
             amqp_exchange=None,
             redis_hosts=None,
@@ -107,6 +109,7 @@ class WorkerServer(CassandraServer):
         # AMQP connection parameters
         self.amqp_host = amqp_host
         self.amqp_vhost = amqp_vhost
+        self.amqp_pagecache_vhost = amqp_pagecache_vhost
         self.amqp_port = amqp_port
         self.amqp_username = amqp_username
         self.amqp_password = amqp_password
@@ -170,6 +173,32 @@ class WorkerServer(CassandraServer):
             no_ack=False,
             consumer_tag="hiispider_consumer")
         self.queue = yield self.conn.queue("hiispider_consumer")
+        # setup pagecache queue
+        LOGGER.info('Connecting to pagecache broker.')
+        self.pagecache_conn = yield AMQP.createClient(
+            self.amqp_host,
+            self.amqp_pagecache_vhost,
+            self.amqp_port)
+        yield self.pagecache_conn.authenticate(self.amqp_username, self.amqp_password)
+        self.pagecache_chan = yield self.pagecache_conn.channel(1)
+        yield self.pagecache_chan.channel_open()
+        # Create pagecache Queue
+        yield self.pagecache_chan.queue_declare(
+            queue=self.amqp_queue,
+            durable=False,
+            exclusive=False,
+            auto_delete=False)
+        # Create pagecache Exchange
+        yield self.pagecache_chan.exchange_declare(
+            exchange=self.amqp_exchange,
+            type="fanout",
+            durable=False,
+            auto_delete=False)
+        yield self.pagecache_chan.queue_bind(
+            queue=self.amqp_queue,
+            exchange=self.amqp_exchange)
+        # Setup cassandra
+        LOGGER.info('Connecting to cassandra')
         yield CassandraServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
@@ -188,9 +217,14 @@ class WorkerServer(CassandraServer):
         # Shut things down
         LOGGER.info('Closing MYSQL Connnection Pool')
         yield self.mysql.close()
+        LOGGER.info('Closing Spider Queue')
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
+        LOGGER.info('Closing Pagecache Queue')
+        yield self.pagecache_chan.channel_close()
+        pagecache_chan0 = yield self.pagecache_conn.channel(0)
+        yield pagecache_chan0.connection_close()
 
     def dequeue(self):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
@@ -268,22 +302,22 @@ class WorkerServer(CassandraServer):
             else:
                 cache_key = 'http://%s/%s' % (self.pagecache_web_server_host, job['spider_info']['username'])
             cache_key = sha256(cache_key).hexdigest()
-            pagecache_web_server = random.choice(self.pagecache_web_servers)
-            pagecache_url = 'http://%s/%s' % (pagecache_web_server, job['spider_info']['username'])
-            headers = {'host': self.pagecache_web_server_host}
-            if self.pagecache_web_server_xtra_params:
-               pagecache_url = '%s%s' % (pagecache_url, self.pagecache_web_server_xtra_params)
-            pagecache_url = '%s%s' % (pagecache_url, cache_key)
-            d = self.pg.getPage(pagecache_url, headers=headers)
-            d.addCallback(self._executeJobCallback2, pagecache_url)
+            pagecache_msg = {
+                'username': job['spider_info']['username'],
+                'cache_key': cache_key,
+            }
+            if 'host' in job['spider_info'] and job['spider_info']['host']:
+                pagecache_msg['host'] = job['spider_info']['host']
+            msg = Content(simplejson.dumps(pagecache_msg))
+            d = self.pagecache_chan.basic_publish(exchange=self.amqp_exchange, content=msg)
+            d.addCallback(self._executeJobCallback2)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
             return d
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None
 
-    def _executeJobCallback2(self, data, pagecache_url):
-        LOGGER.debug('Invalidated pagecache for %s' % pagecache_url)
+    def _executeJobCallback2(self, data):
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None
