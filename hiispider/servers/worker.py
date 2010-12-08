@@ -325,6 +325,8 @@ class WorkerServer(CassandraServer):
             d.addCallback(self._executeJobCallback2)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
             return d
+        elif self.amqp_pagecache_queue_size > 100000:
+            LOGGER.error('Pagecache Queue Size has exceeded 100,000 items')
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None
