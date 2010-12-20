@@ -471,7 +471,10 @@ class PageGetter:
     def _setNegativeCacheCallback(self, data, error, host, negative_cache_key):
         if data:
             negative_cache_item = pickle.loads(str(decompress(data)))
-            if negative_cache_item['retries'] <= 25:
+            if negative_cache_item['retries'] <= 10:
+                negative_cache_item['timeout'] = time.time() + 300
+                negative_cache_item['retries'] += 1
+            if negative_cache_item['retries'] <= 50:
                 negative_cache_item['timeout'] = time.time() + 600
                 negative_cache_item['retries'] += 1
             else:
