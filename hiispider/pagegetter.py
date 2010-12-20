@@ -471,7 +471,7 @@ class PageGetter:
     def _setNegativeCacheCallback(self, data, error, host, negative_cache_key):
         if data:
             negative_cache_item = pickle.loads(str(decompress(data)))
-            if negative_cache_item['retries'] <= 5:
+            if negative_cache_item['retries'] <= 25:
                 negative_cache_item['timeout'] = time.time() + 600
                 negative_cache_item['retries'] += 1
             else:
@@ -515,12 +515,12 @@ class PageGetter:
             # FIXME non server responses should be negative cached, but
             # twitter is having issues and thus we are not updating peoples
             # profiles
-            if host == 'twitter.com':
+            if 'twitter' in url:
                 return error
             status = 500
-        if host == 'tumblr.com' and status == 400:
+        if 'tumblr.com' in url and status == 400:
             status = 500
-        elif host == 'twitter.com' and status == 502:
+        elif 'twitter.com' in url and status == 502:
             # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly
             # they are not and is messing up negative cache
             return error
