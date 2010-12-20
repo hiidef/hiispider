@@ -512,7 +512,10 @@ class PageGetter:
         try:
             status = int(error.value.status)
         except:
-            status = 500
+            # FIXME non server responses should be negative cached, but
+            # twitter is having issues and thus we are not updating peoples
+            # profiles
+            return error
         if host == 'tumblr.com' and status == 400:
             status = 500
         if status >= 400 and status < 500:
@@ -555,7 +558,10 @@ class PageGetter:
         try:
             status = int(error.value.status)
         except:
-            status = 500
+            # FIXME non server responses should be negative cached, but
+            # twitter is having issues and thus we are not updating peoples
+            # profiles
+            return ReportedFailure(error)
         if status == 304:
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                 LOGGER.debug("Raising StaleContentException (3) on %s" % request_hash)
