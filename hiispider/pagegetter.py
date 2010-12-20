@@ -518,6 +518,10 @@ class PageGetter:
             return error
         if host == 'tumblr.com' and status == 400:
             status = 500
+        elif host == 'twitter.com' and status == 502:
+            # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly
+            # they are not and is messing up negative cache
+            return error
         if status >= 400 and status < 500:
             self.setNegativeReqCache(error, request_hash)
         if status >= 500:
@@ -561,6 +565,10 @@ class PageGetter:
             # FIXME non server responses should be negative cached, but
             # twitter is having issues and thus we are not updating peoples
             # profiles
+            return ReportedFailure(error)
+        if 'twitter.com' in url and status == 502:
+            # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly
+            # they are not and is messing up negative cache
             return ReportedFailure(error)
         if status == 304:
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
