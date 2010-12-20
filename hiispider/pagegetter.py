@@ -515,7 +515,9 @@ class PageGetter:
             # FIXME non server responses should be negative cached, but
             # twitter is having issues and thus we are not updating peoples
             # profiles
-            return error
+            if host == 'twitter.com':
+                return error
+            status = 500
         if host == 'tumblr.com' and status == 400:
             status = 500
         elif host == 'twitter.com' and status == 502:
@@ -565,7 +567,9 @@ class PageGetter:
             # FIXME non server responses should be negative cached, but
             # twitter is having issues and thus we are not updating peoples
             # profiles
-            return ReportedFailure(error)
+            if 'twitter.com' in url:
+                return ReportedFailure(error)
+            status = 500
         if 'twitter.com' in url and status == 502:
             # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly
             # they are not and is messing up negative cache
