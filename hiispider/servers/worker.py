@@ -312,7 +312,7 @@ class WorkerServer(CassandraServer):
             if 'host' in job['spider_info'] and job['spider_info']['host']:
                 cache_key = job['spider_info']['host']
             else:
-                cache_key = 'http://%s/%s' % (self.pagecache_web_server_host, job['spider_info']['username'])
+                cache_key = '%s/%s' % (self.pagecache_web_server_host, job['spider_info']['username'])
             cache_key = sha256(cache_key).hexdigest()
             pagecache_msg = {
                 'username': job['spider_info']['username'],
