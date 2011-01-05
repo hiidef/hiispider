@@ -179,7 +179,8 @@ class PageGetter:
             cache=0,
             content_sha1=None,
             confirm_cache_write=False,
-            check_only_tld=False):
+            check_only_tld=False,
+            disable_negative_cache=False):
         """
         Make a cached HTTP Request.
 
@@ -212,6 +213,7 @@ class PageGetter:
            StaleContentException.  
          * *confirm_cache_write* -- Wait to confirm cache write before returning.
          * *check_only_tld* -- for negative cache, check only the top level domain name
+         * *disable_negative_cache* -- disable negative cache for this request
         """ 
         request_kwargs = {
             "method":method.upper(), 
@@ -251,19 +253,22 @@ class PageGetter:
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
-        negative_req_cache_key = 'negative_req_cache:%s' % request_hash
-        negative_cache_host_key = 'negative_cache:%s' % host
-        d = self.checkNegativeCache(
-                negative_cache_host_key,
-                negative_req_cache_key,
-                url,
-                request_hash,
-                request_kwargs,
-                cache,
-                content_sha1,
-                confirm_cache_write,
-                host,
-            )
+        if not disable_negative_cache:
+            negative_req_cache_key = 'negative_req_cache:%s' % request_hash
+            negative_cache_host_key = 'negative_cache:%s' % host
+            d = self.checkNegativeCache(
+                    negative_cache_host_key,
+                    negative_req_cache_key,
+                    url,
+                    request_hash,
+                    request_kwargs,
+                    cache,
+                    content_sha1,
+                    confirm_cache_write,
+                    host,
+                )
+        else:
+            d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
     
     def getCachedData(self, request_hash):
