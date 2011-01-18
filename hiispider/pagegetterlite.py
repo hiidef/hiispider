@@ -71,7 +71,9 @@ class PageGetter:
             cache=0,
             content_sha1=None,
             confirm_cache_write=False,
-            check_only_tld=False):
+            check_only_tld=False,
+            disable_negative_cache=False,
+            ):
         """
         Make a cached HTTP Request.
 
