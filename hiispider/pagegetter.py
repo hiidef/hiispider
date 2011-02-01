@@ -42,8 +42,6 @@ class PageGetter:
     
     def __init__(self, 
         cassandra_client, 
-        cassandra_http,
-        cassandra_headers,
         redis_client,
         disable_negative_cache=False,
         time_offset=0,
@@ -58,8 +56,6 @@ class PageGetter:
 
         """
         self.cassandra_client = cassandra_client
-        self.cassandra_http = cassandra_http
-        self.cassandra_headers = cassandra_headers
         self.redis_client = redis_client
         self.disable_negative_cache = disable_negative_cache
         self.time_offset = time_offset

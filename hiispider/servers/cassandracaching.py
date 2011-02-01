@@ -13,8 +13,6 @@ class CassandraCachingServer(BaseServer):
                  cassandra_server=None,
                  cassandra_port=9160,
                  cassandra_keyspace=None,
-                 cassandra_http=None,
-                 cassandra_headers=None,
                  redis_hosts=None,
                  max_simultaneous_requests=100,
                  max_requests_per_host_per_second=0,
@@ -36,8 +34,6 @@ class CassandraCachingServer(BaseServer):
         self.cassandra_server = cassandra_server
         self.cassandra_port = cassandra_port
         self.cassandra_keyspace = cassandra_keyspace
-        self.cassandra_http = cassandra_http
-        self.cassandra_headers=cassandra_headers
         self.cassandra_factory = ManagedCassandraClientFactory()
         self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
         self.setup_redis_client_and_pg(redis_hosts)
@@ -47,7 +43,5 @@ class CassandraCachingServer(BaseServer):
     def setup_redis_client_and_pg(self, redis_hosts):
         self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
         self.pg = PageGetter(self.cassandra_client,
-                             self.cassandra_http,
-                             self.cassandra_headers,
                              redis_client=self.redis_client,
                              rq=self.rq)

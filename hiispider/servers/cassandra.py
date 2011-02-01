@@ -24,8 +24,6 @@ class CassandraServer(BaseServer):
                  cassandra_cf_content=None,
                  cassandra_content=None,
                  cassandra_content_error='error',
-                 cassandra_http=None,
-                 cassandra_headers=None,
                  cassandra_error='error',
                  redis_hosts=None,
                  disable_negative_cache=False,
@@ -50,8 +48,6 @@ class CassandraServer(BaseServer):
         self.cassandra_port = cassandra_port
         self.cassandra_keyspace = cassandra_keyspace
         self.cassandra_cf_content = cassandra_cf_content
-        self.cassandra_http = cassandra_http
-        self.cassandra_headers=cassandra_headers
         self.cassandra_content = cassandra_content
         self.cassandra_content_error = cassandra_content_error
         self.cassandra_factory = ManagedCassandraClientFactory()
@@ -65,8 +61,6 @@ class CassandraServer(BaseServer):
         self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
         self.pg = PageGetter(
             self.cassandra_client,
-            self.cassandra_http,
-            self.cassandra_headers,
             redis_client=self.redis_client,
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
