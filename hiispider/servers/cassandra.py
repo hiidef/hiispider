@@ -21,6 +21,8 @@ class CassandraServer(BaseServer):
                  cassandra_server=None,
                  cassandra_port=9160,
                  cassandra_keyspace=None,
+                 cassandra_stats_keyspace=None,
+                 cassandra_stats_cf_daily=None,
                  cassandra_cf_content=None,
                  cassandra_content=None,
                  cassandra_content_error='error',
@@ -50,10 +52,19 @@ class CassandraServer(BaseServer):
         self.cassandra_cf_content = cassandra_cf_content
         self.cassandra_content = cassandra_content
         self.cassandra_content_error = cassandra_content_error
-        self.cassandra_factory = ManagedCassandraClientFactory()
-        self.cassandra_client = CassandraClient(self.cassandra_factory, cassandra_keyspace)
+        # Cassandra Stats
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace,
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily,
+        # Cassandra Client/Factory
+        self.cassandra_factory = ManagedCassandraClientFactory(cassandra_keyspace)
+        self.cassandra_stats_factory = ManagedCassandraClientFactory(cassandra_stats_keyspace)
+        self.cassandra_client = CassandraClient(self.cassandra_factory)
+        self.cassandra_stats_client = CassandraClient(self.cassandra_stats_factory)
+        # Negative Cache
         self.disable_negative_cache = disable_negative_cache
+        # Redis
         self.setup_redis_client_and_pg(redis_hosts)
+        # Casasndra reactor
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
 
     @inlineCallbacks
@@ -136,18 +147,6 @@ class CassandraServer(BaseServer):
             return
         except:
             pass
-        # save error in a error column in the content CF
-        # data = {
-        #     'msg': error.getErrorMessage(),
-        #     'traceback': error.getTraceback(),
-        #     'timestamp': datetime.now().isoformat(),
-        # }
-        # encoded_data = zlib.compress(simplejson.dumps(data))
-        # self.cassandra_client.insert(
-        #     uuid,
-        #     self.cassandra_cf_content,
-        #     encoded_data,
-        #     column=self.cassandra_content_error)
         return error
 
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):

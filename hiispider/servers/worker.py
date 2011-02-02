@@ -37,6 +37,8 @@ class WorkerServer(CassandraServer):
             aws_secret_access_key=None,
             cassandra_server=None,
             cassandra_keyspace=None,
+            cassandra_stats_keyspace=None,
+            cassandra_stats_cf_daily=None,
             cassandra_cf_content=None,
             cassandra_content=None,
             mysql_username=None,
@@ -83,6 +85,9 @@ class WorkerServer(CassandraServer):
         self.cassandra_keyspace=cassandra_keyspace
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_content=cassandra_content
+        # Cassandra Stats
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace,
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily,
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
@@ -114,6 +119,8 @@ class WorkerServer(CassandraServer):
             cassandra_keyspace=cassandra_keyspace,
             cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
+            cassandra_stats_keyspace=cassandra_stats_keyspace,
+            cassandra_stats_cf_daily=cassandra_stats_cf_daily,
             redis_hosts=redis_hosts,
             disable_negative_cache=disable_negative_cache,
             max_simultaneous_requests=max_simultaneous_requests,
