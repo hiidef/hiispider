@@ -37,11 +37,10 @@ class WorkerServer(CassandraServer):
             aws_secret_access_key=None,
             cassandra_server=None,
             cassandra_keyspace=None,
-            cassandra_cf_cache=None,
+            cassandra_stats_keyspace=None,
+            cassandra_stats_cf_daily=None,
             cassandra_cf_content=None,
             cassandra_content=None,
-            cassandra_http=None,
-            cassandra_headers=None,
             mysql_username=None,
             mysql_password=None,
             mysql_host=None,
@@ -84,11 +83,11 @@ class WorkerServer(CassandraServer):
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
-        self.cassandra_cf_cache=cassandra_cf_cache
         self.cassandra_cf_content=cassandra_cf_content
-        self.cassandra_http=cassandra_http
-        self.cassandra_headers=cassandra_headers
         self.cassandra_content=cassandra_content
+        # Cassandra Stats
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace,
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily,
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
@@ -118,11 +117,10 @@ class WorkerServer(CassandraServer):
             aws_secret_access_key=aws_secret_access_key,
             cassandra_server=cassandra_server,
             cassandra_keyspace=cassandra_keyspace,
-            cassandra_cf_cache=cassandra_cf_cache,
             cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
-            cassandra_http=cassandra_http,
-            cassandra_headers=cassandra_headers,
+            cassandra_stats_keyspace=cassandra_stats_keyspace,
+            cassandra_stats_cf_daily=cassandra_stats_cf_daily,
             redis_hosts=redis_hosts,
             disable_negative_cache=disable_negative_cache,
             max_simultaneous_requests=max_simultaneous_requests,
@@ -325,6 +323,8 @@ class WorkerServer(CassandraServer):
             d.addCallback(self._executeJobCallback2)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
             return d
+        elif self.amqp_pagecache_queue_size > 100000:
+            LOGGER.error('Pagecache Queue Size has exceeded 100,000 items')
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         return None

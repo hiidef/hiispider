@@ -45,7 +45,6 @@ class PageGetter:
 
         **Arguments:**
          * *cassandra_client* -- Cassandra client object.
-         * *cassandra_cf_cache -- Cassandra CF to use for the HTTP cache.
 
         **Keyword arguments:**
          * *rq* -- Request Queuer object. (Default ``None``)      
