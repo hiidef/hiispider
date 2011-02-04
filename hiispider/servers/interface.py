@@ -25,6 +25,8 @@ class InterfaceServer(CassandraServer):
             aws_secret_access_key=None,
             cassandra_server=None, 
             cassandra_keyspace=None,
+            cassandra_stats_keyspace=None,
+            cassandra_stats_cf_daily=None,
             cassandra_cf_content=None,
             cassandra_content=None,
             redis_hosts=None,
@@ -59,6 +61,9 @@ class InterfaceServer(CassandraServer):
         self.cassandra_keyspace=cassandra_keyspace
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_content=cassandra_content
+        # Cassandra Stats
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily
         # Redis
         self.redis_hosts = redis_hosts
         # Negative Cache Disabled?
@@ -77,6 +82,8 @@ class InterfaceServer(CassandraServer):
             aws_secret_access_key=aws_secret_access_key,
             cassandra_server=cassandra_server,
             cassandra_keyspace=cassandra_keyspace,
+            cassandra_stats_keyspace=cassandra_stats_keyspace,
+            cassandra_stats_cf_daily=cassandra_stats_cf_daily,
             cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
             redis_hosts=redis_hosts,

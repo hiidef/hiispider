@@ -53,12 +53,12 @@ class CassandraServer(BaseServer):
         self.cassandra_content = cassandra_content
         self.cassandra_content_error = cassandra_content_error
         # Cassandra Stats
-        self.cassandra_stats_keyspace=cassandra_stats_keyspace,
-        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily,
-        # Cassandra Client/Factory
-        self.cassandra_factory = ManagedCassandraClientFactory(cassandra_keyspace)
-        self.cassandra_stats_factory = ManagedCassandraClientFactory(cassandra_stats_keyspace)
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily
+        # Cassandra Clients & Factorys
+        self.cassandra_factory = ManagedCassandraClientFactory(self.cassandra_keyspace)
         self.cassandra_client = CassandraClient(self.cassandra_factory)
+        self.cassandra_stats_factory = ManagedCassandraClientFactory(self.cassandra_stats_keyspace)
         self.cassandra_stats_client = CassandraClient(self.cassandra_stats_factory)
         # Negative Cache
         self.disable_negative_cache = disable_negative_cache
@@ -66,6 +66,8 @@ class CassandraServer(BaseServer):
         self.setup_redis_client_and_pg(redis_hosts)
         # Casasndra reactor
         reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
+        if self.cassandra_stats_keyspace:
+            reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_stats_factory)
 
     @inlineCallbacks
     def setup_redis_client_and_pg(self, redis_hosts):
