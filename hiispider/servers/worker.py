@@ -86,8 +86,8 @@ class WorkerServer(CassandraServer):
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_content=cassandra_content
         # Cassandra Stats
-        self.cassandra_stats_keyspace=cassandra_stats_keyspace,
-        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily,
+        self.cassandra_stats_keyspace=cassandra_stats_keyspace
+        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily
         # Redis
         self.redis_hosts = redis_hosts
         # Pagecache
