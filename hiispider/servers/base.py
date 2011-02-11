@@ -137,66 +137,6 @@ class BaseServer(object):
         d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
-        
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None and uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        try:
-            error.raiseException()
-        except DeleteReservationException:
-            if uuid is not None:
-                self.deleteReservation(uuid)
-            message = """Error with %s, %s.\n%s            
-            Reservation deleted at request of the function.""" % (
-                function_name,
-                uuid,
-                error)
-            LOGGER.debug(message)
-            return
-        except:
-            pass
-        if uuid is None:
-            LOGGER.error("Error with %s.\n%s" % (function_name, error))
-        else:
-            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
-                function_name, 
-                uuid,
-                error))
-            # save error in a error column in the content CF
-            data = {
-                'msg': error.getErrorMessage(),
-                'traceback': error.getTraceback(),
-                'timestamp': datetime.now().isoformat(),
-            }
-            encoded_data = zlib.compress(simplejson.dumps(data))
-            self.cassandra_client.insert(
-                uuid,
-                self.cassandra_cf_content,
-                encoded_data,
-                column=self.cassandra_content_error)
-        return error
-
-    def _callExposedFunctionCallback(self, data, function_name, uuid):
-        # If the UUID is None, this is a one-off type of thing.
-        if uuid is None:
-            return data
-        # If the data is None, there's nothing to store.
-        if data is None:
-            del self.active_jobs[uuid]
-            return None
-        # If we have an place to store the response on Cassandra, do it.
-        if self.cassandra_cf_content is not None:
-            LOGGER.debug("Putting result for %s, %s on Cassandra." % (function_name, uuid))
-            encoded_data = zlib.compress(simplejson.dumps(data))
-            d = self.cassandra_client.insert(
-                uuid,
-                self.cassandra_cf_content, 
-                encoded_data,
-                column=self.cassandra_content)
-            d.addCallback(self._exposedFunctionCallback2, data, uuid)
-            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
-            return d
-        return data
 
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         if uuid in self.active_jobs:
