@@ -7,7 +7,7 @@ from twisted.internet.defer import DeferredList, inlineCallbacks
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
-from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column
+from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column, ConsistencyLevel
 from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
 from ..exceptions import DeleteReservationException
@@ -129,7 +129,8 @@ class CassandraServer(BaseServer):
                 uuid,
                 self.cassandra_cf_content,
                 encoded_data,
-                column=self.cassandra_content)
+                column=self.cassandra_content,
+                consistancy=ConsistencyLevel.ALL)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
 
