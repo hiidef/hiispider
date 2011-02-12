@@ -130,7 +130,7 @@ class CassandraServer(BaseServer):
                 self.cassandra_cf_content,
                 encoded_data,
                 column=self.cassandra_content,
-                consistency=ConsistencyLevel.QUORUM)
+                consistency=ConsistencyLevel.ONE)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
 

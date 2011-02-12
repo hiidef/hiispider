@@ -123,7 +123,7 @@ class SchedulerServer(BaseServer):
         # Select the entire spider_service DB, 10k rows at at time.
         sql = """SELECT uuid, type
                  FROM spider_service
-                 ORDER BY id LIMIT %s, 10000
+                 ORDER BY id LIMIT %s, 2000
               """ % start
         LOGGER.debug(sql)
         d = self.mysql.runQuery(sql)
