@@ -126,7 +126,7 @@ class CassandraServer(BaseServer):
             LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
             encoded_data = zlib.compress(simplejson.dumps(data))
             d = self.cassandra_client.insert(
-                unicode(user_id),
+                str(user_id),
                 uuid,
                 encoded_data,
                 column=self.cassandra_content,
