@@ -357,7 +357,7 @@ class WorkerServer(CassandraServer):
 
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = """SELECT user_id, username, host, account_id, type
+        sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
             WHERE uuid = '%s'
             AND auth_user.id=spider_service.user_id
