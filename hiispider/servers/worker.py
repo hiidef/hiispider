@@ -292,12 +292,14 @@ class WorkerServer(CassandraServer):
             kwargs = job["kwargs"]
             function_name = job["function_name"]
             uuid = job["uuid"]
+            user_id = job["user_id"]
             d = self.callExposedFunction(
                 exposed_function["function"],
                 kwargs,
                 function_name,
+                user_id=user_id,
                 reservation_fast_cache=job["reservation_fast_cache"],
-                uuid=uuid)
+                uuid=uuid,)
             d.addCallback(self._executeJobCallback, job)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
 
@@ -355,7 +357,7 @@ class WorkerServer(CassandraServer):
 
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = """SELECT username, host, account_id, type
+        sql = """SELECT user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
             WHERE uuid = '%s'
             AND auth_user.id=spider_service.user_id
