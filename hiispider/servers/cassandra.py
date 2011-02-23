@@ -120,7 +120,7 @@ class CassandraServer(BaseServer):
         return True
 
     def _callExposedFunctionCallback(self, data, function_name, user_id, uuid):
-        data = BaseServer._callExposedFunctionCallback(self, data, function_name, uuid)
+        data = BaseServer._callExposedFunctionCallback(self, data, function_name, user_id, uuid)
         # If we have an place to store the response on Cassandra, do it.
         if user_id is not None and uuid is not None and self.cassandra_cf_content is not None and data is not None:
             LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))

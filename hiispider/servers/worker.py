@@ -292,7 +292,7 @@ class WorkerServer(CassandraServer):
             kwargs = job["kwargs"]
             function_name = job["function_name"]
             uuid = job["uuid"]
-            user_id = job["user_id"]
+            user_id = job['spider_info']["user_id"]
             d = self.callExposedFunction(
                 exposed_function["function"],
                 kwargs,
@@ -390,21 +390,23 @@ class WorkerServer(CassandraServer):
 
     def createJob(self, account_info, spider_info, uuid, delivery_tag):
         job = {}
-        account = account_info[0]
-        function_name = spider_info[0]['type']
-        job['type'] = function_name.split('/')[1]
-        if self.service_mapping and self.service_mapping.has_key(function_name):
-            LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
-            function_name = self.service_mapping[function_name]
-        job['function_name'] = function_name
-        job['uuid'] = uuid
-        job['account'] = account
-        job['kwargs'] = self.mapKwargs(job)
-        job['spider_info'] = spider_info[0]
-        job['delivery_tag'] = delivery_tag
-        d = self.setJobCache(job)
-        d.addCallback(self._createJobCallback, job)
-        return d
+        if account_info:
+            account = account_info[0]
+            function_name = spider_info[0]['type']
+            job['type'] = function_name.split('/')[1]
+            if self.service_mapping and self.service_mapping.has_key(function_name):
+                LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
+                function_name = self.service_mapping[function_name]
+            job['function_name'] = function_name
+            job['uuid'] = uuid
+            job['account'] = account
+            job['kwargs'] = self.mapKwargs(job)
+            job['spider_info'] = spider_info[0]
+            job['delivery_tag'] = delivery_tag
+            d = self.setJobCache(job)
+            d.addCallback(self._createJobCallback, job)
+            return d
+        return None
 
     def _createJobCallback(self, data, job):
         return job
