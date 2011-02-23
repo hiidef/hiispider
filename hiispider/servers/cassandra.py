@@ -127,9 +127,9 @@ class CassandraServer(BaseServer):
             encoded_data = zlib.compress(simplejson.dumps(data))
             d = self.cassandra_client.insert(
                 str(user_id),
-                uuid,
+                self.cassandra_cf_content,
                 encoded_data,
-                column=self.cassandra_content,
+                column=uuid,
                 consistency=ConsistencyLevel.ONE)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
