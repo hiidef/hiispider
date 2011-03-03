@@ -123,7 +123,7 @@ class BaseServer(object):
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
     
-    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
+    def callExposedFunction(self, func, kwargs, function_name, user_id, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
         if self.functions[function_name]["get_reservation_uuid"]:
@@ -134,7 +134,7 @@ class BaseServer(object):
         elif self.functions[function_name]["check_reservation_fast_cache"]:
             kwargs["reservation_fast_cache"] = None
         d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
+        d.addCallback(self._callExposedFunctionCallback, function_name, user_id, uuid)
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
@@ -261,7 +261,7 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
 
-    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
+    def callExposedFunction(self, func, kwargs, function_name, user_id, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
         if self.functions[function_name]["get_reservation_uuid"]:
@@ -272,7 +272,7 @@ class BaseServer(object):
         elif self.functions[function_name]["check_reservation_fast_cache"]:
             kwargs["reservation_fast_cache"] = None
         d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
+        d.addCallback(self._callExposedFunctionCallback, function_name, user_id, uuid)
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
@@ -288,7 +288,7 @@ class BaseServer(object):
                 error))
         return error
 
-    def _callExposedFunctionCallback(self, data, function_name, uuid):
+    def _callExposedFunctionCallback(self, data, function_name, user_id, uuid):
         LOGGER.debug("Function %s returned successfully." % (function_name))
         # If the UUID is None, this is a one-off type of thing.
         if uuid is None:

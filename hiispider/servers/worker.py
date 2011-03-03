@@ -292,12 +292,14 @@ class WorkerServer(CassandraServer):
             kwargs = job["kwargs"]
             function_name = job["function_name"]
             uuid = job["uuid"]
+            user_id = job['spider_info']["user_id"]
             d = self.callExposedFunction(
                 exposed_function["function"],
                 kwargs,
                 function_name,
+                user_id=user_id,
                 reservation_fast_cache=job["reservation_fast_cache"],
-                uuid=uuid)
+                uuid=uuid,)
             d.addCallback(self._executeJobCallback, job)
             d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
 
@@ -355,7 +357,7 @@ class WorkerServer(CassandraServer):
 
     def _getJobErrback(self, account, uuid, delivery_tag):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
-        sql = """SELECT username, host, account_id, type
+        sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
             WHERE uuid = '%s'
             AND auth_user.id=spider_service.user_id
@@ -388,21 +390,23 @@ class WorkerServer(CassandraServer):
 
     def createJob(self, account_info, spider_info, uuid, delivery_tag):
         job = {}
-        account = account_info[0]
-        function_name = spider_info[0]['type']
-        job['type'] = function_name.split('/')[1]
-        if self.service_mapping and self.service_mapping.has_key(function_name):
-            LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
-            function_name = self.service_mapping[function_name]
-        job['function_name'] = function_name
-        job['uuid'] = uuid
-        job['account'] = account
-        job['kwargs'] = self.mapKwargs(job)
-        job['spider_info'] = spider_info[0]
-        job['delivery_tag'] = delivery_tag
-        d = self.setJobCache(job)
-        d.addCallback(self._createJobCallback, job)
-        return d
+        if account_info:
+            account = account_info[0]
+            function_name = spider_info[0]['type']
+            job['type'] = function_name.split('/')[1]
+            if self.service_mapping and self.service_mapping.has_key(function_name):
+                LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
+                function_name = self.service_mapping[function_name]
+            job['function_name'] = function_name
+            job['uuid'] = uuid
+            job['account'] = account
+            job['kwargs'] = self.mapKwargs(job)
+            job['spider_info'] = spider_info[0]
+            job['delivery_tag'] = delivery_tag
+            d = self.setJobCache(job)
+            d.addCallback(self._createJobCallback, job)
+            return d
+        return None
 
     def _createJobCallback(self, data, job):
         return job
