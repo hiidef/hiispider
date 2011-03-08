@@ -39,6 +39,7 @@ class WorkerServer(CassandraServer):
             cassandra_keyspace=None,
             cassandra_stats_keyspace=None,
             cassandra_stats_cf_daily=None,
+            cassandra_cf_temp_content=None,
             cassandra_cf_content=None,
             cassandra_content=None,
             mysql_username=None,
@@ -83,6 +84,7 @@ class WorkerServer(CassandraServer):
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
+        self.cassandra_cf_temp_content = cassandra_cf_temp_content
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_content=cassandra_content
         # Cassandra Stats
@@ -117,6 +119,7 @@ class WorkerServer(CassandraServer):
             aws_secret_access_key=aws_secret_access_key,
             cassandra_server=cassandra_server,
             cassandra_keyspace=cassandra_keyspace,
+            cassandra_cf_temp_content=cassandra_cf_temp_content,
             cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
             cassandra_stats_keyspace=cassandra_stats_keyspace,

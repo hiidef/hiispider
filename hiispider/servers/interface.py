@@ -27,6 +27,7 @@ class InterfaceServer(CassandraServer):
             cassandra_keyspace=None,
             cassandra_stats_keyspace=None,
             cassandra_stats_cf_daily=None,
+            cassandra_cf_temp_content=None,
             cassandra_cf_content=None,
             cassandra_content=None,
             redis_hosts=None,
@@ -59,6 +60,7 @@ class InterfaceServer(CassandraServer):
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
+        self.cassandra_cf_temp_content = cassandra_cf_temp_content
         self.cassandra_cf_content=cassandra_cf_content
         self.cassandra_content=cassandra_content
         # Cassandra Stats
@@ -84,6 +86,7 @@ class InterfaceServer(CassandraServer):
             cassandra_keyspace=cassandra_keyspace,
             cassandra_stats_keyspace=cassandra_stats_keyspace,
             cassandra_stats_cf_daily=cassandra_stats_cf_daily,
+            cassandra_cf_temp_content=cassandra_cf_temp_content,
             cassandra_cf_content=cassandra_cf_content,
             cassandra_content=cassandra_content,
             redis_hosts=redis_hosts,
