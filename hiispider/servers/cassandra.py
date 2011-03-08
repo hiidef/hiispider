@@ -23,6 +23,7 @@ class CassandraServer(BaseServer):
                  cassandra_keyspace=None,
                  cassandra_stats_keyspace=None,
                  cassandra_stats_cf_daily=None,
+                 cassandra_cf_temp_content=None,
                  cassandra_cf_content=None,
                  cassandra_content=None,
                  cassandra_content_error='error',
@@ -49,6 +50,7 @@ class CassandraServer(BaseServer):
         self.cassandra_server = cassandra_server
         self.cassandra_port = cassandra_port
         self.cassandra_keyspace = cassandra_keyspace
+        self.cassandra_cf_temp_content = cassandra_cf_temp_content
         self.cassandra_cf_content = cassandra_cf_content
         self.cassandra_content = cassandra_content
         self.cassandra_content_error = cassandra_content_error
@@ -80,6 +82,10 @@ class CassandraServer(BaseServer):
 
     def executeReservation(self, function_name, **kwargs):
         uuid = None
+        site_user_id = None
+        if 'site_user_id' in kwargs:
+            site_user_id = kwargs['site_user_id']
+            del kwargs['site_user_id']
         if not isinstance(function_name, str):
             for key in self.functions:
                 if self.functions[key]["function"] == function_name:
@@ -94,7 +100,7 @@ class CassandraServer(BaseServer):
             self.functions[function_name]["function"],
             kwargs,
             function_name,
-            user_id=None,
+            user_id=site_user_id,
             uuid=uuid)
         d.addCallback(self._executeReservationCallback, function_name, uuid)
         d.addErrback(self._executeReservationErrback, function_name, uuid)
@@ -126,7 +132,7 @@ class CassandraServer(BaseServer):
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
             encoded_data = zlib.compress(simplejson.dumps(data))
-            if user_id is not None:
+            if user_id:
                 d = self.cassandra_client.insert(
                     str(user_id),
                     self.cassandra_cf_content,
@@ -136,7 +142,7 @@ class CassandraServer(BaseServer):
             else:
                 d = self.cassandra_client.insert(
                     uuid,
-                    self.cassandra_cf_content,
+                    self.cassandra_cf_temp_content,
                     encoded_data,
                     column=self.cassandra_content,
                     consistency=ConsistencyLevel.ONE)
