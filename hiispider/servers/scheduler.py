@@ -120,10 +120,10 @@ class SchedulerServer(BaseServer):
         self.statusloop.start(60)
 
     def _loadFromMySQL(self, start=0):
-        # Select the entire spider_service DB, 10k rows at at time.
+        # Select the entire spider_service DB, 100k rows at at time.
         sql = """SELECT uuid, type
                  FROM spider_service
-                 ORDER BY id LIMIT %s, 2000
+                 ORDER BY id LIMIT %s, 100000
               """ % start
         LOGGER.debug(sql)
         d = self.mysql.runQuery(sql)
@@ -132,11 +132,10 @@ class SchedulerServer(BaseServer):
         return d
 
     def _loadFromMySQLCallback(self, data, start):
-        for row in data:
-            self.addToHeap(row["uuid"], row["type"])
+        [self.addToHeap(row["uuid"], row["type"]) for row in data]
         # Load next chunk.
-        if len(data) >= 2000:
-            return self._loadFromMySQL(start=start + 2000)
+        if len(data) >= 100000:
+            return self._loadFromMySQL(start=start + 100000)
         # Done loading, start queuing
         self.enqueue()
         d = BaseServer.start(self)
