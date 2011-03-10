@@ -10,12 +10,10 @@ from MySQLdb import OperationalError
 from twisted.web.resource import Resource
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
-from twisted.internet.threads import deferToThread
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
+from twisted.internet.defer import Deferred, maybeDeferred
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
-import simplejson
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -122,21 +120,6 @@ class BaseServer(object):
         LOGGER.debug("Shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
-    
-    def callExposedFunction(self, func, kwargs, function_name, user_id=None, reservation_fast_cache=None, uuid=None):
-        if uuid is not None:
-            self.active_jobs[uuid] = True
-        if self.functions[function_name]["get_reservation_uuid"]:
-            kwargs["reservation_uuid"] = uuid 
-        if self.functions[function_name]["check_reservation_fast_cache"] and \
-                reservation_fast_cache is not None:
-            kwargs["reservation_fast_cache"] = reservation_fast_cache
-        elif self.functions[function_name]["check_reservation_fast_cache"]:
-            kwargs["reservation_fast_cache"] = None
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, user_id, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
 
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         if uuid in self.active_jobs:
