@@ -135,8 +135,8 @@ class SchedulerServer(BaseServer):
         for row in data:
             self.addToHeap(row["uuid"], row["type"])
         # Load next chunk.
-        if len(data) >= 10000:
-            return self._loadFromMySQL(start=start + 10000)
+        if len(data) >= 2000:
+            return self._loadFromMySQL(start=start + 2000)
         # Done loading, start queuing
         self.enqueue()
         d = BaseServer.start(self)
