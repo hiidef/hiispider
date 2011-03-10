@@ -123,7 +123,7 @@ class BaseServer(object):
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
     
-    def callExposedFunction(self, func, kwargs, function_name, user_id, reservation_fast_cache=None, uuid=None):
+    def callExposedFunction(self, func, kwargs, function_name, user_id=None, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
         if self.functions[function_name]["get_reservation_uuid"]:
@@ -261,7 +261,7 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
 
-    def callExposedFunction(self, func, kwargs, function_name, user_id, reservation_fast_cache=None, uuid=None):
+    def callExposedFunction(self, func, kwargs, function_name, user_id=None, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
         if self.functions[function_name]["get_reservation_uuid"]:
