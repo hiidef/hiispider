@@ -138,14 +138,14 @@ class CassandraServer(BaseServer):
                     self.cassandra_cf_content,
                     encoded_data,
                     column=uuid,
-                    consistency=ConsistencyLevel.ONE)
+                    consistency=ConsistencyLevel.QUORUM)
             else:
                 d = self.cassandra_client.insert(
                     uuid,
                     self.cassandra_cf_temp_content,
                     encoded_data,
                     column=self.cassandra_content,
-                    consistency=ConsistencyLevel.ONE)
+                    consistency=ConsistencyLevel.QUORUM)
             d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
         return data
 
