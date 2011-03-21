@@ -85,7 +85,6 @@ class CassandraServer(BaseServer):
         site_user_id = None
         if 'site_user_id' in kwargs:
             site_user_id = kwargs['site_user_id']
-            del kwargs['site_user_id']
         if not isinstance(function_name, str):
             for key in self.functions:
                 if self.functions[key]["function"] == function_name:
