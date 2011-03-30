@@ -3,7 +3,7 @@ import urllib
 from uuid import uuid4
 from MySQLdb.cursors import DictCursor
 from twisted.enterprise import adbapi
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
+from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
 from twisted.internet.threads import deferToThread
 from twisted.web.resource import Resource
 from twisted.internet import reactor
@@ -13,17 +13,19 @@ from .base import LOGGER, SmartConnectionPool
 from ..resources import InterfaceResource
 from ..evaluateboolean import evaluateBoolean
 import zlib
+from ..amqp import amqp as AMQP
+
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 class InterfaceServer(CassandraServer):
-
+    
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
     
     def __init__(self,
             aws_access_key_id=None,
             aws_secret_access_key=None,
-            cassandra_server=None, 
+            cassandra_server=None,
             cassandra_keyspace=None,
             cassandra_stats_keyspace=None,
             cassandra_stats_cf_daily=None,
@@ -31,13 +33,20 @@ class InterfaceServer(CassandraServer):
             cassandra_cf_content=None,
             cassandra_content=None,
             redis_hosts=None,
+            amqp_host=None,
+            amqp_username=None,
+            amqp_password=None,
+            amqp_vhost=None,
+            amqp_queue=None,
+            amqp_exchange=None,
+            amqp_port=5672,
             disable_negative_cache=True,
             scheduler_server=None,
             scheduler_server_port=5001,
             max_simultaneous_requests=50,
             max_requests_per_host_per_second=1,
             max_simultaneous_requests_per_host=5,
-            port=5000, 
+            port=5000,
             log_file='interfaceserver.log',
             log_directory=None,
             log_level="debug",
@@ -57,6 +66,14 @@ class InterfaceServer(CassandraServer):
             host=mysql_host,
             cp_reconnect=True,
             cursorclass=DictCursor)
+        # AMQP connection parameters
+        self.amqp_host = amqp_host
+        self.amqp_vhost = amqp_vhost
+        self.amqp_port = amqp_port
+        self.amqp_username = amqp_username
+        self.amqp_password = amqp_password
+        self.amqp_queue = amqp_queue
+        self.amqp_exchange = amqp_exchange
         # Cassandra
         self.cassandra_server=cassandra_server
         self.cassandra_keyspace=cassandra_keyspace
@@ -98,16 +115,40 @@ class InterfaceServer(CassandraServer):
             log_directory=log_directory,
             log_level=log_level,
             port=port)
-        
+    
     def start(self):
         reactor.callWhenRunning(self._start)
         return self.start_deferred
-
+    
+    @inlineCallbacks
     def _start(self):
+        LOGGER.info('Connecting to broker.')
+        self.conn = yield AMQP.createClient(
+            self.amqp_host,
+            self.amqp_vhost,
+            self.amqp_port)
+        yield self.conn.authenticate(self.amqp_username, self.amqp_password)
+        self.chan = yield self.conn.channel(1)
+        yield self.chan.channel_open()
+        # Create Queue
+        yield self.chan.queue_declare(
+            queue=self.amqp_queue,
+            durable=False,
+            exclusive=False,
+            auto_delete=False)
+        # Create Exchange
+        yield self.chan.exchange_declare(
+            exchange=self.amqp_exchange,
+            type="fanout",
+            durable=False,
+            auto_delete=False)
+        yield self.chan.queue_bind(
+            queue=self.amqp_queue,
+            exchange=self.amqp_exchange)
         deferreds = []
         d = DeferredList(deferreds, consumeErrors=True)
         d.addCallback(self._startCallback)
-
+    
     def _startCallback(self, data):
         for row in data:
             if row[0] == False:
@@ -115,7 +156,7 @@ class InterfaceServer(CassandraServer):
                 d.addCallback(self._startHandleError, row[1])
                 return d
         d = CassandraServer.start(self)
-
+    
     def shutdown(self):
         deferreds = []
         LOGGER.debug("%s stopping on main HTTP interface." % self.name)
@@ -128,14 +169,14 @@ class InterfaceServer(CassandraServer):
             return d
         else:
             return self._shutdownCallback(None)
-
+    
     def _shutdownCallback(self, data):
         return CassandraServer.shutdown(self)
     
     def enqueueUUID(self, uuid):
         if uuid and self.scheduler_server is not None:
             parameters = {'uuid': uuid}
-            query_string = urllib.urlencode(parameters)       
+            query_string = urllib.urlencode(parameters)
             url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
             LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
             d = self.rq.getPage(url=url)
