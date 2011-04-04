@@ -10,12 +10,10 @@ from MySQLdb import OperationalError
 from twisted.web.resource import Resource
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
-from twisted.internet.threads import deferToThread
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
+from twisted.internet.defer import Deferred, maybeDeferred
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
-import simplejson
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
