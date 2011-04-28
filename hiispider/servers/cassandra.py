@@ -129,23 +129,17 @@ class CassandraServer(BaseServer):
         data = BaseServer._callExposedFunctionCallback(self, data, function_name, user_id, uuid)
         # If we have an place to store the response on Cassandra, do it.
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
-            LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
-            encoded_data = zlib.compress(simplejson.dumps(data))
-            if user_id:
-                d = self.cassandra_client.insert(
+            if self.functions[function_name]["has_delta"]:
+                delta_function = self.delta_functions[self.functions[function_name]["id"]]
+                d = self.cassandra_client.get(
                     str(user_id),
                     self.cassandra_cf_content,
-                    encoded_data,
-                    column=uuid,
-                    consistency=ConsistencyLevel.QUORUM)
+                    column=uuid)
+                d.addCallback(self._callExposedFunctionCallback2, delta_function, data, user_id, uuid)
+                d.addErrback(self._deltaErrback, data, user_id, uuid, function_name)
             else:
-                d = self.cassandra_client.insert(
-                    uuid,
-                    self.cassandra_cf_temp_content,
-                    encoded_data,
-                    column=self.cassandra_content,
-                    consistency=ConsistencyLevel.QUORUM)
-            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
+                self.putDataOnCassandra(data, user_id, uuid)
+            d.addCallback(self._callExposedFunctionCallback2, data, user_id, uuid)
         return data
 
     def _callExposedFunctionErrback(self, error, function_name, uuid):
@@ -166,6 +160,34 @@ class CassandraServer(BaseServer):
             pass
         return error
 
+    def _callExposedFunctionCallback2(self, old_data, delta_function, new_data, user_id, uuid):
+        LOGGER.debug("Generating delta for %s, %s:%s" % (function_name, uuid, user_id))
+        self.putDataOnCassandra(new_data, user_id, uuid)
+        
+    def putDataOnCassandra(self, data, user_id, uuid):
+        encoded_data = zlib.compress(simplejson.dumps(data))
+        if user_id:
+            d = self.cassandra_client.insert(
+                str(user_id),
+                self.cassandra_cf_content,
+                encoded_data,
+                column=uuid,
+                consistency=ConsistencyLevel.QUORUM)
+        else:
+            d = self.cassandra_client.insert(
+                uuid,
+                self.cassandra_cf_temp_content,
+                encoded_data,
+                column=self.cassandra_content,
+                consistency=ConsistencyLevel.QUORUM)
+        d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
+        return d
+        
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
+        return data
+
+    def _deltaErrback(self, error, data, user_id, uuid, function_name):
+        self.putDataOnCassandra(data, user_id, uuid)
+        LOGGER.error("Could not generate %s, %s delta from Cassandra.\n%s" % (function_name, uuid, error))
         return data
