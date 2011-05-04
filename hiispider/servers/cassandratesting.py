@@ -13,20 +13,33 @@ from twisted.internet.defer import Deferred, inlineCallbacks, DeferredList
 from twisted.internet import task
 from twisted.internet.threads import deferToThread
 from txamqp.content import Content
-from .cassandra import CassandraServer, LOGGER
-
+from .base import LOGGER
+from .cassandra import CassandraServer
 from twisted.web.resource import Resource
 
-class CassandraTestingServer(BaseServer):
+class CassandraTestingServer(CassandraServer):
 
-    name = "Testing Server UUID: %s" % str(uuid4())
+    name = "Cassandra Testing Server UUID: %s" % str(uuid4())
 
     def __init__(self,
-            mysql_username,
-            mysql_password,
-            mysql_host,
-            mysql_database,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            cassandra_server=None,
+            cassandra_port=9160,
+            cassandra_keyspace=None,
+            cassandra_stats_keyspace=None,
+            cassandra_stats_cf_daily=None,
+            cassandra_cf_content=None,
+            cassandra_content=None,
+            cassandra_content_error='error',
+            cassandra_error='error',
+            mysql_username=None,
+            mysql_password=None,
+            mysql_host=None,
+            mysql_database=None,
             mysql_port=3306,
+            redis_hosts=None,
+            disable_negative_cache=True,
             port=5002,
             service_mapping=None,
             service_args_mapping=None,
@@ -53,8 +66,19 @@ class CassandraTestingServer(BaseServer):
         resource.putChild("function", self.function_resource)
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         # Logging, etc
-        BaseServer.__init__(
+        CassandraServer.__init__(
             self,
+            cassandra_server=cassandra_server,
+            cassandra_port=cassandra_port,
+            cassandra_keyspace=cassandra_keyspace,
+            cassandra_stats_keyspace=cassandra_stats_keyspace,
+            cassandra_stats_cf_daily=cassandra_stats_cf_daily,
+            cassandra_cf_content=cassandra_cf_content,
+            cassandra_content=cassandra_content,
+            cassandra_content_error=cassandra_content_error,
+            cassandra_error=cassandra_error,
+            redis_hosts=redis_hosts,
+            disable_negative_cache=disable_negative_cache,
             log_file=log_file,
             log_directory=log_directory,
             log_level=log_level)
@@ -92,7 +116,7 @@ class CassandraTestingServer(BaseServer):
         LOGGER.error("%s - %s" % (type, error))
 
     def executeUUID(self, uuid):
-        sql = "SELECT account_id, type FROM spider_service WHERE uuid = %s"
+        sql = "SELECT account_id, type, user_id FROM spider_service WHERE uuid = %s"
         d = self.mysql.runQuery(sql, uuid)
         d.addCallback(self._getJobCallback, uuid)
         d.addErrback(self._genericErrback, 'Get Job Callback')
@@ -124,12 +148,36 @@ class CassandraTestingServer(BaseServer):
         job["kwargs"] = self.mapKwargs(job)
         if function_name not in self.functions:
             raise Exception("Function %s does not exist." % function_name)
+        print "Key: %s, CF: %s, Col: %s" % (
+            str(spider_info[0]['user_id']),
+            self.cassandra_cf_content,
+            uuid
+        )
+        if self.functions[function_name]["has_delta"]:
+            d = self.getData(str(spider_info[0]['user_id']), uuid)
+            d.addCallback(self._getJobCallback3, function_name, job, spider_info)
+            d.addErrback(self._genericErrback, spider_info[0]['type'])
+        else:
+            d = self.callExposedFunction(
+                self.functions[function_name]["function"],
+                job["kwargs"],
+                function_name)
+        return d
+        
+    def _getJobCallback3(self, old_data, function_name, job, spider_info):
         d = self.callExposedFunction(
             self.functions[function_name]["function"],
             job["kwargs"],
             function_name)
+        d.addCallback(self._getJobCallback4, old_data, id(self.functions[function_name]["function"]))
+        d.addErrback(self._genericErrback, spider_info[0]['type'])
         return d
-
+    
+    def _getJobCallback4(self, new_data, old_data, function_id):
+        delta = self.delta_functions[function_id](old_data, new_data)
+        print delta
+        return new_data
+    
     def mapKwargs(self, job):
         kwargs = {}
         service_name = job['function_name'].split('/')[0]
