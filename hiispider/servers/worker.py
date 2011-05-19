@@ -248,6 +248,7 @@ class WorkerServer(CassandraServer):
     def _dequeueErrback(self, error):
         LOGGER.error('Dequeue Error: %s' % error)
         self.queue_requests -= 1
+        return
 
     def _dequeueCallback(self, msg):
         self.queue_requests -= 1
