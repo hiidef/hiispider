@@ -1,10 +1,11 @@
 from setuptools import setup, find_packages
+from hiispider import __version__
 # Also requires python-dev and python-openssl
 setup(
 
     name = "HiiSpider",
 
-    version = "0.9.8",
+    version = __version__,
 
     packages = find_packages(),
 
