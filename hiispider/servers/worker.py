@@ -23,7 +23,7 @@ class WorkerServer(CassandraServer):
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 50
+    simultaneous_jobs = 40
     jobs_complete = 0
     job_queue = []
     job_queue_a = job_queue.append
