@@ -7,13 +7,23 @@ EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
 FUNCTION_ALIASES = {}
+DELTA_FUNCTIONS = {}
+
 
 def aliases(*args):
     def decorator(f):
         FUNCTION_ALIASES[id(f)] = args
         return f
     return decorator
+
+
+def delta(handler):
+    def decorator(f):
+        DELTA_FUNCTIONS[id(f)] = handler
+        return f
+    return decorator
     
+
 def expose(func=None, interval=0, name=None, memoize=False):
     if func is not None:
         EXPOSED_FUNCTIONS[id(func)] = {"interval":interval, "name":name}
@@ -42,6 +52,10 @@ class HiiSpiderPlugin(object):
         instance_methods = filter(check_method, inspect.getmembers(self))
         for instance_method in instance_methods:
             instance_id = id(instance_method[1].__func__)
+            if instance_id in DELTA_FUNCTIONS:
+                self.spider.delta(
+                    instance_method[1],
+                    DELTA_FUNCTIONS[instance_id])                
             if instance_id in EXPOSED_FUNCTIONS:
                 self.spider.expose(
                     instance_method[1],

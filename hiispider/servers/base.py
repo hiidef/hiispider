@@ -34,6 +34,7 @@ class BaseServer(object):
         "reservation_next_request", 
         "reservation_error"]
     functions = {}
+    delta_functions = {}
     reservation_fast_caches = {}
     function_resource = None
     
@@ -132,6 +133,9 @@ class BaseServer(object):
             del self.active_jobs[uuid]
         return data
         
+    def delta(self, func, handler):
+        self.delta_functions[id(func)] = handler
+        
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
@@ -189,6 +193,8 @@ class BaseServer(object):
         # Add it to our list of callable functions.
         self.functions[function_name] = {
             "function":func,
+            "id":id(func),
+            "has_delta":id(func) in self.delta_functions,
             "interval":interval,
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,

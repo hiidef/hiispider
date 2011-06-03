@@ -169,3 +169,15 @@ class CassandraServer(BaseServer):
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
         return data
+        
+    def getData(self, user_id, uuid):
+        d = self.cassandra_client.get(
+            key=user_id,
+            column_family=self.cassandra_cf_content,
+            column=uuid)
+        d.addCallback(self._getDataCallback)
+        return d
+    
+    def _getDataCallback(self, data):
+        return simplejson.loads(zlib.decompress(data.column.value))
+        
