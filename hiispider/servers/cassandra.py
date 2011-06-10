@@ -155,8 +155,6 @@ class CassandraServer(BaseServer):
         LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
         return True
 
-
-
     def _callExposedFunctionErrback(self, error, function_name, uuid):
         error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
         try:

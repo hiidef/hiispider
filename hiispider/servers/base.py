@@ -174,6 +174,14 @@ class BaseServer(object):
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
+    def executeJob(self, job):
+        return self.callExposedFunction(
+            self.functions[job.function_name]["function"],
+            job.kwargs,
+            job.function_name,
+            reservation_fast_cache=job.fast_cache,
+            uuid=job.uuid)
+
     def makeCallable(self, func, interval=0, name=None, expose=False):
         argspec = inspect.getargspec(func)
         # Get required / optional arguments

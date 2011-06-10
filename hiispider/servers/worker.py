@@ -282,17 +282,12 @@ class WorkerServer(CassandraServer):
     def executeJobs(self):
         while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
             job = self.job_queue.pop(0)
-            d = self.executeJob(job)
-            d.addCallback(self.storeInPagecache, job)
+            d = self.executeWorkerJob(job)
+            d.addCallback(self.queuePagecache, job)
             
     @inlineCallbacks
-    def executeJob(self, job):
-        data = yield self.callExposedFunction(
-            self.functions[job.function_name]["function"],
-            job.kwargs,
-            job.function_name,
-            reservation_fast_cache=job.fast_cache,
-            uuid=job.uuid)
+    def executeWorkerJob(self, job):
+        data = yield self.executeJob(job)
         self.jobs_complete += 1
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (
             self.jobs_complete, 
@@ -300,7 +295,7 @@ class WorkerServer(CassandraServer):
             len(self.active_jobs)))
         returnValue(data)
 
-    def storeInPagecache(self, data, job):
+    def queuePagecache(self, data, job):
         if not self.amqp_pagecache_vhost:
             return
         if self.amqp_pagecache_queue_size > 100000:
@@ -316,10 +311,10 @@ class WorkerServer(CassandraServer):
         pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
         msg = Content(simplejson.dumps(pagecache_msg))
         d = self.pagecache_chan.basic_publish(exchange=self.amqp_exchange, content=msg)
-        d.addErrback(self._pagecacheErrback)
+        d.addErrback(self._queuePagecacheErrback)
         return d
         
-    def _pagecacheErrback(self, error):
+    def _queuePagecacheErrback(self, error):
         LOGGER.error('Pagecache Error: %s' % str(error))
 
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
