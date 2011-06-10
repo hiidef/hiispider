@@ -11,6 +11,7 @@ from twisted.web.resource import Resource
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, maybeDeferred
+from twisted.internet.defer import inlineCallbacks
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
@@ -19,6 +20,46 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 LOGGER = logging.getLogger("main")
 
+class Job(object):
+    
+    fast_cache = None
+    
+    def __init__(self,
+            function_name,
+            uuid,
+            service_credentials,
+            user_account,
+            functions,
+            service_mapping=None,
+            service_args_mapping=None):
+        self.subservice = function_name
+        self.uuid = uuid
+        self.user_account = user_account
+        if service_mapping is not None and function_name in service_mapping:
+            LOGGER.debug('Remapping resource %s to %s' % (
+                function_name, 
+                service_mapping[function_name]))
+            self.function_name = service_mapping[function_name]
+        else:
+            self.function_name = function_name
+        if service_args_mapping is None:
+            self.kwargs = service_credentials
+        else:
+            self.kwargs = {}
+            service_name = function_name.split('/')[0]
+            # remap some fields that differ from the plugin and the database
+            for old_key in service_args_mapping.get(service_name, []):
+                new_key = service_args_mapping[service_name][old_key]
+                if old_key in service_credentials:
+                     service_credentials[new_key] = service_credentials[old_key]
+            exposed_function = functions[self.function_name]
+            for key in exposed_function['required_arguments']:
+                self.kwargs[key] = service_credentials[key]
+            for key in exposed_function['optional_arguments']:
+                if key in service_credentials:
+                    self.kwargs[key] = service_credentials[key]
+      
+            
 class BaseServer(object):
     
     exposed_functions = []
@@ -49,7 +90,6 @@ class BaseServer(object):
                  log_level="debug",
                  port=8080,
                  pg=None):
-        self.start_deferred = Deferred()
         self.rq = RequestQueuer( 
             max_simultaneous_requests=int(max_simultaneous_requests), 
             max_requests_per_host_per_second=int(max_requests_per_host_per_second), 
@@ -89,23 +129,18 @@ class BaseServer(object):
             LOGGER.setLevel(logging.DEBUG)
 
     def start(self):
-        reactor.callWhenRunning(self._baseStart)
-        return self.start_deferred
+        start_deferred = Deferred()
+        reactor.callWhenRunning(self._baseStart, start_deferred)
+        return start_deferred
     
-    def _baseStart(self):
+    def _baseStart(self, start_deferred):
+        LOGGER.debug("Starting Base components.")
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
             'before', 
             'shutdown', 
             self.shutdown)
-        LOGGER.critical("Starting.")
-        self._baseStartCallback2(None)
+        start_deferred.callback(True)
 
-    def _baseStartCallback2(self, data):
-        self.start_deferred.callback(True)
-
-    def _startHandleError(self, data, error):
-        self.start_deferred.errback(error)
-        
     def shutdown(self):
         LOGGER.debug("Waiting for shutdown.")
         d = Deferred()
@@ -194,13 +229,16 @@ class BaseServer(object):
         self.functions[function_name] = {
             "function":func,
             "id":id(func),
-            "has_delta":id(func) in self.delta_functions,
             "interval":interval,
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,
             "check_reservation_fast_cache":check_reservation_fast_cache,
             "get_reservation_uuid":get_reservation_uuid
         }
+        if id(func) in self.delta_functions:
+            self.functions[function_name]["delta"] = self.delta_functions[id(func)]
+        else:
+            self.functions[function_name]["delta"] = None
         LOGGER.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
             self.exposed_functions.append(function_name)
@@ -250,7 +288,7 @@ class BaseServer(object):
             return None
         self.reservation_fast_caches[uuid] = data
 
-    def callExposedFunction(self, func, kwargs, function_name, user_id=None, reservation_fast_cache=None, uuid=None):
+    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
         if uuid is not None:
             self.active_jobs[uuid] = True
         if self.functions[function_name]["get_reservation_uuid"]:
@@ -261,7 +299,7 @@ class BaseServer(object):
         elif self.functions[function_name]["check_reservation_fast_cache"]:
             kwargs["reservation_fast_cache"] = None
         d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, user_id, uuid)
+        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
         d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
         return d
 
@@ -277,7 +315,7 @@ class BaseServer(object):
                 error))
         return error
 
-    def _callExposedFunctionCallback(self, data, function_name, user_id, uuid):
+    def _callExposedFunctionCallback(self, data, function_name, uuid):
         LOGGER.debug("Function %s returned successfully." % (function_name))
         # If the UUID is None, this is a one-off type of thing.
         if uuid is None:

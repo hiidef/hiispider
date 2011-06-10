@@ -1,19 +1,20 @@
 from .cassandra import CassandraServer
-from .base import LOGGER
+from .base import LOGGER, Job
 from ..resources import WorkerResource
-from ..networkaddress import getNetworkAddress
 from ..amqp import amqp as AMQP
 from txamqp.content import Content
 from MySQLdb.cursors import DictCursor
 from twisted.internet import reactor, task
 from twisted.enterprise import adbapi
 from twisted.web import server
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from uuid import UUID
 from zlib import compress, decompress
 import pprint
 import simplejson
 from hashlib import sha256
+import cPickle 
+from traceback import format_exc
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
@@ -26,12 +27,14 @@ class WorkerServer(CassandraServer):
     simultaneous_jobs = 50
     jobs_complete = 0
     job_queue = []
-    job_queue_a = job_queue.append
     jobsloop = None
     dequeueloop = None
     queue_requests = 0
     amqp_pagecache_queue_size = 0
-
+    # Define these in case we have an early shutdown.
+    chan = None
+    pagecache_chan = None
+    
     def __init__(self,
             aws_access_key_id=None,
             aws_secret_access_key=None,
@@ -134,13 +137,13 @@ class WorkerServer(CassandraServer):
             log_level=log_level)
 
     def start(self):
-        reactor.callWhenRunning(self._start)
-        return self.start_deferred
+        start_deferred = super(WorkerServer, self).start()
+        start_deferred.addCallback(self._workerStart)
+        return start_deferred
 
     @inlineCallbacks
-    def _start(self):
-        yield self.getNetworkAddress()
-        LOGGER.info('Connecting to broker.')
+    def _workerStart(self, started):
+        LOGGER.debug("Starting Worker components.")
         self.conn = yield AMQP.createClient(
             self.amqp_host,
             self.amqp_vhost,
@@ -196,7 +199,6 @@ class WorkerServer(CassandraServer):
             exchange=self.amqp_exchange)
         # Setup cassandra
         LOGGER.info('Connecting to cassandra')
-        yield CassandraServer.start(self)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         LOGGER.info('Starting dequeueing thread...')
@@ -217,13 +219,15 @@ class WorkerServer(CassandraServer):
         LOGGER.info('Closing MYSQL Connnection Pool')
         yield self.mysql.close()
         LOGGER.info('Closing Spider Queue')
-        yield self.chan.channel_close()
-        chan0 = yield self.conn.channel(0)
-        yield chan0.connection_close()
-        LOGGER.info('Closing Pagecache Queue')
-        yield self.pagecache_chan.channel_close()
-        pagecache_chan0 = yield self.pagecache_conn.channel(0)
-        yield pagecache_chan0.connection_close()
+        if self.chan is not None:
+            yield self.chan.channel_close()
+            chan0 = yield self.conn.channel(0)
+            yield chan0.connection_close()
+            LOGGER.info('Closing Pagecache Queue')
+        if self.pagecache_chan is not None:
+            yield self.pagecache_chan.channel_close()
+            pagecache_chan0 = yield self.pagecache_conn.channel(0)
+            yield pagecache_chan0.connection_close()
         
     @inlineCallbacks
     def pagecacheQueueStatusCheck(self):
@@ -240,104 +244,83 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
         while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
-            LOGGER.debug('Fetching from queue')
-            d = self.queue.get()
-            d.addCallback(self._dequeueCallback)
-            d.addErrback(self._dequeueErrback)
+            LOGGER.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
+            self.dequeue_item()
 
-    def _dequeueErrback(self, error):
-        LOGGER.error('Dequeue Error: %s' % error)
-        self.queue_requests -= 1
 
-    def _dequeueCallback(self, msg):
-        self.queue_requests -= 1
+    @inlineCallbacks
+    def dequeue_item(self):
+        LOGGER.debug('Getting job.')
+        try:
+            msg = yield self.queue.get()
+        except Exception, e:
+            LOGGER.error('Dequeue Error: %s' % e)
+            return
         if msg.delivery_tag:
-            LOGGER.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
-            d = self.chan.basic_ack(msg.delivery_tag)
-            d.addCallback(self._dequeueCallback2, msg)
-            d.addErrback(self.basicAckErrback)
-            return d
-        else:
-            self._dequeueCallback2(data=True, msg=msg)
-
-    def _dequeueCallback2(self, data, msg):
-        LOGGER.debug('fetched msg from queue: %s' % repr(msg))
-        # Get the hex version of the UUID from byte string we were sent
+            try:
+                LOGGER.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
+                yield self.chan.basic_ack(msg.delivery_tag)
+            except Exception, e:
+                LOGGER.error('basic_ack Error: %s' % e)
+        self.queue_requests -= 1
         uuid = UUID(bytes=msg.content.body).hex
-        d = self.getJob(uuid, msg.delivery_tag)
-        d.addCallback(self._dequeueCallback3, msg)
-        d.addErrback(self._dequeueErrback)
-
-    def _dequeueCallback3(self, job, msg):
-        # Load custom function.
-        if job is not None:
-            if job['function_name'] in self.functions:
-                LOGGER.debug('Successfully pulled job off of AMQP queue')
-                job['exposed_function'] = self.functions[job['function_name']]
-                # If function asked for fast_cache, try to fetch it from redis
-                # while it's queued. Go ahead and add it to the queue in the meantime
-                # to speed things up.
-                job["reservation_fast_cache"] = None
-                if job['exposed_function']["check_reservation_fast_cache"]:
-                    d = self.getReservationFastCache(job['uuid'])
-                    d.addCallback(self._dequeueCallback4, job)
-                self.job_queue_a(job)
-            else:
-                LOGGER.error("Could not find function %s." % job['function_name'])
-
-    def _dequeueCallback4(self, data, job):
-        job["reservation_fast_cache"] = data
-
+        LOGGER.debug('Got job %s' % uuid)
+        try:
+            job = yield self.getJob(uuid)
+        except Exception, e:
+            LOGGER.error('Job Error: %s\n%s' % (e, format_exc()))
+            return
+        if job.function_name in self.functions:
+            LOGGER.debug('Successfully pulled job off of AMQP queue')
+            if self.functions[job.function_name]["check_reservation_fast_cache"]:
+                job.fast_cache = yield self.getFastCache(job.uuid)
+            self.job_queue.append(job)
+        else:
+            LOGGER.error("Could not find function %s." % function_name)
+            return
+    
     def executeJobs(self):
         while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
             job = self.job_queue.pop(0)
-            exposed_function = job["exposed_function"]
-            kwargs = job["kwargs"]
-            function_name = job["function_name"]
-            uuid = job["uuid"]
-            user_id = job['spider_info']["user_id"]
-            d = self.callExposedFunction(
-                exposed_function["function"],
-                kwargs,
-                function_name,
-                user_id=user_id,
-                reservation_fast_cache=job["reservation_fast_cache"],
-                uuid=uuid,)
-            d.addCallback(self._executeJobCallback, job)
-            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
+            d = self.executeJob(job)
+            d.addCallback(self.storeInPagecache, job)
+            
+    @inlineCallbacks
+    def executeJob(self, job):
+        data = yield self.callExposedFunction(
+            self.functions[job.function_name]["function"],
+            job.kwargs,
+            job.function_name,
+            reservation_fast_cache=job.fast_cache,
+            uuid=job.uuid)
+        self.jobs_complete += 1
+        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (
+            self.jobs_complete, 
+            len(self.job_queue), 
+            len(self.active_jobs)))
+        returnValue(data)
 
-    def _executeJobCallback(self, data, job):
-        if self.amqp_pagecache_vhost and  \
-          self.amqp_pagecache_queue_size <= 100000 and \
-          data and \
-          'spider_info' in job \
-          and 'username' in job['spider_info']:
-            if 'host' in job['spider_info'] and job['spider_info']['host']:
-                cache_key = job['spider_info']['host']
-            else:
-                cache_key = '%s/%s' % (self.pagecache_web_server_host, job['spider_info']['username'])
-            cache_key = sha256(cache_key).hexdigest()
-            pagecache_msg = {
-                'username': job['spider_info']['username'],
-                'cache_key': cache_key,
-            }
-            if 'host' in job['spider_info'] and job['spider_info']['host']:
-                pagecache_msg['host'] = job['spider_info']['host']
-            msg = Content(simplejson.dumps(pagecache_msg))
-            d = self.pagecache_chan.basic_publish(exchange=self.amqp_exchange, content=msg)
-            d.addCallback(self._executeJobCallback2)
-            d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-            return d
-        elif self.amqp_pagecache_queue_size > 100000:
+    def storeInPagecache(self, data, job):
+        if not self.amqp_pagecache_vhost:
+            return
+        if self.amqp_pagecache_queue_size > 100000:
             LOGGER.error('Pagecache Queue Size has exceeded 100,000 items')
-        self.jobs_complete += 1
-        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        return None
-
-    def _executeJobCallback2(self, data):
-        self.jobs_complete += 1
-        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
-        return None
+            return
+        pagecache_msg = {}
+        if "host" in job.user_account and job.user_account['host']:
+            cache_key = job.user_account['host']
+            pagecache_msg['host'] = job.user_account['host']
+        else:
+            cache_key = '%s/%s' % (self.pagecache_web_server_host, job.user_account['username'])
+        pagecache_msg['username'] = job.user_account['username']
+        pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
+        msg = Content(simplejson.dumps(pagecache_msg))
+        d = self.pagecache_chan.basic_publish(exchange=self.amqp_exchange, content=msg)
+        d.addErrback(self._pagecacheErrback)
+        return d
+        
+    def _pagecacheErrback(self, error):
+        LOGGER.error('Pagecache Error: %s' % str(error))
 
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
@@ -345,21 +328,40 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Active Jobs List: %s' % repr(self.active_jobs))
         return error
 
-    def _basicAckCallback(self, data):
-        return
-
-    def basicAckErrback(self, error):
-        LOGGER.error('basic_ack Error: %s' % (error))
-        return
-
-    def getJob(self, uuid, delivery_tag):
+    def getJob(self, uuid):
         d = self.redis_client.get(uuid)
-        d.addCallback(self._getJobCallback, uuid, delivery_tag)
-        d.addErrback(self._getJobErrback, uuid, delivery_tag)
+        d.addCallback(self._getJobCallback, uuid)
+        d.addErrback(self._getJobErrback, uuid)
         return d
 
-    def _getJobErrback(self, account, uuid, delivery_tag):
+    def _getJobCallback(self, account, uuid, delivery_tag):
+        if account:
+            job = cPickle.loads(decompress(account))
+            LOGGER.debug('Found uuid in redis: %s' % uuid)
+            return job
+        else:
+            d = self._getJobErrback(None, uuid)
+            return d
+            
+    @inlineCallbacks
+    def _getJobErrback(self, error, uuid):
         LOGGER.debug('Could not find uuid in redis: %s' % uuid)
+        user_account = yield self.getUserAccount(uuid)
+        service_type = user_account['type'].split('/')[0].lower()
+        account_id = user_account['account_id']
+        service_credentials = yield self.getServiceCredentials(service_type, account_id)
+        job = Job(
+            function_name=user_account['type'],
+            uuid=uuid,
+            service_credentials=service_credentials,
+            user_account=user_account,
+            functions=self.functions,
+            service_mapping=self.service_mapping,
+            service_args_mapping=self.service_args_mapping)
+        self.setJobCache(job)
+        returnValue(job)
+        
+    def getUserAccount(self, uuid):
         sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
             WHERE uuid = '%s'
@@ -367,119 +369,61 @@ class WorkerServer(CassandraServer):
             AND auth_user.id=content_userprofile.user_id
         """ % uuid
         d = self.mysql.runQuery(sql)
-        d.addCallback(self.getAccountMySQL, uuid, delivery_tag)
-        d.addErrback(self.workerErrback, uuid, delivery_tag)
+        d.addCallback(self._getUserAccountCallback, uuid)
+        d.addErrback(self._getUserAccountErrback, uuid)
         return d
 
-    def _getJobCallback(self, account, uuid, delivery_tag):
-        if account:
-            job = simplejson.loads(decompress(account))
-            LOGGER.debug('Found uuid in redis: %s' % uuid)
-            return job
-        else:
-            d = self._getJobErrback(account, uuid, delivery_tag)
-            return d
-
-    def getAccountMySQL(self, spider_info, uuid, delivery_tag):
-        if spider_info:
-            account_type = spider_info[0]['type'].split('/')[0]
-            sql = "SELECT * FROM content_%saccount WHERE account_id = %d" % (account_type.lower(), spider_info[0]['account_id'])
-            d = self.mysql.runQuery(sql)
-            d.addCallback(self.createJob, spider_info, uuid, delivery_tag)
-            d.addErrback(self.workerErrback, 'Get MySQL Account', delivery_tag)
-            return d
-        LOGGER.debug('No spider_info given for uuid %s' % uuid)
-        return None
-
-    def createJob(self, account_info, spider_info, uuid, delivery_tag):
-        job = {}
-        if account_info:
-            account = account_info[0]
-            function_name = spider_info[0]['type']
-            job['type'] = function_name.split('/')[1]
-            if self.service_mapping and self.service_mapping.has_key(function_name):
-                LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
-                function_name = self.service_mapping[function_name]
-            job['function_name'] = function_name
-            job['uuid'] = uuid
-            job['account'] = account
-            job['kwargs'] = self.mapKwargs(job)
-            job['spider_info'] = spider_info[0]
-            job['delivery_tag'] = delivery_tag
-            d = self.setJobCache(job)
-            d.addCallback(self._createJobCallback, job)
-            return d
-        return None
-
-    def _createJobCallback(self, data, job):
-        return job
-
-    def mapKwargs(self, job):
-        kwargs = {}
-        service_name = job['function_name'].split('/')[0]
-        # remap some fields that differ from the plugin and the database
-        if service_name in self.service_args_mapping:
-            for key in self.service_args_mapping[service_name]:
-                if key in job['account']:
-                    job['account'][self.service_args_mapping[service_name][key]] = job['account'][key]
-        # apply job fields to req and optional kwargs
-        exposed_function = self.functions[job['function_name']]
-        for arg in exposed_function['required_arguments']:
-            if arg in job:
-                kwargs[str(arg)] = job[arg]
-            elif arg in job['account']:
-                kwargs[str(arg)] = job['account'][arg]
-        for arg in exposed_function['optional_arguments']:
-            if arg in job['account']:
-                kwargs[str(arg)] = job['account'][arg]
-        LOGGER.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
-        return kwargs
-
-    def getNetworkAddress(self):
-        d = getNetworkAddress()
-        d.addCallback(self._getNetworkAddressCallback)
-        d.addErrback(self._getNetworkAddressErrback)
+    def _getUserAccountCallback(self, data, uuid):
+        if len(data) == 0: # No results?
+            message = "Could not find user %s: %s" % uuid
+            LOGGER.error(message)
+            raise Exception(message)
+        return data[0]
+        
+    def _getUserAccountErrback(self, error, uuid):
+        LOGGER.error("Could not get user %s: %s" % (uuid, str(error)))
+        return error
+        
+    def getServiceCredentials(self, service_type, account_id):
+        sql = "SELECT * FROM content_%saccount WHERE account_id = %d" % (service_type, account_id)
+        d = self.mysql.runQuery(sql)
+        d.addCallback(self._getServiceCredentialsCallback, service_type, account_id)
+        d.addErrback(self._getAccountErrback, service_type, account_id)
         return d
 
-    def _getNetworkAddressCallback(self, data):
-        if "public_ip" in data:
-            self.public_ip = data["public_ip"]
-            self.network_information["public_ip"] = self.public_ip
-        if "local_ip" in data:
-            self.local_ip = data["local_ip"]
-            self.network_information["local_ip"] = self.local_ip
+    def _getServiceCredentialsCallback(self, data, service_type, account_id):
+        if len(data) == 0: # No results?
+            message = "Could not find service %s:%s" % (service_type, account_id)
+            LOGGER.error(message)
+            raise Exception(message)
+        return data[0]
 
-    def _getNetworkAddressErrback(self, error):
-        message = "Could not get network address."
-        LOGGER.error(message)
-        raise Exception(message)
+    def _getAccountErrback(self, error, account_type, account_id):
+        LOGGER.error("Could not find account data %s:%s - %s" % (account_type, account_id, str(error)))
+        return error
 
-    def getReservationFastCache(self, uuid):
+    def getFastCache(self, uuid):
         d = self.redis_client.get("fastcache:%s" % uuid)
-        d.addCallback(self._getReservationFastCacheCallback, uuid)
+        d.addErrback(self._getFastCacheErrback, uuid)
         return d
 
-    def _getReservationFastCacheCallback(self, value, uuid):
-        if value:
-            LOGGER.debug("Successfully got Fast Cache for %s" % uuid)
-            return value
-        else:
-            LOGGER.debug("Could not get Fast Cache for %s" % uuid)
-            return None
+    def _getFastCacheErrback(self, error, uuid):
+        LOGGER.debug("Could not get Fast Cache for %s" % uuid)
+        return None
 
-    def setReservationFastCache(self, uuid, data):
+    def setFastCache(self, uuid, data):
         if not isinstance(data, str):
-            raise Exception("ReservationFastCache must be a string.")
+            raise Exception("FastCache must be a string.")
         if uuid is None:
             return None
         d = self.redis_client.set("fastcache:%s" % uuid, data)
-        d.addCallback(self._setReservationFastCacheCallback, uuid)
-        d.addErrback(self._setReservationFastCacheErrback)
+        d.addCallback(self._setFastCacheCallback, uuid)
+        d.addErrback(self._setFastCacheErrback)
 
-    def _setReservationFastCacheCallback(self, data, uuid):
+    def _setFastCacheCallback(self, data, uuid):
         LOGGER.debug("Successfully set Fast Cache for %s" % uuid)
 
-    def _setReservationFastCacheErrback(self, error):
+    def _setFastCacheErrback(self, error):
         LOGGER.error(str(error))
 
     def getJobCache(self, uuid):
@@ -493,22 +437,16 @@ class WorkerServer(CassandraServer):
         return None
 
     def _getJobCacheCallback(self, data):
-        return simplejson.loads(decompress(data))
-
+        return cPickle.loads(decompress(data))
+        
+    @inlineCallbacks
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
-        job_data = compress(simplejson.dumps(job), 1)
+        job_data = compress(cPickle.dumps(job), 1)
         # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
-        d = self.redis_client.set(job['uuid'], job_data)
-        d.addCallback(self._setJobCacheCallback, job)
-        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        return d
-
-    def _setJobCacheCallback(self, data, job):
-        d = self.redis_client.expire(job['uuid'], 60*60*24*7)
-        d.addCallback(self._setJobCacheCallback2)
-        d.addErrback(self.workerErrback, 'Execute Jobs', job['delivery_tag'])
-        return d
-
-    def _setJobCacheCallback2(self, data):
-        return
+        try:
+            yield self.redis_client.set(job.uuid, job_data)
+            yield self.redis_client.expire(job.uuid, 60*60*24*7)
+        except Exception, e:
+            LOGGER.error(str(e))
+            

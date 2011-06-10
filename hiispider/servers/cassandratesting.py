@@ -138,6 +138,7 @@ class CassandraTestingServer(CassandraServer):
         function_name = spider_info[0]['type']
         job = {}
         job['type'] = function_name.split('/')[1]
+        job['subservice_name'] = function_name
         if self.service_mapping and self.service_mapping.has_key(function_name):
             LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
             function_name = self.service_mapping[function_name]
@@ -153,28 +154,36 @@ class CassandraTestingServer(CassandraServer):
             self.cassandra_cf_content,
             uuid
         )
-        if self.functions[function_name]["has_delta"]:
+        if self.functions[function_name]["delta"] is not None:
             d = self.getData(str(spider_info[0]['user_id']), uuid)
             d.addCallback(self._getJobCallback3, function_name, job, spider_info)
-            d.addErrback(self._genericErrback, spider_info[0]['type'])
+            d.addErrback(self._getJobErrback2, uuid, function_name, job, spider_info)
         else:
             d = self.callExposedFunction(
                 self.functions[function_name]["function"],
                 job["kwargs"],
                 function_name)
         return d
-        
+    
+    def _getJobErrback2(self, error, function_name, job, spider_info):
+        LOGGER.error("%s:%s - %s" % (function_name, uuid, error))
+        d = self.callExposedFunction(
+            self.functions[function_name]["function"],
+            job["kwargs"],
+            function_name)
+        return d
+
     def _getJobCallback3(self, old_data, function_name, job, spider_info):
         d = self.callExposedFunction(
             self.functions[function_name]["function"],
             job["kwargs"],
             function_name)
-        d.addCallback(self._getJobCallback4, old_data, id(self.functions[function_name]["function"]))
+        d.addCallback(self._getJobCallback4, old_data, function_name)
         d.addErrback(self._genericErrback, spider_info[0]['type'])
         return d
     
-    def _getJobCallback4(self, new_data, old_data, function_id):
-        delta = self.delta_functions[function_id](old_data, new_data)
+    def _getJobCallback4(self, new_data, old_data, function_name):
+        delta = self.functions[function_name]["delta"](old_data, new_data)
         print delta
         return new_data
     
