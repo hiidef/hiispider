@@ -76,7 +76,7 @@ class BaseServer(object):
         "reservation_error"]
     functions = {}
     delta_functions = {}
-    reservation_fast_caches = {}
+    fast_cache = {}
     function_resource = None
     
     def __init__(self,
@@ -141,33 +141,22 @@ class BaseServer(object):
             self.shutdown)
         start_deferred.callback(True)
 
-    def shutdown(self):
-        LOGGER.debug("Waiting for shutdown.")
-        d = Deferred()
-        reactor.callLater(0, self._waitForShutdown, d)
-        return d
-
-    def _waitForShutdown(self, shutdown_deferred):          
-        if self.rq.getPending() > 0 or self.rq.getActive() > 0:
-            LOGGER.debug("Waiting for shutdown.")
-            reactor.callLater(1, self._waitForShutdown, shutdown_deferred)
-            return
+    @inlineCallbacks
+    def shutdown(self, shutdown_deferred=None):
+        while self.rq.getPending() > 0 or self.rq.getActive() > 0:
+            LOGGER.debug("%s requests active, %s requests pending." % (
+                self.rq.getPending(),
+                self.rq.getActive()
+            ))
+            shutdown_deferred = Deferred()
+            # Call the Deferred after a second to continue the loop.
+            reactor.callLater(1, shutdown_deferred.callback)
+            yield shutdown_deferred
         self.shutdown_trigger_id = None
-        LOGGER.debug("Shut down.")
+        LOGGER.critical("Server shut down.")
         LOGGER.removeHandler(self.logging_handler)
         shutdown_deferred.callback(True)
 
-    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-        return data
-        
-    def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-        
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
         
@@ -289,12 +278,12 @@ class BaseServer(object):
         LOGGER.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
         return data
 
-    def setReservationFastCache(self, uuid, data):
+    def setFastCache(self, uuid, data):
         if not isinstance(data, str):
-            raise Exception("ReservationFastCache must be a string.")
+            raise Exception("FastCache must be a string.")
         if uuid is None:
             return None
-        self.reservation_fast_caches[uuid] = data
+        self.fast_cache[uuid] = data
 
     def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
         if uuid is not None:

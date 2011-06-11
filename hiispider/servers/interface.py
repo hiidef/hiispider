@@ -117,11 +117,12 @@ class InterfaceServer(CassandraServer):
             port=port)
     
     def start(self):
-        reactor.callWhenRunning(self._start)
-        return self.start_deferred
+        start_deferred = super(InterfaceServer, self).start()
+        start_deferred.addCallback(self._interfaceStart)
+        return start_deferred
     
     @inlineCallbacks
-    def _start(self):
+    def _interfaceStart(self):
         LOGGER.info('Connecting to broker.')
         self.conn = yield AMQP.createClient(
             self.amqp_host,
@@ -145,17 +146,6 @@ class InterfaceServer(CassandraServer):
         yield self.chan.queue_bind(
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
-        deferreds = []
-        d = DeferredList(deferreds, consumeErrors=True)
-        d.addCallback(self._startCallback)
-    
-    def _startCallback(self, data):
-        for row in data:
-            if row[0] == False:
-                d = self.shutdown()
-                d.addCallback(self._startHandleError, row[1])
-                return d
-        d = CassandraServer.start(self)
     
     def shutdown(self):
         deferreds = []

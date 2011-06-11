@@ -13,7 +13,6 @@ from ..pagegetter import PageGetter
 from ..exceptions import DeleteReservationException
 import txredisapi
 
-
 class CassandraServer(BaseServer):
     def __init__(self,
                  aws_access_key_id=None,
@@ -91,6 +90,10 @@ class CassandraServer(BaseServer):
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
         returnValue(True)
+    
+    def shutdown(self):
+        # Shutdown things here.
+        return super(CassandraServer, self).shutdown()
         
     def executeReservation(self, function_name, **kwargs):
         uuid = None

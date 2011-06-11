@@ -154,6 +154,18 @@ class WorkerServer(CassandraServer):
         self.chan = yield self.conn.channel(2)
         yield self.chan.channel_open()
         yield self.chan.basic_qos(prefetch_count=self.amqp_prefetch_count)
+        yield self._createQueue()
+        yield self._createPageCacheQueue()
+        self.jobsloop = task.LoopingCall(self.executeJobs)
+        self.jobsloop.start(0.2)
+        LOGGER.info('Starting dequeueing thread...')
+        self.dequeueloop = task.LoopingCall(self.dequeue)
+        self.dequeueloop.start(1)
+        self.pagecachestatusloop = task.LoopingCall(self.pagecacheQueueStatusCheck)
+        self.pagecachestatusloop.start(60)
+        
+    @inlineCallbacks
+    def _createQueue(self):
         # Create Queue
         yield self.chan.queue_declare(
             queue=self.amqp_queue,
@@ -173,7 +185,11 @@ class WorkerServer(CassandraServer):
             no_ack=False,
             consumer_tag="hiispider_consumer")
         self.queue = yield self.conn.queue("hiispider_consumer")
-        # setup pagecache queue
+
+        
+    @inlineCallbacks
+    def _createPageCacheQueue(self):
+        # Setup pagecache queue
         LOGGER.info('Connecting to pagecache broker.')
         self.pagecache_conn = yield AMQP.createClient(
             self.amqp_host,
@@ -197,37 +213,41 @@ class WorkerServer(CassandraServer):
         yield self.pagecache_chan.queue_bind(
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
-        # Setup cassandra
-        LOGGER.info('Connecting to cassandra')
-        self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
-        LOGGER.info('Starting dequeueing thread...')
-        self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(1)
-        self.pagecachestatusloop = task.LoopingCall(self.pagecacheQueueStatusCheck)
-        self.pagecachestatusloop.start(60)
 
     @inlineCallbacks
     def shutdown(self):
-        LOGGER.debug("Closing connection")
         try:
+            LOGGER.debug("Stopping jobs loop.")
             self.jobsloop.cancel()
+        except Exception, e:
+            LOGGER.error("Could not stop jobs loop: %s" % e)
+        try:
+            LOGGER.debug("Stopping dequeue loop.")
             self.dequeueloop.cancel()
-        except:
-            pass
-        # Shut things down
-        LOGGER.info('Closing MYSQL Connnection Pool')
-        yield self.mysql.close()
-        LOGGER.info('Closing Spider Queue')
-        if self.chan is not None:
-            yield self.chan.channel_close()
-            chan0 = yield self.conn.channel(0)
-            yield chan0.connection_close()
-            LOGGER.info('Closing Pagecache Queue')
+        except Exception, e:
+            LOGGER.error("Could not stop dequeue jobs loop: %s" % e)
+        try:
+            LOGGER.info('Closing MySQL connnection pool.')
+            yield self.mysql.close()
+        except Exception, e:
+            LOGGER.error("Could not close MySQL connnection pool: %s" % e)
+        if self.chan is not None:      
+            try:
+                LOGGER.info('Closing spider queue')
+                yield self.chan.channel_close()
+                chan0 = yield self.conn.channel(0)
+                yield chan0.connection_close()
+            except Exception, e:
+                LOGGER.error("Could not close spider queue: %s" % e)
         if self.pagecache_chan is not None:
-            yield self.pagecache_chan.channel_close()
-            pagecache_chan0 = yield self.pagecache_conn.channel(0)
-            yield pagecache_chan0.connection_close()
+            try:
+                LOGGER.info('Closing pagecache queue')
+                yield self.pagecache_chan.channel_close()
+                pagecache_chan0 = yield self.pagecache_conn.channel(0)
+                yield pagecache_chan0.connection_close()
+            except Exception, e:
+                LOGGER.error("Could not close pagecache queue: %s" % e)
+        yield super(WorkerServer, self).shutdown()
         
     @inlineCallbacks
     def pagecacheQueueStatusCheck(self):
@@ -241,12 +261,11 @@ class WorkerServer(CassandraServer):
         LOGGER.debug('Pagecache queue size: %d' % self.amqp_pagecache_queue_size)
 
     def dequeue(self):
-        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (self.jobs_complete, len(self.job_queue), len(self.active_jobs)))
+        self.logStatus()
         while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
             LOGGER.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
             self.dequeue_item()
-
 
     @inlineCallbacks
     def dequeue_item(self):
@@ -282,20 +301,15 @@ class WorkerServer(CassandraServer):
     def executeJobs(self):
         while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
             job = self.job_queue.pop(0)
-            d = self.executeWorkerJob(job)
-            d.addCallback(self.queuePagecache, job)
+            self.executeWorkerJob(job)
             
     @inlineCallbacks
     def executeWorkerJob(self, job):
-        data = yield self.executeJob(job)
+        yield self.executeJob(job)
         self.jobs_complete += 1
-        LOGGER.debug('Completed Jobs: %d / Queued Jobs: %d / Active Jobs: %d' % (
-            self.jobs_complete, 
-            len(self.job_queue), 
-            len(self.active_jobs)))
-        returnValue(data)
-
-    def queuePagecache(self, data, job):
+        self.logStatus()
+        # Add to the pagecache queue to signal Django to
+        # regenerate / clear the cache.
         if not self.amqp_pagecache_vhost:
             return
         if self.amqp_pagecache_queue_size > 100000:
@@ -306,41 +320,34 @@ class WorkerServer(CassandraServer):
             cache_key = job.user_account['host']
             pagecache_msg['host'] = job.user_account['host']
         else:
-            cache_key = '%s/%s' % (self.pagecache_web_server_host, job.user_account['username'])
+            cache_key = '%s/%s' % (
+                self.pagecache_web_server_host, 
+                job.user_account['username'])
         pagecache_msg['username'] = job.user_account['username']
         pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
         msg = Content(simplejson.dumps(pagecache_msg))
-        d = self.pagecache_chan.basic_publish(exchange=self.amqp_exchange, content=msg)
-        d.addErrback(self._queuePagecacheErrback)
-        return d
+        try:
+            yield self.pagecache_chan.basic_publish(
+                exchange=self.amqp_exchange, 
+                content=msg)
+        except Exception, e:
+            LOGGER.error('Pagecache Error: %s' % str(error))
         
-    def _queuePagecacheErrback(self, error):
-        LOGGER.error('Pagecache Error: %s' % str(error))
-
     def workerErrback(self, error, function_name='Worker', delivery_tag=None):
         LOGGER.error('%s Error: %s' % (function_name, str(error)))
-        LOGGER.debug('Queued Jobs: %d / Active Jobs: %d' % (len(self.job_queue), len(self.active_jobs)))
-        LOGGER.debug('Active Jobs List: %s' % repr(self.active_jobs))
+        self.logStatus()
         return error
 
+    @inlineCallbacks  
     def getJob(self, uuid):
-        d = self.redis_client.get(uuid)
-        d.addCallback(self._getJobCallback, uuid)
-        d.addErrback(self._getJobErrback, uuid)
-        return d
-
-    def _getJobCallback(self, account, uuid, delivery_tag):
-        if account:
-            job = cPickle.loads(decompress(account))
-            LOGGER.debug('Found uuid in redis: %s' % uuid)
-            return job
-        else:
-            d = self._getJobErrback(None, uuid)
-            return d
-            
-    @inlineCallbacks
-    def _getJobErrback(self, error, uuid):
-        LOGGER.debug('Could not find uuid in redis: %s' % uuid)
+        try:
+            data = yield self.redis_client.get(uuid)
+            if data:
+                job = cPickle.loads(decompress(data))
+                LOGGER.debug('Found uuid in Redis: %s' % uuid)
+                returnValue(job)
+        except Exception, e:
+            LOGGER.debug('Could not find uuid in Redis: %s' % e)
         user_account = yield self.getUserAccount(uuid)
         service_type = user_account['type'].split('/')[0].lower()
         account_id = user_account['account_id']
@@ -355,7 +362,8 @@ class WorkerServer(CassandraServer):
             service_args_mapping=self.service_args_mapping)
         self.setJobCache(job)
         returnValue(job)
-        
+    
+    @inlineCallbacks    
     def getUserAccount(self, uuid):
         sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
@@ -363,21 +371,16 @@ class WorkerServer(CassandraServer):
             AND auth_user.id=spider_service.user_id
             AND auth_user.id=content_userprofile.user_id
         """ % uuid
-        d = self.mysql.runQuery(sql)
-        d.addCallback(self._getUserAccountCallback, uuid)
-        d.addErrback(self._getUserAccountErrback, uuid)
-        return d
-
-    def _getUserAccountCallback(self, data, uuid):
+        try:
+            data = yield self.mysql.runQuery(sql)
+        except Exception, e:
+            LOGGER.debug("Could not find user %s" % uuid)
+            raise e
         if len(data) == 0: # No results?
             message = "Could not find user %s: %s" % uuid
             LOGGER.error(message)
             raise Exception(message)
-        return data[0]
-        
-    def _getUserAccountErrback(self, error, uuid):
-        LOGGER.error("Could not get user %s: %s" % (uuid, str(error)))
-        return error
+        returnValue(data[0])
         
     def getServiceCredentials(self, service_type, account_id):
         sql = "SELECT * FROM content_%saccount WHERE account_id = %d" % (service_type, account_id)
@@ -405,34 +408,27 @@ class WorkerServer(CassandraServer):
     def _getFastCacheErrback(self, error, uuid):
         LOGGER.debug("Could not get Fast Cache for %s" % uuid)
         return None
-
+    
+    @inlineCallbacks
     def setFastCache(self, uuid, data):
         if not isinstance(data, str):
             raise Exception("FastCache must be a string.")
         if uuid is None:
             return None
-        d = self.redis_client.set("fastcache:%s" % uuid, data)
-        d.addCallback(self._setFastCacheCallback, uuid)
-        d.addErrback(self._setFastCacheErrback)
-
-    def _setFastCacheCallback(self, data, uuid):
-        LOGGER.debug("Successfully set Fast Cache for %s" % uuid)
-
-    def _setFastCacheErrback(self, error):
-        LOGGER.error(str(error))
-
+        try:
+            yield self.redis_client.set("fastcache:%s" % uuid, data)
+            LOGGER.debug("Successfully set fast cache for %s" % uuid)
+        except Exception, e:
+            LOGGER.error("Could not set fast cache: %s" % e)
+            
+    @inlineCallbacks
     def getJobCache(self, uuid):
         """Search for job info in redis cache. Returns None if not found."""
-        d = self.redis_client.get(uuid)
-        d.addCallback(self._getJobCacheCallback)
-        d.addErrback(self._getJobCacheErrback)
-        return d
-
-    def _getJobCacheErrback(self, error):
-        return None
-
-    def _getJobCacheCallback(self, data):
-        return cPickle.loads(decompress(data))
+        try:
+            data = yield self.redis_client.get(uuid)
+        except:
+            return
+        returnValue(cPickle.loads(decompress(data)))
         
     @inlineCallbacks
     def setJobCache(self, job):
@@ -445,3 +441,7 @@ class WorkerServer(CassandraServer):
         except Exception, e:
             LOGGER.error(str(e))
             
+    def logStatus(self):
+        LOGGER.debug('Completed Jobs: %d' % self.jobs_complete)
+        LOGGER.debug('Queued Jobs: %d' % len(self.job_queue))
+        LOGGER.debug('Active Jobs: %d' % len(self.active_jobs))
