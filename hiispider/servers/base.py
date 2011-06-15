@@ -11,7 +11,7 @@ from twisted.web.resource import Resource
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, maybeDeferred
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
@@ -142,7 +142,7 @@ class BaseServer(object):
         start_deferred.callback(True)
 
     @inlineCallbacks
-    def shutdown(self, shutdown_deferred=None):
+    def shutdown(self):
         while self.rq.getPending() > 0 or self.rq.getActive() > 0:
             LOGGER.debug("%s requests active, %s requests pending." % (
                 self.rq.getPending(),
@@ -155,7 +155,7 @@ class BaseServer(object):
         self.shutdown_trigger_id = None
         LOGGER.critical("Server shut down.")
         LOGGER.removeHandler(self.logging_handler)
-        shutdown_deferred.callback(True)
+        returnValue(True)
 
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
@@ -234,6 +234,9 @@ class BaseServer(object):
         }
         if id(func) in self.delta_functions:
             self.functions[function_name]["delta"] = self.delta_functions[id(func)]
+            LOGGER.info("Function %s now has delta function %s." % (
+                function_name,
+                self.delta_functions[id(func)].__name__))
         else:
             self.functions[function_name]["delta"] = None
         LOGGER.info("Function %s is now callable." % function_name)

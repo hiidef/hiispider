@@ -218,12 +218,12 @@ class WorkerServer(CassandraServer):
     def shutdown(self):
         try:
             LOGGER.debug("Stopping jobs loop.")
-            self.jobsloop.cancel()
+            self.jobsloop.stop()
         except Exception, e:
             LOGGER.error("Could not stop jobs loop: %s" % e)
         try:
             LOGGER.debug("Stopping dequeue loop.")
-            self.dequeueloop.cancel()
+            self.dequeueloop.stop()
         except Exception, e:
             LOGGER.error("Could not stop dequeue jobs loop: %s" % e)
         try:
@@ -414,7 +414,7 @@ class WorkerServer(CassandraServer):
         if not isinstance(data, str):
             raise Exception("FastCache must be a string.")
         if uuid is None:
-            return None
+            return
         try:
             yield self.redis_client.set("fastcache:%s" % uuid, data)
             LOGGER.debug("Successfully set fast cache for %s" % uuid)

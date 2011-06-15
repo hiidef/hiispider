@@ -1,8 +1,8 @@
 import inspect
 import types 
+from .delta import autogenerate
 
-
-__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin"]
+__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
@@ -17,6 +17,11 @@ def aliases(*args):
     return decorator
 
 
+def autodelta(func):
+    DELTA_FUNCTIONS[id(func)] = autogenerate
+    return func
+    
+    
 def delta(handler):
     def decorator(f):
         DELTA_FUNCTIONS[id(f)] = handler
@@ -79,11 +84,8 @@ class HiiSpiderPlugin(object):
                             interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                             name=name)
                             
-    def setReservationFastCache(self, uuid, data):
-        return self.spider.setReservationFastCache(uuid, data)
-   
-    def setReservationCache(self, uuid, data):
-        return self.spider.setReservationCache(uuid, data)
+    def setFastCache(self, uuid, data):
+        return self.spider.setFastCache(uuid, data)
     
     def getPage(self, *args, **kwargs):
         return self.spider.getPage(*args, **kwargs)

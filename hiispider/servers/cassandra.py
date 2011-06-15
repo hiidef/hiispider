@@ -94,6 +94,24 @@ class CassandraServer(BaseServer):
     def shutdown(self):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
+    
+    @inlineCallbacks
+    def executeJob(self, job):
+        user_id = job.user_account["user_id"]
+        new_data = yield super(CassandraServer, self).executeJob(job)
+        if new_data is None:
+            return
+        delta_func = self.functions[job.function_name]["delta"]
+        if delta_func is not None:
+            old_data = yield self.getData(user_id, job.uuid)
+            delta = delta_func(new_data, old_data)
+            LOGGER.error("Got delta: %s" % str(delta))
+        yield self.cassandra_client.insert(
+            str(user_id),
+            self.cassandra_cf_content,
+            zlib.compress(simplejson.dumps(new_data)),
+            column=job.uuid)
+        returnValue(new_data)
         
     def executeReservation(self, function_name, **kwargs):
         uuid = None
@@ -179,15 +197,12 @@ class CassandraServer(BaseServer):
     def _exposedFunctionErrback2(self, error, data, function_name, uuid):
         LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
         return data
-        
+    
+    @inlineCallbacks    
     def getData(self, user_id, uuid):
-        d = self.cassandra_client.get(
-            key=user_id,
+        data = yield self.cassandra_client.get(
+            key=str(user_id),
             column_family=self.cassandra_cf_content,
             column=uuid)
-        d.addCallback(self._getDataCallback)
-        return d
-    
-    def _getDataCallback(self, data):
-        return simplejson.loads(zlib.decompress(data.column.value))
+        returnValue(simplejson.loads(zlib.decompress(data.column.value)))
         
