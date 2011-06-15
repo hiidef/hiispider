@@ -3,6 +3,7 @@ import zlib
 from datetime import datetime
 import urllib
 from uuid import uuid4
+import pprint
 from twisted.internet.defer import DeferredList, inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
@@ -12,6 +13,8 @@ from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
 from ..exceptions import DeleteReservationException
 import txredisapi
+
+PP = pprint.PrettyPrinter(indent=4)
 
 class CassandraServer(BaseServer):
     def __init__(self,
@@ -106,6 +109,16 @@ class CassandraServer(BaseServer):
             old_data = yield self.getData(user_id, job.uuid)
             delta = delta_func(new_data, old_data)
             LOGGER.error("Got delta: %s" % str(delta))
+            # Temporary debugging.
+            old_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.old" % job.uuid, 'w')
+            new_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.new" % job.uuid, 'w')
+            delta_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.delta" % job.uuid, 'w')
+            old_data_file.write(PP.pformat(old_data))
+            old_data_file.close()
+            new_data_file.write(PP.pformat(new_data))
+            new_data_file.close()
+            delta_data_file.write(PP.pformat(delta))
+            delta_data_file.close()
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
