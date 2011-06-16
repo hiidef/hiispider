@@ -26,7 +26,8 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
     heap = []
     unscheduled_items = []
     enqueueCallLater = None
-
+    enqueueloop = None
+    
     def __init__(self, config, port=None):
         super(SchedulerServer, self).__init__(config)
         self.setupAMQP(config)
@@ -54,7 +55,8 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         self.function_names = self.functions.keys()
         yield self.startJobQueue()
         yield self._loadFromMySQL()
-        self.enqueue()
+        self.enqueueloop = task.LoopingCall(self.enqueue)
+        self.enqueueloop.start(1)
         
     @inlineCallbacks
     def _loadFromMySQL(self):
@@ -72,52 +74,36 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         
     @inlineCallbacks
     def shutdown(self):
+        self.enqueueloop.stop()
         try:
             self.enqueueCallLater.cancel()
         except:
             pass
         yield self.stopJobQueue()
         yield super(SchedulerServer, self).shutdown()
-    
+        
     def enqueue(self):
         now = int(time.time())
         # Compare the heap min timestamp with now().
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
-        queue_items = []
+        queued_items = 0
         if self.amqp_queue_size < 100000:
             LOGGER.debug("%s:%s" % (self.heap[0][0], now))
-            while self.heap[0][0] < now and len(queue_items) < 1000:
+            while self.heap[0][0] < now and queued_items < 1000:
                 job = heappop(self.heap)
                 uuid = UUID(bytes=job[1][0])
                 if not uuid.hex in self.unscheduled_items:
-                    queue_items.append(job[1][0])
-                    new_job = (now + job[1][1], job[1])
-                    heappush(self.heap, new_job)
+                    queued_items += 1
+                    self.chan.basic_publish(
+                        exchange=self.amqp_exchange, 
+                        content=Content(job[1][0]))
+                    heappush(self.heap, (now + job[1][1], job[1]))
                 else:
                     self.unscheduled_items.remove(uuid.hex)
         else:
             LOGGER.critical('AMQP queue is at or beyond max limit (%d/100000)'
                 % self.amqp_queue_size)
-        # add items to amqp
-        if queue_items:
-            LOGGER.info('Found %d new uuids, adding them to the queue'
-                % len(queue_items))
-            msgs = [Content(uuid) for uuid in queue_items]
-            deferreds = [self.chan.basic_publish(
-                exchange=self.amqp_exchange, content=msg) for msg in msgs]
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallbacks(self._addToQueueComplete, self._addToQueueErr)
-        else:
-            self.enqueueCallLater = reactor.callLater(1, self.enqueue)
-
-    def _addToQueueComplete(self, data):
-        LOGGER.info('Completed adding items into the queue...')
-        self.enqueueCallLater = reactor.callLater(2, self.enqueue)
-
-    def _addToQueueErr(self, error):
-        LOGGER.error(error.printBriefTraceback)
-        raise
 
     def enqueueUUID(self, uuid):
         LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
