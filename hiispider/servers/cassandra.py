@@ -17,62 +17,23 @@ import txredisapi
 PP = pprint.PrettyPrinter(indent=4)
 
 class CassandraServer(BaseServer):
-    def __init__(self,
-                 aws_access_key_id=None,
-                 aws_secret_access_key=None,
-                 cassandra_server=None,
-                 cassandra_port=9160,
-                 cassandra_keyspace=None,
-                 cassandra_stats_keyspace=None,
-                 cassandra_stats_cf_daily=None,
-                 cassandra_cf_temp_content=None,
-                 cassandra_cf_content=None,
-                 cassandra_content=None,
-                 cassandra_content_error='error',
-                 cassandra_error='error',
-                 redis_hosts=None,
-                 disable_negative_cache=False,
-                 max_simultaneous_requests=100,
-                 max_requests_per_host_per_second=0,
-                 max_simultaneous_requests_per_host=0,
-                 log_file=None,
-                 log_directory=None,
-                 log_level="debug",
-                 port=8080):
-        BaseServer.__init__(
-            self,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            max_simultaneous_requests=max_simultaneous_requests,
-            max_requests_per_host_per_second=max_requests_per_host_per_second,
-            max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
-            log_file=log_file,
-            log_directory=log_directory,
-            log_level=log_level)
-        self.cassandra_server = cassandra_server
-        self.cassandra_port = cassandra_port
-        self.cassandra_keyspace = cassandra_keyspace
-        self.cassandra_cf_temp_content = cassandra_cf_temp_content
-        self.cassandra_cf_content = cassandra_cf_content
-        self.cassandra_content = cassandra_content
-        self.cassandra_content_error = cassandra_content_error
-        # Cassandra Stats
-        self.cassandra_stats_keyspace=cassandra_stats_keyspace
-        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily
+
+    def __init__(self, config):
+        super(CassandraServer, self).__init__(config)
+        self.cassandra_server = config["cassandra_server"]
+        self.cassandra_port = config["cassandra_port"]
+        self.cassandra_keyspace = config["cassandra_keyspace"]
+        self.cassandra_cf_content = config["cassandra_cf_content"]
         # Cassandra Clients & Factorys
         self.cassandra_factory = ManagedCassandraClientFactory(self.cassandra_keyspace)
         self.cassandra_client = CassandraClient(self.cassandra_factory)
-        self.cassandra_stats_factory = ManagedCassandraClientFactory(self.cassandra_stats_keyspace)
-        self.cassandra_stats_client = CassandraClient(self.cassandra_stats_factory)
         # Negative Cache
-        self.disable_negative_cache = disable_negative_cache
+        self.disable_negative_cache = config["disable_negative_cache"]
         # Redis
-        self.redis_hosts = redis_hosts
+        self.redis_hosts = config["redis_hosts"]
         # Casasndra reactor
-        reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
-        if self.cassandra_stats_keyspace:
-            reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_stats_factory)
- 
+        reactor.connectTCP(config["cassandra_server"], config["cassandra_port"], self.cassandra_factory)
+        
     def start(self):
         start_deferred = super(CassandraServer, self).start()
         start_deferred.addCallback(self._cassandraStart)

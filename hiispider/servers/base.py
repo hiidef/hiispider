@@ -79,31 +79,23 @@ class BaseServer(object):
     fast_cache = {}
     function_resource = None
     
-    def __init__(self,
-                 aws_access_key_id=None,
-                 aws_secret_access_key=None,
-                 max_simultaneous_requests=100,
-                 max_requests_per_host_per_second=0,
-                 max_simultaneous_requests_per_host=0,
-                 log_file=None,
-                 log_directory=None,
-                 log_level="debug",
-                 port=8080,
-                 pg=None):
+    def __init__(self, config, pg=None):
+        # Resource Mappings
+        self.service_mapping = config["service_mapping"]
+        self.service_args_mapping = config["service_args_mapping"]
+        # Request Queuer
         self.rq = RequestQueuer( 
-            max_simultaneous_requests=int(max_simultaneous_requests), 
-            max_requests_per_host_per_second=int(max_requests_per_host_per_second), 
-            max_simultaneous_requests_per_host=int(max_simultaneous_requests_per_host))
+            max_simultaneous_requests=int(config["max_simultaneous_requests"]), 
+            max_requests_per_host_per_second=int(config["max_requests_per_host_per_second"]), 
+            max_simultaneous_requests_per_host=int(config["max_simultaneous_requests_per_host"]))
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
-        self.aws_access_key_id=aws_access_key_id
-        self.aws_secret_access_key=aws_secret_access_key
         if pg is None:
             self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
-        self._setupLogging(log_file, log_directory, log_level)
-
+        self._setupLogging(config["log_file"], config["log_directory"], config["log_level"])
+        
     def _setupLogging(self, log_file, log_directory, log_level):
         if log_directory is None:
             self.logging_handler = logging.StreamHandler()

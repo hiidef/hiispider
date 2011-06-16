@@ -14,165 +14,71 @@ from twisted.internet import task
 from twisted.internet.threads import deferToThread
 from txamqp.content import Content
 from .base import BaseServer, LOGGER
+from .mixins import MySQLMixin, AMQPMixin
 from ..resources import SchedulerResource
 from ..amqp import amqp as AMQP
 
 from twisted.web.resource import Resource
 
 
-class SchedulerServer(BaseServer):
+class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
-    name = "HiiSpider Schedule Server UUID: %s" % str(uuid4())
     heap = []
     unscheduled_items = []
     enqueueCallLater = None
-    statusloop = None
-    amqp_queue_size = 0
 
-    def __init__(self,
-            mysql_username,
-            mysql_password,
-            mysql_host,
-            mysql_database,
-            amqp_host,
-            amqp_username,
-            amqp_password,
-            amqp_vhost,
-            amqp_queue,
-            amqp_exchange,
-            amqp_port=5672,
-            mysql_port=3306,
-            port=5001,
-            service_mapping=None,
-            log_file='schedulerserver.log',
-            log_directory=None,
-            log_level="debug"):
-        self.function_resource = Resource()
-        # Create MySQL connection.
-        self.mysql = adbapi.ConnectionPool(
-            "MySQLdb",
-            db=mysql_database,
-            port=mysql_port,
-            user=mysql_username,
-            passwd=mysql_password,
-            host=mysql_host,
-            cp_reconnect=True,
-            cursorclass=DictCursor)
-        # Resource Mappings
-        self.service_mapping = service_mapping
-        # AMQP connection parameters
-        self.amqp_host = amqp_host
-        self.amqp_vhost = amqp_vhost
-        self.amqp_port = amqp_port
-        self.amqp_username = amqp_username
-        self.amqp_password = amqp_password
-        self.amqp_queue = amqp_queue
-        self.amqp_exchange = amqp_exchange
+    def __init__(self, config, port=None):
+        super(SchedulerServer, self).__init__(config)
+        self.setupAMQP(config)
+        self.setupMySQL(config)
         # HTTP interface
         resource = Resource()
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
+        if port is None:
+            port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         # Logging, etc
-        BaseServer.__init__(
-            self,
-            log_file=log_file,
-            log_directory=log_directory,
-            log_level=log_level)
         self.expose(self.remoteRemoveFromHeap)
         self.expose(self.remoteAddToHeap)
         self.expose(self.enqueueUUID)
 
     def start(self):
-        reactor.callWhenRunning(self._start)
-        return self.start_deferred
+        start_deferred = super(SchedulerServer, self).start()
+        start_deferred.addCallback(self._schedulerStart)
+        return start_deferred
 
     @inlineCallbacks
-    def _start(self):
+    def _schedulerStart(self, started):
         # Load in names of functions supported by plugins
         self.function_names = self.functions.keys()
-        LOGGER.info('Connecting to broker.')
-        self.conn = yield AMQP.createClient(
-            self.amqp_host,
-            self.amqp_vhost,
-            self.amqp_port)
-        yield self.conn.authenticate(self.amqp_username, self.amqp_password)
-        self.chan = yield self.conn.channel(1)
-        yield self.chan.channel_open()
-        # Create Queue
-        yield self.chan.queue_declare(
-            queue=self.amqp_queue,
-            durable=False,
-            exclusive=False,
-            auto_delete=False)
-        # Create Exchange
-        yield self.chan.exchange_declare(
-            exchange=self.amqp_exchange,
-            type="fanout",
-            durable=False,
-            auto_delete=False)
-        yield self.chan.queue_bind(
-            queue=self.amqp_queue,
-            exchange=self.amqp_exchange)
-        # Build heap from data in MySQL
+        yield self.startJobQueue()
         yield self._loadFromMySQL()
-        self.statusloop = task.LoopingCall(self.queueStatusCheck)
-        self.statusloop.start(60)
-
-    def _loadFromMySQL(self, start=0):
-        # Select the entire spider_service DB, 100k rows at at time.
-        sql = """SELECT uuid, type
-                 FROM spider_service
-                 ORDER BY id LIMIT %s, 100000
-              """ % start
-        LOGGER.debug(sql)
-        d = self.mysql.runQuery(sql)
-        d.addCallback(self._loadFromMySQLCallback, start)
-        d.addErrback(self._loadFromMySQLErrback)
-        return d
-
-    def _loadFromMySQLCallback(self, data, start):
-        [self.addToHeap(row["uuid"], row["type"]) for row in data]
-        # Load next chunk.
-        if len(data) >= 100000:
-            return self._loadFromMySQL(start=start + 100000)
-        # Done loading, start queuing
         self.enqueue()
-        d = BaseServer.start(self)
-        return d
-
-    def _loadFromMySQLErrback(self, error):
-        return error
-
+        
+    @inlineCallbacks
+    def _loadFromMySQL(self):
+        data = []
+        start = 0
+        while len(data) >= 100000 or start == 0:
+            sql = """SELECT uuid, type
+                     FROM spider_service
+                     ORDER BY id LIMIT %s, 100000
+                  """ % start
+            start += 100000
+            data = yield self.mysql.runQuery(sql)
+            for row in data:
+                self.addToHeap(row["uuid"], row["type"])
+        
     @inlineCallbacks
     def shutdown(self):
-        LOGGER.debug("Closting connection")
         try:
             self.enqueueCallLater.cancel()
         except:
             pass
-        # Shut things down
-        LOGGER.info('Closing broker connection')
-        yield self.chan.channel_close()
-        chan0 = yield self.conn.channel(0)
-        yield chan0.connection_close()
-        LOGGER.info('Closing MYSQL Connnection Pool')
-        yield self.mysql.close()
-
-    # def enqueue(self):
-    #     # Defer this to a thread so we don't block on the web interface.
-    #     deferToThread(self._enqueue)
-    @inlineCallbacks
-    def queueStatusCheck(self):
-        yield self.chan.queue_bind(
-            queue=self.amqp_queue,
-            exchange=self.amqp_exchange)
-        queue_status = yield self.chan.queue_declare(
-            queue=self.amqp_queue,
-            passive=True)
-        self.amqp_queue_size = queue_status.fields[1]
-        LOGGER.debug('AMQP queue size: %d' % self.amqp_queue_size)
-
+        yield self.stopJobQueue()
+        yield super(SchedulerServer, self).shutdown()
+    
     def enqueue(self):
         now = int(time.time())
         # Compare the heap min timestamp with now().
@@ -180,13 +86,12 @@ class SchedulerServer(BaseServer):
         # timestamp and add it back to the heap for the next go round.
         queue_items = []
         if self.amqp_queue_size < 100000:
-            queue_items_a = queue_items.append
             LOGGER.debug("%s:%s" % (self.heap[0][0], now))
             while self.heap[0][0] < now and len(queue_items) < 1000:
                 job = heappop(self.heap)
                 uuid = UUID(bytes=job[1][0])
                 if not uuid.hex in self.unscheduled_items:
-                    queue_items_a(job[1][0])
+                    queue_items.append(job[1][0])
                     new_job = (now + job[1][1], job[1])
                     heappush(self.heap, new_job)
                 else:
