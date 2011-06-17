@@ -23,12 +23,10 @@ class JobGetterMixin(MySQLMixin):
         service_credentials = yield self._getServiceCredentials(service_type, account_id)
         job = Job(
             function_name=user_account['type'],
-            uuid=uuid,
             service_credentials=service_credentials,
             user_account=user_account,
-            functions=self.functions,
-            service_mapping=self.service_mapping,
-            service_args_mapping=self.service_args_mapping)
+            uuid=uuid)
+        self.mapJob(job) # Do this now so mapped values are cached.
         self._setJobCache(job)
         returnValue(job)
     

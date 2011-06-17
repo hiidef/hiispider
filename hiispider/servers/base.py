@@ -1,6 +1,5 @@
 import inspect
 import logging
-import logging.handlers
 import os
 import time
 import pprint
@@ -20,46 +19,27 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 LOGGER = logging.getLogger("main")
 
+def invert(d):
+    """Invert a dictionary."""
+    return dict([(v, k) for (k, v) in d.iteritems()])
+
 class Job(object):
     
+    mapped = False
     fast_cache = None
+    uuid = None
     
     def __init__(self,
             function_name,
-            uuid,
             service_credentials,
             user_account,
-            functions,
-            service_mapping=None,
-            service_args_mapping=None):
+            uuid=None):
+        self.function_name = function_name
+        self.kwargs = service_credentials
         self.subservice = function_name
         self.uuid = uuid
         self.user_account = user_account
-        if service_mapping is not None and function_name in service_mapping:
-            LOGGER.debug('Remapping resource %s to %s' % (
-                function_name, 
-                service_mapping[function_name]))
-            self.function_name = service_mapping[function_name]
-        else:
-            self.function_name = function_name
-        if service_args_mapping is None:
-            self.kwargs = service_credentials
-        else:
-            self.kwargs = {}
-            service_name = function_name.split('/')[0]
-            # remap some fields that differ from the plugin and the database
-            for old_key in service_args_mapping.get(service_name, []):
-                new_key = service_args_mapping[service_name][old_key]
-                if old_key in service_credentials:
-                     service_credentials[new_key] = service_credentials[old_key]
-            exposed_function = functions[self.function_name]
-            for key in exposed_function['required_arguments']:
-                self.kwargs[key] = service_credentials[key]
-            for key in exposed_function['optional_arguments']:
-                if key in service_credentials:
-                    self.kwargs[key] = service_credentials[key]
-      
-            
+        
 class BaseServer(object):
     
     exposed_functions = []
@@ -83,11 +63,13 @@ class BaseServer(object):
         # Resource Mappings
         self.service_mapping = config["service_mapping"]
         self.service_args_mapping = config["service_args_mapping"]
+        self.inverted_args_mapping = dict([(s[0], invert(s[1])) 
+            for s in self.service_args_mapping.items()])
         # Request Queuer
         self.rq = RequestQueuer( 
-            max_simultaneous_requests=int(config["max_simultaneous_requests"]), 
-            max_requests_per_host_per_second=int(config["max_requests_per_host_per_second"]), 
-            max_simultaneous_requests_per_host=int(config["max_simultaneous_requests_per_host"]))
+            max_simultaneous_requests=config["max_simultaneous_requests"],
+            max_requests_per_host_per_second=config["max_requests_per_host_per_second"], 
+            max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
         if pg is None:
@@ -154,44 +136,63 @@ class BaseServer(object):
         
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
-
+    
+    @inlineCallbacks
     def executeJob(self, job):
-        return self.callExposedFunction(
-            self.functions[job.function_name]["function"],
-            job.kwargs,
-            job.function_name,
-            reservation_fast_cache=job.fast_cache,
-            uuid=job.uuid)
-
-    def makeCallable(self, func, interval=0, name=None, expose=False):
+        if not job.mapped:
+            job = self.mapJob(job)
+        f = self.functions[job.function_name]
+        if job.uuid is not None:
+            self.active_jobs[job.uuid] = True
+        if f["get_job_uuid"]:
+            job.kwargs["job_uuid"] = job.uuid 
+        if f["check_fast_cache"]:
+            job.kwargs["fast_cache"] = job.fast_cache
+        try:
+            data = yield maybeDeferred(f["function"], **job.kwargs)
+        except Exception, e:
+            if job.uuid in self.active_jobs:
+                del self.active_jobs[job.uuid]
+            LOGGER.error("Error with %s.\n%s" % (job.function_name, e))
+            raise e
+        # If the data is None, there's nothing to store.
+        if job.uuid in self.active_jobs:
+            del self.active_jobs[job.uuid]
+        returnValue(data)
+    
+    def _getArguments(self, func):
         argspec = inspect.getargspec(func)
         # Get required / optional arguments
         arguments = argspec[0]
+        kwarg_defaults = argspec[3]
         if len(arguments) > 0 and arguments[0:1][0] == 'self':
             arguments.pop(0)
-        kwarg_defaults = argspec[3]
         if kwarg_defaults is None:
             kwarg_defaults = []
         required_arguments = arguments[0:len(arguments) - len(kwarg_defaults)]
         optional_arguments = arguments[len(arguments) - len(kwarg_defaults):]
+        return required_arguments, optional_arguments
+
+    def makeCallable(self, func, interval=0, name=None, expose=False):
+        required_arguments, optional_arguments = self._getArguments(func)
         # Reservation fast cache is stored on with the reservation
-        if "reservation_fast_cache" in required_arguments:
-            del required_arguments[required_arguments.index("reservation_fast_cache")]
-            check_reservation_fast_cache = True
-        elif "reservation_fast_cache" in optional_arguments:
-            del optional_arguments[optional_arguments.index("reservation_fast_cache")]
-            check_reservation_fast_cache = True
+        if "fast_cache" in required_arguments:
+            del required_arguments[required_arguments.index("fast_cache")]
+            check_fast_cache = True
+        elif "fast_cache" in optional_arguments:
+            del optional_arguments[optional_arguments.index("fast_cache")]
+            check_fast_cache = True
         else:
-            check_reservation_fast_cache = False
+            check_fast_cache = False
         # Indicates whether to send the reservation's UUID to the function
-        if "reservation_uuid" in required_arguments:
-            del required_arguments[required_arguments.index("reservation_uuid")]
-            get_reservation_uuid = True
-        elif "reservation_uuid" in optional_arguments:
-            del optional_arguments[optional_arguments.index("reservation_uuid")]
-            get_reservation_uuid = True
+        if "job_uuid" in required_arguments:
+            del required_arguments[required_arguments.index("job_uuid")]
+            get_job_uuid = True
+        elif "job_uuid" in optional_arguments:
+            del optional_arguments[optional_arguments.index("job_uuid")]
+            get_job_uuid = True
         else:
-            get_reservation_uuid = False
+            get_job_uuid = False
         # Get function name, usually class/method
         if name is not None:
             function_name = name
@@ -203,17 +204,17 @@ class BaseServer(object):
         # Make sure the function isn't using any reserved arguments.
         for key in required_arguments:
             if key in self.reserved_arguments:
-                message = "Required argument name '%s' used in function %s is reserved." % (key, function_name)
+                message = "Required argument name '%s' is reserved." % key
                 LOGGER.error(message)
                 raise Exception(message)
         for key in optional_arguments:
             if key in self.reserved_arguments:
-                message = "Optional argument name '%s' used in function %s is reserved." % (key, function_name)
+                message = "Optional argument name '%s' is reserved." % key
                 LOGGER.error(message)
                 raise Exception(message)
         # Make sure we don't already have a function with the same name.
         if function_name in self.functions:
-            raise Exception("A method or function with the name %s is already callable." % function_name)
+            raise Exception("Function %s is already callable." % function_name)
         # Add it to our list of callable functions.
         self.functions[function_name] = {
             "function":func,
@@ -221,16 +222,10 @@ class BaseServer(object):
             "interval":interval,
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,
-            "check_reservation_fast_cache":check_reservation_fast_cache,
-            "get_reservation_uuid":get_reservation_uuid
+            "check_fast_cache":check_fast_cache,
+            "get_job_uuid":get_job_uuid,
+            "delta":self.delta_functions.get(id(func), None)
         }
-        if id(func) in self.delta_functions:
-            self.functions[function_name]["delta"] = self.delta_functions[id(func)]
-            LOGGER.info("Function %s now has delta function %s." % (
-                function_name,
-                self.delta_functions[id(func)].__name__))
-        else:
-            self.functions[function_name]["delta"] = None
         LOGGER.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
             self.exposed_functions.append(function_name)
@@ -246,7 +241,7 @@ class BaseServer(object):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.function_resource.putChild(function_name_parts[0], er)
-            LOGGER.info("Function %s is now available via the HTTP interface." % function_name)
+            LOGGER.info("%s is now available via HTTP." % function_name)
         return function_name
 
     def getPage(self, *args, **kwargs):
@@ -279,58 +274,35 @@ class BaseServer(object):
         if uuid is None:
             return None
         self.fast_cache[uuid] = data
-
-    def callExposedFunction(self, func, kwargs, function_name, reservation_fast_cache=None, uuid=None):
-        if uuid is not None:
-            self.active_jobs[uuid] = True
-        if self.functions[function_name]["get_reservation_uuid"]:
-            kwargs["reservation_uuid"] = uuid 
-        if self.functions[function_name]["check_reservation_fast_cache"] and \
-                reservation_fast_cache is not None:
-            kwargs["reservation_fast_cache"] = reservation_fast_cache
-        elif self.functions[function_name]["check_reservation_fast_cache"]:
-            kwargs["reservation_fast_cache"] = None
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
-
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None and uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        if uuid is None:
-            LOGGER.error("Error with %s.\n%s" % (function_name, error))
-        else:
-            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
-                function_name, 
-                uuid,
-                error))
-        return error
-
-    def _callExposedFunctionCallback(self, data, function_name, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
-        # If the UUID is None, this is a one-off type of thing.
-        if uuid is None:
-            return data
-        # If the data is None, there's nothing to store.
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-
-    def executeReservation(self, function_name, **kwargs):
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        d = self.callExposedFunction(
-            self.functions[function_name]["function"], 
-            kwargs, 
-            function_name)
-        return d
-
+            
+    def mapJob(self, job):
+        if job.function_name in self.service_mapping:
+            LOGGER.debug('Remapping resource %s to %s' % (
+                job.function_name, 
+                self.service_mapping[job.function_name]))
+            job.function_name = self.service_mapping[job.function_name]
+        service_name = job.function_name.split('/')[0]
+        if service_name in self.inverted_args_mapping:
+            kwargs = {}
+            mapping = self.inverted_args_mapping[service_name]
+            f = self.functions[job.function_name]
+            for key in f['required_arguments']:
+                if key in mapping and mapping[key] in job.kwargs:
+                    kwargs[key] = job.kwargs[mapping[key]]
+                elif key in job.kwargs:
+                    kwargs[key] = job.kwargs[key]
+                else:
+                    raise Exception("Could not find argument: %s" % key)
+            for key in f['optional_arguments']:
+                if mapping[key] in job.kwargs:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+            job.kwargs = kwargs
+        job.mapped = True
+        return job
+        
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):
         try:

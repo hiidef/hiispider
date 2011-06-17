@@ -1,13 +1,14 @@
+import urllib
 from .cassandra import CassandraServer
-from .base import LOGGER, Job
+from .base import LOGGER
 from ..resources import WorkerResource
 from .mixins import AMQPMixin, JobGetterMixin
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
 import pprint
-import simplejson
 from traceback import format_exc
+from ..exceptions import DeleteReservationException
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -31,6 +32,8 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         if port is None:
             port = config["worker_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
+        self.scheduler_server = config["scheduler_server"]
+        self.scheduler_server_port = config["scheduler_server_port"]
         
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -38,7 +41,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         return start_deferred
 
     @inlineCallbacks
-    def _workerStart(self, started):
+    def _workerStart(self, started=None):
         LOGGER.debug("Starting worker components.")
         yield self.startJobQueue()
         yield self.startPageCacheQueue()
@@ -78,11 +81,11 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             return
         if job.function_name in self.functions:
             LOGGER.debug('Successfully pulled job off of AMQP queue')
-            if self.functions[job.function_name]["check_reservation_fast_cache"]:
+            if self.functions[job.function_name]["check_fast_cache"]:
                 job.fast_cache = yield self.getFastCache(job.uuid)
             self.job_queue.append(job)
         else:
-            LOGGER.error("Could not find function %s." % function_name)
+            LOGGER.error("Could not find function %s." % job.function_name)
             return
     
     def executeJobs(self):
@@ -92,20 +95,38 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             
     @inlineCallbacks
     def executeJob(self, job):
-        yield super(WorkerServer, self).executeJob(job)
-        self.jobs_complete += 1
+        try:
+            yield super(WorkerServer, self).executeJob(job)
+            self.jobs_complete += 1
+        except DeleteReservationException:
+            yield self.deleteReservation(job)
         self.logStatus()
         yield self.clearPageCache(job)
-
+        
+    @inlineCallbacks
+    def deleteReservation(self, job):
+        LOGGER.info('Deleting UUID from spider_service table: %s' % job.uuid)
+        sql = "DELETE FROM spider_service WHERE uuid=%s" % job.uuid
+        yield self.mysql.runQuery(sql)
+        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
+            self.scheduler_server, 
+            self.scheduler_server_port, 
+            urllib.urlencode({'uuid': job.uuid}))
+        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
+        yield self.rq.getPage(url=url)
+        LOGGER.info('Deleting UUID from Cassandra: %s' % job.uuid)
+        yield self.cassandra_client.remove(
+            job.uuid, 
+            self.cassandra_cf_content)
+        
+    @inlineCallbacks
     def getFastCache(self, uuid):
-        d = self.redis_client.get("fastcache:%s" % uuid)
-        d.addErrback(self._getFastCacheErrback, uuid)
-        return d
+        try:
+            data = yield self.redis_client.get("fastcache:%s" % uuid)
+        except:
+            LOGGER.debug("Could not get Fast Cache for %s" % uuid)
+        returnValue(data)
 
-    def _getFastCacheErrback(self, error, uuid):
-        LOGGER.debug("Could not get Fast Cache for %s" % uuid)
-        return None
-    
     @inlineCallbacks
     def setFastCache(self, uuid, data):
         if not isinstance(data, str):

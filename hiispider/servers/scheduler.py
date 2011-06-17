@@ -1,22 +1,14 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 import time
-import random
-import logging
-import logging.handlers
 import random
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.enterprise import adbapi
-from MySQLdb.cursors import DictCursor
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredList
-from twisted.internet import task
-from twisted.internet.threads import deferToThread
+from twisted.internet.defer import inlineCallbacks
 from txamqp.content import Content
 from .base import BaseServer, LOGGER
 from .mixins import MySQLMixin, AMQPMixin
-from ..resources import SchedulerResource
-from ..amqp import amqp as AMQP
+
 
 from twisted.web.resource import Resource
 
@@ -50,9 +42,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         return start_deferred
 
     @inlineCallbacks
-    def _schedulerStart(self, started):
-        # Load in names of functions supported by plugins
-        self.function_names = self.functions.keys()
+    def _schedulerStart(self, started=None):
         yield self.startJobQueue()
         yield self._loadFromMySQL()
         self.enqueueloop = task.LoopingCall(self.enqueue)
@@ -107,7 +97,9 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
     def enqueueUUID(self, uuid):
         LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
-        self.chan.basic_publish(exchange=self.amqp_exchange, content=Content(UUID(uuid).bytes))
+        self.chan.basic_publish(
+            exchange=self.amqp_exchange, 
+            content=Content(UUID(uuid).bytes))
         return uuid        
         
     def remoteAddToHeap(self, uuid=None, type=None):
@@ -116,7 +108,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             self.addToHeap(uuid, type)
             return {}
         else:
-            LOGGER.error('remoteAddToHeap: Required parameters are uuid and type')
+            LOGGER.error('Required parameters are uuid and type')
             return {'error': 'Required parameters are uuid and type'}
 
     def remoteRemoveFromHeap(self, uuid):
@@ -146,7 +138,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             # Enqueue randomly over the interval so it doesn't
             # flood the server at the interval time. only if an interval is defined
             if interval:
-                enqueue_time = int(time.time() + random.randint(0,interval))
+                enqueue_time = int(time.time() + random.randint(0, interval))
                 # Add a UUID to the heap.
                 LOGGER.debug('Adding %s to heap with time %s and interval of %s'
                     % (uuid, enqueue_time, interval))

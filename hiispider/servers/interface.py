@@ -1,20 +1,14 @@
 import pprint
 import urllib
 from uuid import uuid4
-from MySQLdb.cursors import DictCursor
-from twisted.enterprise import adbapi
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
-from twisted.internet.threads import deferToThread
+from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
 from .mixins import JobGetterMixin
 from .cassandra import CassandraServer
-from .base import LOGGER, SmartConnectionPool
+from .base import LOGGER
 from ..resources import InterfaceResource
-from ..evaluateboolean import evaluateBoolean
-import zlib
-from ..amqp import amqp as AMQP
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -35,7 +29,9 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         if port is None:
             port = config["interface_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-    
+        self.scheduler_server = config["scheduler_server"]
+        self.scheduler_server_port = config["scheduler_server_port"]
+        
     def start(self):
         start_deferred = super(InterfaceServer, self).start()
         start_deferred.addCallback(self._interfaceStart)
@@ -43,7 +39,7 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
     
     @inlineCallbacks
     def _interfaceStart(self):
-        yield self.startJobGetter()
+        returnValue(True)
     
     @inlineCallbacks
     def shutdown(self):
@@ -51,22 +47,14 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         yield self.site_port.stopListening()
         yield self.stopJobGetter()
         yield super(InterfaceServer, self).shutdown()
-        
+    
     def enqueueUUID(self, uuid):
-        if uuid and self.scheduler_server and self.scheduler_server_port:
-            parameters = {'uuid': uuid}
-            query_string = urllib.urlencode(parameters)
-            url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (self.scheduler_server, self.scheduler_server_port, query_string)
-            LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
-            d = self.rq.getPage(url=url)
-            d.addCallback(self._enqueueCallback, uuid)
-            d.addErrback(self._enqueueErrback, uuid)
-            return d
-        return None
+        url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (
+            self.scheduler_server, 
+            self.scheduler_server_port, 
+            urllib.urlencode({'uuid': uuid}))
+        LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
+        return self.rq.getPage(url=url)
     
-    def _enqueueCallback(self, data, uuid):
-        LOGGER.info("%s is added to spider queue." % uuid)
-    
-    def _enqueueErrback(self, error, uuid):
-        LOGGER.info("Could not enqueue %s." % uuid)
+
             
