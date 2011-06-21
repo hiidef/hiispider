@@ -85,7 +85,7 @@ def _compare_dicts(a, b):
     
 def autogenerate(a, b):
     """
-    Compare dictionaries or lists of objects. Returns a 
+    Compare dictionaries or lists of objects. Returns a list.
     """
     # Native Python comparison. Should be well optimized across VMs.
     if a == b:
@@ -96,8 +96,8 @@ def autogenerate(a, b):
         raise TypeError("Cannot generate delta from %s to %s." % (
             a.__class__,
             b.__class__))
-    if isinstance(a, unicode) or isinstance(a, str):
-        raise TypeError("Cannot generate delta from strings.")  
+    if isinstance(a, basestring):
+        raise TypeError("Cannot generate delta from strings.")
     if isinstance(a, list):
         return _compare_lists(a, b)
     if isinstance(a, dict):

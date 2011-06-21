@@ -21,9 +21,10 @@ def read(path):
 
 class CompareListsTest(TestCase):
     """Test delta._compare_lists."""
-    def test_basics(self):
+
+    def test_basics(self, comp=None):
         """Basic list comparisson tests."""
-        comp = delta._compare_lists
+        comp = comp or delta._compare_lists
         # test the identity comparisson against an empty list
         for i in range(10):
             rand = srt(random.sample(xrange(10000), 100))
@@ -50,9 +51,10 @@ class CompareListsTest(TestCase):
 
 class CompareDictsTest(TestCase):
     """Test delta._compare_dicts."""
-    def test_basics(self):
+
+    def test_basics(self, comp=None):
         """Basic dict comparisson tests."""
-        comp = delta._compare_dicts
+        comp = comp or delta._compare_dicts
         # test the identify comparisson against an empty dict
         for i in range(10):
             keys = [''.join(random.sample('abcdefghijklmnopqrstuvwxyz', 3)) for x in range(100)]
@@ -61,11 +63,10 @@ class CompareDictsTest(TestCase):
             # compare_dicts returns a list of maps of new-keys to new values
             self.assertEqual(srt(comp(d, {})), srt([{k:v} for k,v in d.iteritems()]))
 
-    def test_corpus(self):
+    def test_corpus(self, comp=None):
         """Use tests/deltas/ test case data."""
-        print ''
         full = lambda x: os.path.join(datapath, x)
-        comp = delta._compare_dicts
+        comp = comp or delta._compare_dicts
         old = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('old.js')]
         new = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('new.js')]
         res = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('res.js')]
@@ -74,3 +75,38 @@ class CompareDictsTest(TestCase):
         res = map(simplejson.loads, res)
         for old,new,res in zip(old, new, res):
             self.assertEqual(comp(new, old), res)
+
+class CompareAutogenerate(CompareDictsTest, CompareListsTest):
+    """Test delta.autogenerate."""
+
+    def test_basics(self):
+        """Test list & dict basics with autogenerate."""
+        CompareListsTest.test_basics(self, comp=delta.autogenerate)
+        CompareDictsTest.test_basics(self, comp=delta.autogenerate)
+
+    def test_corpus(self):
+        """Test corpus with autogenerate."""
+        CompareDictsTest.test_corpus(self, comp=delta.autogenerate)
+
+    def test_exceptional_cases(self):
+        """Test exceptional cases for autogenerate."""
+        # comparing strings throws a type error
+        args = ('foo', 'bar')
+        self.assertRaises(TypeError, delta.autogenerate, args)
+        # UNLESS(?) they're the same
+        args = ('foo', 'foo')
+        self.assertEqual(delta.autogenerate(*args), [])
+        # raise type error if classes aren't the same
+        args = (['foo'], {'bar': 1})
+        self.assertRaises(TypeError, delta.autogenerate, args)
+        # raises an error if it doesn't know about what classes they are
+        class Flub(object):
+            def __init__(self, val):
+                self.val = val
+        self.assertRaises(TypeError, delta.autogenerate, (Flub('hi'), Flub('bye')))
+        # but it doesn't if cmp works on the object and they're the same...
+        class Flub2(Flub):
+            def __cmp__(self, other):
+                return cmp(self.val, other.val)
+        self.assertEqual(delta.autogenerate(Flub2('hi'), Flub2('hi')), [])
+
