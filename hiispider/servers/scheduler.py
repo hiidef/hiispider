@@ -16,6 +16,7 @@ from twisted.web.resource import Resource
 class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
     heap = []
+    # TODO: make this a set()
     unscheduled_items = []
     enqueueCallLater = None
     enqueueloop = None

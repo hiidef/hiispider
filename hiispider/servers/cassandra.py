@@ -65,6 +65,7 @@ class CassandraServer(BaseServer):
         delta_func = self.functions[job.function_name]["delta"]
         if delta_func is not None:
             old_data = yield self.getData(user_id, job.uuid)
+            # TODO: make sure we check that old_data exists
             delta = delta_func(new_data, old_data)
             LOGGER.error("Got delta: %s" % str(delta))
             # Temporary debugging.
