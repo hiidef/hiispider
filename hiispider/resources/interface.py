@@ -4,13 +4,13 @@ from twisted.python.failure import Failure
 from twisted.internet.defer import DeferredList
 
 class InterfaceResource(BaseResource):
-    
+
     isLeaf = True
-    
+
     def __init__(self, interfaceserver):
         self.interfaceserver = interfaceserver
         BaseResource.__init__(self)
-    
+
     def render(self, request):
         request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
         if len(request.postpath) > 0:

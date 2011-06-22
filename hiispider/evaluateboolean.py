@@ -24,4 +24,3 @@ def evaluateBoolean(b):
             return bool(int(b))
         except:
             return True
-            

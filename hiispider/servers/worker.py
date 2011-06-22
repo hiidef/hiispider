@@ -34,7 +34,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
-        
+
     def start(self):
         start_deferred = super(WorkerServer, self).start()
         start_deferred.addCallback(self._workerStart)
@@ -87,12 +87,12 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         else:
             LOGGER.error("Could not find function %s." % job.function_name)
             return
-    
+
     def executeJobs(self):
         while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
             job = self.job_queue.pop(0)
             self.executeJob(job)
-            
+
     @inlineCallbacks
     def executeJob(self, job):
         try:
@@ -102,23 +102,23 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             yield self.deleteReservation(job)
         self.logStatus()
         yield self.clearPageCache(job)
-        
+
     @inlineCallbacks
     def deleteReservation(self, job):
         LOGGER.info('Deleting UUID from spider_service table: %s' % job.uuid)
         sql = "DELETE FROM spider_service WHERE uuid=%s" % job.uuid
         yield self.mysql.runQuery(sql)
         url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
-            self.scheduler_server, 
-            self.scheduler_server_port, 
+            self.scheduler_server,
+            self.scheduler_server_port,
             urllib.urlencode({'uuid': job.uuid}))
         LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
         yield self.rq.getPage(url=url)
         LOGGER.info('Deleting UUID from Cassandra: %s' % job.uuid)
         yield self.cassandra_client.remove(
-            job.uuid, 
+            job.uuid,
             self.cassandra_cf_content)
-        
+
     @inlineCallbacks
     def getFastCache(self, uuid):
         try:
@@ -137,8 +137,8 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             yield self.redis_client.set("fastcache:%s" % uuid, data)
             LOGGER.debug("Successfully set fast cache for %s" % uuid)
         except Exception, e:
-            LOGGER.error("Could not set fast cache: %s" % e)       
-            
+            LOGGER.error("Could not set fast cache: %s" % e)
+
     def logStatus(self):
         LOGGER.debug('Completed Jobs: %d' % self.jobs_complete)
         LOGGER.debug('Queued Jobs: %d' % len(self.job_queue))

@@ -1,5 +1,5 @@
 import inspect
-import types 
+import types
 from .delta import autogenerate
 
 __all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
@@ -20,14 +20,14 @@ def aliases(*args):
 def autodelta(func):
     DELTA_FUNCTIONS[id(func)] = autogenerate
     return func
-    
-    
+
+
 def delta(handler):
     def decorator(f):
         DELTA_FUNCTIONS[id(f)] = handler
         return f
     return decorator
-    
+
 
 def expose(func=None, interval=0, name=None, memoize=False):
     if func is not None:
@@ -50,7 +50,7 @@ def make_callable(func=None, interval=0, name=None, memoize=False):
 
 
 class HiiSpiderPlugin(object):
-    
+
     def __init__(self, spider):
         self.spider = spider
         check_method = lambda x:isinstance(x[1], types.MethodType)
@@ -60,7 +60,7 @@ class HiiSpiderPlugin(object):
             if instance_id in DELTA_FUNCTIONS:
                 self.spider.delta(
                     instance_method[1],
-                    DELTA_FUNCTIONS[instance_id])                
+                    DELTA_FUNCTIONS[instance_id])
             if instance_id in EXPOSED_FUNCTIONS:
                 self.spider.expose(
                     instance_method[1],
@@ -71,7 +71,7 @@ class HiiSpiderPlugin(object):
                         self.spider.expose(
                             instance_method[1],
                             interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
-                            name=name)                        
+                            name=name)
             if instance_id in CALLABLE_FUNCTIONS:
                 self.spider.expose(
                     instance_method[1],
@@ -83,10 +83,10 @@ class HiiSpiderPlugin(object):
                             instance_method[1],
                             interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                             name=name)
-                            
+
     def setFastCache(self, uuid, data):
         return self.spider.setFastCache(uuid, data)
-    
+
     def getPage(self, *args, **kwargs):
         return self.spider.getPage(*args, **kwargs)
-        
+

@@ -3,7 +3,7 @@ from twisted.enterprise import adbapi
 
 
 class MySQLMixin(object):
-    
+
     def setupMySQL(self, config):
         self.mysql = adbapi.ConnectionPool(
             "MySQLdb",

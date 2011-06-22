@@ -15,9 +15,9 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 
 class InterfaceServer(CassandraServer, JobGetterMixin):
-    
+
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
-    
+
     def __init__(self, config, port=None):
         super(InterfaceServer, self).__init__(config)
         self.setupMySQL(config)
@@ -31,30 +31,30 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
-        
+
     def start(self):
         start_deferred = super(InterfaceServer, self).start()
         start_deferred.addCallback(self._interfaceStart)
         return start_deferred
-    
+
     @inlineCallbacks
     def _interfaceStart(self):
         returnValue(True)
-    
+
     @inlineCallbacks
     def shutdown(self):
         LOGGER.debug("%s stopping on main HTTP interface." % self.name)
         yield self.site_port.stopListening()
         yield self.stopJobGetter()
         yield super(InterfaceServer, self).shutdown()
-    
+
     def enqueueUUID(self, uuid):
         url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (
-            self.scheduler_server, 
-            self.scheduler_server_port, 
+            self.scheduler_server,
+            self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
         LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
         return self.rq.getPage(url=url)
-    
 
-            
+
+

@@ -20,7 +20,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
     unscheduled_items = []
     enqueueCallLater = None
     enqueueloop = None
-    
+
     def __init__(self, config, port=None):
         super(SchedulerServer, self).__init__(config)
         self.setupAMQP(config)
@@ -48,7 +48,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         yield self._loadFromMySQL()
         self.enqueueloop = task.LoopingCall(self.enqueue)
         self.enqueueloop.start(1)
-        
+
     @inlineCallbacks
     def _loadFromMySQL(self):
         data = []
@@ -62,7 +62,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             data = yield self.mysql.runQuery(sql)
             for row in data:
                 self.addToHeap(row["uuid"], row["type"])
-        
+
     @inlineCallbacks
     def shutdown(self):
         self.enqueueloop.stop()
@@ -72,7 +72,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             pass
         yield self.stopJobQueue()
         yield super(SchedulerServer, self).shutdown()
-        
+
     def enqueue(self):
         now = int(time.time())
         # Compare the heap min timestamp with now().
@@ -87,7 +87,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
                 if not uuid.hex in self.unscheduled_items:
                     queued_items += 1
                     self.chan.basic_publish(
-                        exchange=self.amqp_exchange, 
+                        exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
                     heappush(self.heap, (now + job[1][1], job[1]))
                 else:
@@ -99,10 +99,10 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
     def enqueueUUID(self, uuid):
         LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
         self.chan.basic_publish(
-            exchange=self.amqp_exchange, 
+            exchange=self.amqp_exchange,
             content=Content(UUID(uuid).bytes))
-        return uuid        
-        
+        return uuid
+
     def remoteAddToHeap(self, uuid=None, type=None):
         if uuid and type:
             LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
@@ -115,7 +115,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
     def remoteRemoveFromHeap(self, uuid):
         LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
         self.removeFromHeap(uuid)
-        
+
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
         # then rewrite type to the proper resource
@@ -147,7 +147,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         else:
             LOGGER.info('Unscheduling %s' % uuid)
             self.unscheduled_items.remove(uuid)
-            
+
     def removeFromHeap(self, uuid):
         LOGGER.info('Removing %s from heap' % uuid)
         self.unscheduled_items.append(uuid)

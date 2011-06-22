@@ -9,13 +9,13 @@ from ...amqp import amqp as AMQP
 
 
 class AMQPMixin(object):
-    
+
     amqp_queue_size = 0
     amqp_pagecache_queue_size = 0
     # Define these in case we have an early shutdown.
     chan = None
     pagecache_chan = None
-    
+
     def setupAMQP(self, config):
         # Create AMQP Connection
         # AMQP connection parameters
@@ -30,7 +30,7 @@ class AMQPMixin(object):
         # Pagecache
         self.amqp_pagecache_vhost = config["amqp_pagecache_vhost"]
         self.pagecache_web_server_host = config["pagecache_web_server_host"]
-        
+
     @inlineCallbacks
     def startJobQueue(self):
         self.conn = yield AMQP.createClient(
@@ -64,9 +64,9 @@ class AMQPMixin(object):
         self.queue = yield self.conn.queue("hiispider_consumer")
         self.jobstatusloop = task.LoopingCall(self.jobQueueStatusCheck)
         self.jobstatusloop.start(60)
-        
+
     @inlineCallbacks
-    def startPageCacheQueue(self):    
+    def startPageCacheQueue(self):
         # Setup pagecache queue
         self.pagecache_conn = yield AMQP.createClient(
             self.amqp_host,
@@ -92,16 +92,16 @@ class AMQPMixin(object):
             exchange=self.amqp_exchange)
         self.pagecachestatusloop = task.LoopingCall(self.pagecacheQueueStatusCheck)
         self.pagecachestatusloop.start(60)
-    
-    @inlineCallbacks    
+
+    @inlineCallbacks
     def stopJobQueue(self):
         self.jobstatusloop.stop()
         LOGGER.info('Closing job queue')
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
-        
-    @inlineCallbacks        
+
+    @inlineCallbacks
     def stopPageCacheQueue(self):
         self.pagecachestatusloop.stop()
         try:
@@ -110,9 +110,9 @@ class AMQPMixin(object):
             pagecache_chan0 = yield self.pagecache_conn.channel(0)
             yield pagecache_chan0.connection_close()
         except Exception, e:
-            LOGGER.error("Could not close pagecache queue: %s" % e)    
-        
-    
+            LOGGER.error("Could not close pagecache queue: %s" % e)
+
+
     @inlineCallbacks
     def jobQueueStatusCheck(self):
         yield self.chan.queue_bind(
@@ -123,7 +123,7 @@ class AMQPMixin(object):
             passive=True)
         self.amqp_queue_size = queue_status.fields[1]
         LOGGER.debug('Job queue size: %d' % self.amqp_queue_size)
-    
+
     @inlineCallbacks
     def pagecacheQueueStatusCheck(self):
         yield self.pagecache_chan.queue_bind(
@@ -134,7 +134,7 @@ class AMQPMixin(object):
             passive=True)
         self.amqp_pagecache_queue_size = pagecache_queue_status.fields[1]
         LOGGER.debug('Pagecache queue size: %d' % self.amqp_pagecache_queue_size)
-    
+
     @inlineCallbacks
     def getJobUUID(self):
         msg = yield self.queue.get()
@@ -145,7 +145,7 @@ class AMQPMixin(object):
             except Exception, e:
                 LOGGER.error('basic_ack Error: %s' % e)
         returnValue(UUID(bytes=msg.content.body).hex)
-    
+
     @inlineCallbacks
     def clearPageCache(self, job):
         # Add to the pagecache queue to signal Django to
@@ -161,15 +161,14 @@ class AMQPMixin(object):
             pagecache_msg['host'] = job.user_account['host']
         else:
             cache_key = '%s/%s' % (
-                self.pagecache_web_server_host, 
+                self.pagecache_web_server_host,
                 job.user_account['username'])
         pagecache_msg['username'] = job.user_account['username']
         pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
         msg = Content(simplejson.dumps(pagecache_msg))
         try:
             yield self.pagecache_chan.basic_publish(
-                exchange=self.amqp_exchange, 
+                exchange=self.amqp_exchange,
                 content=msg)
         except Exception, e:
             LOGGER.error('Pagecache Error: %s' % str(error))
-    

@@ -1,16 +1,16 @@
 
-import cPickle 
+import cPickle
 from twisted.internet.defer import inlineCallbacks, returnValue
 from zlib import compress, decompress
 from .mysql import MySQLMixin
 from ..base import LOGGER, Job
 
 class JobGetterMixin(MySQLMixin):
-    
+
     def setupJobGetter(self, config):
         self.setupMySQL(config)
-    
-    @inlineCallbacks  
+
+    @inlineCallbacks
     def getJob(self, uuid):
         try:
             job = yield self._getCachedJob(uuid)
@@ -29,8 +29,8 @@ class JobGetterMixin(MySQLMixin):
         self.mapJob(job) # Do this now so mapped values are cached.
         self._setJobCache(job)
         returnValue(job)
-    
-    @inlineCallbacks    
+
+    @inlineCallbacks
     def _getUserAccount(self, uuid):
         sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
@@ -48,8 +48,8 @@ class JobGetterMixin(MySQLMixin):
             LOGGER.error(message)
             raise Exception(message)
         returnValue(data[0])
-        
-    @inlineCallbacks  
+
+    @inlineCallbacks
     def _getServiceCredentials(self, service_type, account_id):
         sql = "SELECT * FROM content_%saccount WHERE account_id = %d" % (service_type, account_id)
         try:
@@ -62,7 +62,7 @@ class JobGetterMixin(MySQLMixin):
             LOGGER.error(message)
             raise Exception(message)
         returnValue(data[0])
-        
+
     @inlineCallbacks
     def _getCachedJob(self, uuid):
         """Search for job info in redis cache."""
@@ -76,7 +76,7 @@ class JobGetterMixin(MySQLMixin):
             LOGGER.debug('Could not find uuid in Redis: %s' % e)
             raise e
         raise Exception('Could not find uuid in Redis: %s' % e)
-        
+
     @inlineCallbacks
     def _setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""

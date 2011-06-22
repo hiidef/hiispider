@@ -15,7 +15,7 @@ PP = pprint.PrettyPrinter(indent=4)
 class CassandraServer(BaseServer):
 
     redis_client = None
-    
+
     def __init__(self, config):
         super(CassandraServer, self).__init__(config)
         self.cassandra_cf_content = config["cassandra_cf_content"]
@@ -23,14 +23,14 @@ class CassandraServer(BaseServer):
         factory = ManagedCassandraClientFactory(config["cassandra_keyspace"])
         self.cassandra_client = CassandraClient(factory)
         reactor.connectTCP(
-            config["cassandra_server"], 
-            config["cassandra_port"], 
+            config["cassandra_server"],
+            config["cassandra_port"],
             factory)
         # Negative Cache
         self.disable_negative_cache = config["disable_negative_cache"]
         # Redis
         self.redis_hosts = config["redis_hosts"]
-        
+
     def start(self):
         start_deferred = super(CassandraServer, self).start()
         start_deferred.addCallback(self._cassandraStart)
@@ -51,11 +51,11 @@ class CassandraServer(BaseServer):
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
         returnValue(True)
-    
+
     def shutdown(self):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
-    
+
     @inlineCallbacks
     def executeJob(self, job):
         user_id = job.user_account["user_id"]
@@ -84,7 +84,7 @@ class CassandraServer(BaseServer):
             zlib.compress(simplejson.dumps(new_data)),
             column=job.uuid)
         returnValue(new_data)
-        
+
 #    def executeReservation(self, function_name, **kwargs):
 #        uuid = None
 #        site_user_id = None
@@ -161,12 +161,12 @@ class CassandraServer(BaseServer):
 #    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
 #        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
 #        return data
-#    
-    @inlineCallbacks    
+#
+    @inlineCallbacks
     def getData(self, user_id, uuid):
         data = yield self.cassandra_client.get(
             key=str(user_id),
             column_family=self.cassandra_cf_content,
             column=uuid)
         returnValue(simplejson.loads(zlib.decompress(data.column.value)))
-        
+

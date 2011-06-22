@@ -5,7 +5,7 @@ import traceback
 import simplejson
 
 class BaseResource(Resource):
-    
+
     def __init__(self):
         Resource.__init__(self)
 

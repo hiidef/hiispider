@@ -24,11 +24,11 @@ def invert(d):
     return dict([(v, k) for (k, v) in d.iteritems()])
 
 class Job(object):
-    
+
     mapped = False
     fast_cache = None
     uuid = None
-    
+
     def __init__(self,
             function_name,
             service_credentials,
@@ -39,9 +39,9 @@ class Job(object):
         self.subservice = function_name
         self.uuid = uuid
         self.user_account = user_account
-        
+
 class BaseServer(object):
-    
+
     exposed_functions = []
     exposed_function_resources = {}
     logging_handler = None
@@ -50,25 +50,25 @@ class BaseServer(object):
     start_time = time.time()
     active_jobs = {}
     reserved_arguments = [
-        "reservation_function_name", 
-        "reservation_created", 
-        "reservation_next_request", 
+        "reservation_function_name",
+        "reservation_created",
+        "reservation_next_request",
         "reservation_error"]
     functions = {}
     delta_functions = {}
     fast_cache = {}
     function_resource = None
-    
+
     def __init__(self, config, pg=None):
         # Resource Mappings
         self.service_mapping = config["service_mapping"]
         self.service_args_mapping = config["service_args_mapping"]
-        self.inverted_args_mapping = dict([(s[0], invert(s[1])) 
+        self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
         # Request Queuer
-        self.rq = RequestQueuer( 
+        self.rq = RequestQueuer(
             max_simultaneous_requests=config["max_simultaneous_requests"],
-            max_requests_per_host_per_second=config["max_requests_per_host_per_second"], 
+            max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
             max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
@@ -77,23 +77,23 @@ class BaseServer(object):
         else:
             self.pg = pg
         self._setupLogging(config["log_file"], config["log_directory"], config["log_level"])
-        
+
     def _setupLogging(self, log_file, log_directory, log_level):
         if log_directory is None:
             self.logging_handler = logging.StreamHandler()
         else:
             self.logging_handler = logging.handlers.TimedRotatingFileHandler(
-                os.path.join(log_directory, log_file), 
-                when='D', 
+                os.path.join(log_directory, log_file),
+                when='D',
                 interval=1)
         log_format = "%(levelname)s: %(message)s %(pathname)s:%(lineno)d"
         self.logging_handler.setFormatter(logging.Formatter(log_format))
         LOGGER.addHandler(self.logging_handler)
         log_level = log_level.lower()
         log_levels = {
-            "debug":logging.DEBUG, 
-            "info":logging.INFO, 
-            "warning":logging.WARNING, 
+            "debug":logging.DEBUG,
+            "info":logging.INFO,
+            "warning":logging.WARNING,
             "error":logging.ERROR,
             "critical":logging.CRITICAL
         }
@@ -106,12 +106,12 @@ class BaseServer(object):
         start_deferred = Deferred()
         reactor.callWhenRunning(self._baseStart, start_deferred)
         return start_deferred
-    
+
     def _baseStart(self, start_deferred):
         LOGGER.debug("Starting Base components.")
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
-            'before', 
-            'shutdown', 
+            'before',
+            'shutdown',
             self.shutdown)
         start_deferred.callback(True)
 
@@ -133,10 +133,10 @@ class BaseServer(object):
 
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
-        
+
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
-    
+
     @inlineCallbacks
     def executeJob(self, job):
         if not job.mapped:
@@ -145,7 +145,7 @@ class BaseServer(object):
         if job.uuid is not None:
             self.active_jobs[job.uuid] = True
         if f["get_job_uuid"]:
-            job.kwargs["job_uuid"] = job.uuid 
+            job.kwargs["job_uuid"] = job.uuid
         if f["check_fast_cache"]:
             job.kwargs["fast_cache"] = job.fast_cache
         try:
@@ -159,7 +159,7 @@ class BaseServer(object):
         if job.uuid in self.active_jobs:
             del self.active_jobs[job.uuid]
         returnValue(data)
-    
+
     def _getArguments(self, func):
         argspec = inspect.getargspec(func)
         # Get required / optional arguments
@@ -246,14 +246,14 @@ class BaseServer(object):
 
     def getPage(self, *args, **kwargs):
         return self.pg.getPage(*args, **kwargs)
-        
+
     def setHostMaxRequestsPerSecond(self, *args, **kwargs):
         return self.rq.setHostMaxRequestsPerSecond(*args, **kwargs)
 
     def setHostMaxSimultaneousRequests(self, *args, **kwargs):
         return self.rq.setHostMaxSimultaneousRequests(*args, **kwargs)
 
-    def getServerData(self):    
+    def getServerData(self):
         running_time = time.time() - self.start_time
         active_requests_by_host = self.rq.getActiveRequestsByHost()
         pending_requests_by_host = self.rq.getPendingRequestsByHost()
@@ -274,11 +274,11 @@ class BaseServer(object):
         if uuid is None:
             return None
         self.fast_cache[uuid] = data
-            
+
     def mapJob(self, job):
         if job.function_name in self.service_mapping:
             LOGGER.debug('Remapping resource %s to %s' % (
-                job.function_name, 
+                job.function_name,
                 self.service_mapping[job.function_name]))
             job.function_name = self.service_mapping[job.function_name]
         service_name = job.function_name.split('/')[0]
@@ -302,7 +302,7 @@ class BaseServer(object):
             job.kwargs = kwargs
         job.mapped = True
         return job
-        
+
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):
         try:

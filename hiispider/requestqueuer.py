@@ -14,18 +14,18 @@ LOGGER = logging.getLogger("main")
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):
     """A context factory for SSL clients that uses all ciphers."""
-    
+
     def getContext(self):
         context = SSL.Context(self.method)
         context.set_cipher_list("ALL")
         return context
-    
+
 class RequestQueuer(object):
-    
+
     """
     HTTP Request Queuer
     """
-    
+
     # Dictionary of lists of pending requests, by host
     pending_reqs = {}
     # Dictonary of timestamps - via time() - of last requests, by host
@@ -37,28 +37,28 @@ class RequestQueuer(object):
     max_reqs_per_hosts_per_sec = {}
     # Dictionary of user specified maximum simultaneous requests, by host
     max_simul_reqs_per_hosts = {}
-    
+
     def __init__(self, max_simultaneous_requests=50,
                  max_requests_per_host_per_second=1,
-                 max_simultaneous_requests_per_host=5): 
+                 max_simultaneous_requests_per_host=5):
         """
         Set the maximum number of simultaneous requests for a particular host.
-        
+
         **Keyword arguments:**
           * *max_simultaneous_requests* -- Maximum number of simultaneous
             requests RequestQueuer should make across all hosts. (Default 50)
-          * *max_requests_per_host_per_second* -- Maximum number of requests 
-            per host per second. If set to 1, RequestQueuer will not make more 
-            than 1 request per second to a host. If set to 0, RequestQueuer 
-            will not limit the request rate. Can be overridden for an 
+          * *max_requests_per_host_per_second* -- Maximum number of requests
+            per host per second. If set to 1, RequestQueuer will not make more
+            than 1 request per second to a host. If set to 0, RequestQueuer
+            will not limit the request rate. Can be overridden for an
             individual host using ``setHostMaxRequestsPerSecond()`` (Default 1)
-          * *max_simultaneous_requests_per_host* -- Maximum number of 
+          * *max_simultaneous_requests_per_host* -- Maximum number of
             simultaneous requests per host. If set to 1, RequestQueuer will
             not make more than 1 simultaneous request per host. If set to 0,
             RequestQueuer will not limit the number of simultaneous requests.
-            Can be overridden for an individual host using 
+            Can be overridden for an individual host using
             ``setHostMaxSimultaneousRequests()`` (Default 5)
-  
+
         """
         if max_simultaneous_requests == 0:
             self.max_simul_reqs = 100000
@@ -72,7 +72,7 @@ class RequestQueuer(object):
         else:
             max_req_per_host_per_sec = float(max_requests_per_host_per_second)
             self.min_req_interval_per_host = 1.0 / max_req_per_host_per_sec
-        # self.max_simul_reqs_per_host is the global maximum simultaneous 
+        # self.max_simul_reqs_per_host is the global maximum simultaneous
         # request count. Can be overridden by self.max_simul_reqs_per_hosts[].
         if max_simultaneous_requests_per_host == 0:
             self.max_simul_reqs_per_host = self.max_simul_reqs
@@ -90,13 +90,13 @@ class RequestQueuer(object):
         Return the number of active requests.
         """
         return sum(self.active_reqs.values())
-    
+
     def getActiveRequestsByHost(self):
         """
         Return a dictionary of the number of active requests by host.
         """
         return self.active_reqs
-        
+
     def getPendingRequestsByHost(self):
         """
         Return a dictionary of the number of pending requests by host.
@@ -107,14 +107,14 @@ class RequestQueuer(object):
     def setHostMaxRequestsPerSecond(self, host, max_requests_per_second):
         """
         Set the maximum number of requests per second for a particular host.
-        
+
         **Arguments:**
          * *host* -- Hostname. (Example, ``"google.com"``)
          * *max_requests_per_second* -- Maximum number of requests to the
-           host per second. If set to 1, RequestQueuer will not make more 
-           than 1 request per second to the host. If set to 0, RequestQueuer 
+           host per second. If set to 1, RequestQueuer will not make more
+           than 1 request per second to the host. If set to 0, RequestQueuer
            will not limit the request rate to the host.
-        """        
+        """
         self.max_reqs_per_hosts_per_sec[host] = max_requests_per_second
         if max_requests_per_second == 0:
             self.min_req_interval_per_hosts[host] = 0
@@ -125,10 +125,10 @@ class RequestQueuer(object):
     def getHostMaxRequestsPerSecond(self, host):
         """
         Get the maximum number of requests per second for a particular host.
-        
+
         **Arguments:**
          * *host* -- Hostname. (Example, ``"google.com"``)
-        """       
+        """
         if host in self.max_reqs_per_hosts_per_sec:
             return self.max_reqs_per_hosts_per_sec[host]
         else:
@@ -137,7 +137,7 @@ class RequestQueuer(object):
     def setHostMaxSimultaneousRequests(self, host, max_simultaneous_requests):
         """
         Set the maximum number of simultaneous requests for a particular host.
-        
+
         **Arguments:**
          * *host* -- Hostname. (Example, ``"google.com"``)
          * *max_simultaneous_requests* -- Maximum number of simultaneous
@@ -149,30 +149,30 @@ class RequestQueuer(object):
             self.max_simul_reqs_per_hosts[host] = self.max_simul_reqs
         else:
             self.max_simul_reqs_per_hosts[host] = int(max_simultaneous_requests)
-            
+
     def getHostMaxSimultaneousRequests(self, host):
         """
         Get the maximum number of simultaneous requests for a particular host.
-        
+
         **Arguments:**
          * *host* -- Hostname. (Example, ``"google.com"``)
-        """        
+        """
         if host in self.max_simul_reqs_per_hosts:
             return self.max_simul_reqs_per_hosts[host]
         else:
             return self.max_simul_reqs_per_host
-        
-    def getPage(self, 
-                url, 
-                last_modified=None, 
-                etag=None, 
-                method='GET', 
-                postdata=None, 
-                headers=None, 
-                agent="RequestQueuer", 
-                timeout=60, 
-                cookies=None, 
-                follow_redirect=True, 
+
+    def getPage(self,
+                url,
+                last_modified=None,
+                etag=None,
+                method='GET',
+                postdata=None,
+                headers=None,
+                agent="RequestQueuer",
+                timeout=60,
+                cookies=None,
+                follow_redirect=True,
                 prioritize=False
                 ):
         """
@@ -180,26 +180,26 @@ class RequestQueuer(object):
 
         **Arguments:**
          * *url* -- URL for the request.
-         
+
         **Keyword arguments:**
-         * *last_modified* -- Last modified date string to send as a request 
+         * *last_modified* -- Last modified date string to send as a request
            header. (Default ``None``)
-         * *etag* -- Etag string to send as a request header. (Default 
+         * *etag* -- Etag string to send as a request header. (Default
            ``None``)
          * *method* -- HTTP request method. (Default ``'GET'``)
-         * *postdata* -- Dictionary of strings to post with the request. 
+         * *postdata* -- Dictionary of strings to post with the request.
            (Default ``None``)
-         * *headers* -- Dictionary of strings to send as request headers. 
+         * *headers* -- Dictionary of strings to send as request headers.
            (Default ``None``)
-         * *agent* -- User agent to send with request. (Default 
+         * *agent* -- User agent to send with request. (Default
            ``'RequestQueuer'``)
          * *timeout* -- Request timeout, in seconds. (Default ``60``)
-         * *cookies* -- Dictionary of strings to send as request cookies. 
+         * *cookies* -- Dictionary of strings to send as request cookies.
            (Default ``None``).
-         * *follow_redirect* -- Boolean switch to follow HTTP redirects. 
+         * *follow_redirect* -- Boolean switch to follow HTTP redirects.
            (Default ``True``)
-         * *prioritize* -- Move this request to the front of the request 
-           queue. (Default ``False``)         
+         * *prioritize* -- Move this request to the front of the request
+           queue. (Default ``False``)
         """
         if headers is None:
             headers={}
@@ -263,7 +263,7 @@ class RequestQueuer(object):
         return True
 
     def _checkActive(self):
-        while self.getActive() < self.max_simul_reqs and self.getPending() > 0:     
+        while self.getActive() < self.max_simul_reqs and self.getPending() > 0:
             hosts = self.pending_reqs.keys()
             dispatched_requests = False
             for host in hosts:
@@ -281,20 +281,20 @@ class RequestQueuer(object):
                 break
         if self.getPending() > 0:
             reactor.callLater(.1, self._checkActive)
-            
+
     def _requestComplete(self, response, deferred, host):
         self.active_reqs[host] -= 1
         self._checkActive()
         deferred.callback(response)
         return None
 
-    def _requestError(self, error, deferred, host):     
+    def _requestError(self, error, deferred, host):
         self.active_reqs[host] -= 1
         self._checkActive()
         deferred.errback(error)
         return None
 
-    def _getPage(self, req): 
+    def _getPage(self, req):
         scheme, host, port = _parse(req['url'])[0:3]
         factory = HTTPClientFactory(
             req['url'],
@@ -308,10 +308,10 @@ class RequestQueuer(object):
         )
         if scheme == 'https':
             reactor.connectSSL(
-                                    host, 
-                                    port, 
-                                    factory, 
-                                    AllCipherSSLClientContextFactory(), 
+                                    host,
+                                    port,
+                                    factory,
+                                    AllCipherSSLClientContextFactory(),
                                     timeout=req['timeout']
                                 )
         else:
@@ -322,9 +322,9 @@ class RequestQueuer(object):
 
     def _getPageComplete(self, response, factory):
         return {
-                    "response":response, 
-                    "headers":factory.response_headers, 
-                    "status":int(factory.status), 
+                    "response":response,
+                    "headers":factory.response_headers,
+                    "status":int(factory.status),
                     "message":factory.message
                 }
 
