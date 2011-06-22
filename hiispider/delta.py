@@ -26,7 +26,7 @@ def _convert_to_hashed_dict(a):
 def _compare_lists(a, b):
     """
     Compare two lists composed of objects.
-    
+
     Returns a list of objects in 'a' not contained in 'b' or in the event
     there are no common elements, an empty list.
     """
@@ -44,7 +44,7 @@ def _compare_lists(a, b):
 def _compare_dicts(a, b):
     """
     Compare two dictonaries composed of objects.
-    
+
     Returns a list of (key, value) pairs in 'a' not contained in 'b' or in the
     event there are no common elements, an empty list.
     """
@@ -66,7 +66,7 @@ def _compare_dicts(a, b):
             elif isinstance(a[key], list):
                 # Return new items in lists at key.
                 deltas = _compare_lists(a[key], b[key])
-                if len(deltas) > 0:  
+                if len(deltas) > 0:
                     values.append({key:deltas})
                 continue
             elif isinstance(a[key], dict):
@@ -78,11 +78,11 @@ def _compare_dicts(a, b):
                     values.append({key:delta})
                 continue
             if hash(cPickle.dumps(a[key])) != hash(cPickle.dumps(b[key])):
-                values.append({key:a[key]})       
+                values.append({key:a[key]})
         else:
             values.append({key:a[key]})
     return values
-    
+
 def autogenerate(a, b):
     """
     Compare dictionaries or lists of objects. Returns a list.
@@ -90,7 +90,7 @@ def autogenerate(a, b):
     # Native Python comparison. Should be well optimized across VMs.
     if a == b:
         return []
-    # Type comparison. If they aren't the same thing, not much point in  
+    # Type comparison. If they aren't the same thing, not much point in
     # going forward.
     if a.__class__ != b.__class__:
         raise TypeError("Cannot generate delta from %s to %s." % (
@@ -103,3 +103,4 @@ def autogenerate(a, b):
     if isinstance(a, dict):
         return _compare_dicts(a, b)
     raise TypeError("Cannot generate delta from %s." % a.__class__)
+
