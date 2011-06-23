@@ -37,9 +37,8 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         start_deferred.addCallback(self._interfaceStart)
         return start_deferred
 
-    @inlineCallbacks
-    def _interfaceStart(self):
-        returnValue(True)
+    def _interfaceStart(self, success):
+        return success
 
     @inlineCallbacks
     def shutdown(self):
