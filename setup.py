@@ -4,7 +4,7 @@ setup(
 
     name = "HiiSpider",
 
-    version = "0.9.8",
+    version = "0.10",
     packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
 
     install_requires = ['twisted>=8.1', 'genshi>=0.5.1', 'python-dateutil>=1.4', 'simplejson>=2.1.3', 'boto'],
