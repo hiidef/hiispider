@@ -44,7 +44,6 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
     def shutdown(self):
         LOGGER.debug("%s stopping on main HTTP interface." % self.name)
         yield self.site_port.stopListening()
-        yield self.stopJobGetter()
         yield super(InterfaceServer, self).shutdown()
 
     def enqueueUUID(self, uuid):
