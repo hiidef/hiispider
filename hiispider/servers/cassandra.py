@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Cassandra using version of BaseServer."""
+
+import os
 import simplejson
 import zlib
 import pprint
@@ -30,6 +36,12 @@ class CassandraServer(BaseServer):
         self.disable_negative_cache = config["disable_negative_cache"]
         # Redis
         self.redis_hosts = config["redis_hosts"]
+        # FIXME: change default to False after testing
+        self.delta_log_enabled = config.get('delta_log_enabled', True)
+        self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
+        # create the log path if required & enabled
+        if self.delta_log_enabled and not os.path.exists(self.delta_log_path):
+            os.makedirs(self.delta_log_path)
 
     def start(self):
         start_deferred = super(CassandraServer, self).start()
@@ -56,6 +68,18 @@ class CassandraServer(BaseServer):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
 
+    def logDelta(self, uuid, old, new, delta):
+        """Log a delta in a way we can examine later or incorporate into our
+        unit testing corpus."""
+        if not self.delta_log_enabled: return
+        basepath = os.path.join(self.delta_log_path, uuid)
+        with open(basepath + '.old.js', 'w') as f:
+            f.write(simplejson.dumps(old, indent=2))
+        with open(basepath + '.new.js', 'w') as f:
+            f.write(simplejson.dumps(new, indent=2))
+        with open(basepath + '.res.js', 'w') as f:
+            f.write(simplejson.dumps(delta, indent=2))
+
     @inlineCallbacks
     def executeJob(self, job):
         user_id = job.user_account["user_id"]
@@ -67,17 +91,8 @@ class CassandraServer(BaseServer):
             old_data = yield self.getData(user_id, job.uuid)
             # TODO: make sure we check that old_data exists
             delta = delta_func(new_data, old_data)
-            LOGGER.error("Got delta: %s" % str(delta))
-            # Temporary debugging.
-            old_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.old" % job.uuid, 'w')
-            new_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.new" % job.uuid, 'w')
-            delta_data_file = open("/Users/johnwehr/Projects/flavors_spider/delta/%s.delta" % job.uuid, 'w')
-            old_data_file.write(PP.pformat(old_data))
-            old_data_file.close()
-            new_data_file.write(PP.pformat(new_data))
-            new_data_file.close()
-            delta_data_file.write(PP.pformat(delta))
-            delta_data_file.close()
+            self.logDelta(job.uuid, old_data, new_data, delta)
+            LOGGER.debug("Got delta: %s" % str(delta))
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
