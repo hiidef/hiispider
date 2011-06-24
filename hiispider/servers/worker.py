@@ -16,6 +16,9 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
 
+    public_ip = None
+    local_ip = None
+    network_information = {}
     simultaneous_jobs = 50
     jobs_complete = 0
     job_queue = []
