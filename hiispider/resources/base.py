@@ -17,8 +17,9 @@ class BaseResource(Resource):
     def _errorResponse(self, error):
         from ..servers.base import LOGGER
         reason = str(error.value)
-        tb = traceback.format_exc(traceback.extract_tb(error.tb))
-        LOGGER.error(tb)
+        tb = error.getTraceback()
+        LOGGER.error("\n%s" % tb)
+        #tb = traceback.format_exc(traceback.extract_tb(error.tb))
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
