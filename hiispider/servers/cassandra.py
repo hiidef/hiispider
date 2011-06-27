@@ -39,6 +39,7 @@ class CassandraServer(BaseServer):
         # FIXME: change default to False after testing
         self.delta_log_enabled = config.get('delta_log_enabled', True)
         self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
+        self.delta_enabled = config.get('delta_enabled', False)
         # create the log path if required & enabled
         if self.delta_log_enabled and not os.path.exists(self.delta_log_path):
             os.makedirs(self.delta_log_path)
@@ -86,13 +87,14 @@ class CassandraServer(BaseServer):
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
             return
-        delta_func = self.functions[job.function_name]["delta"]
-        if delta_func is not None:
-            old_data = yield self.getData(user_id, job.uuid)
-            # TODO: make sure we check that old_data exists
-            delta = delta_func(new_data, old_data)
-            self.logDelta(job.uuid, old_data, new_data, delta)
-            LOGGER.debug("Got delta: %s" % str(delta))
+        if self.delta_enabled:
+            delta_func = self.functions[job.function_name]["delta"]
+            if delta_func is not None:
+                old_data = yield self.getData(user_id, job.uuid)
+                # TODO: make sure we check that old_data exists
+                delta = delta_func(new_data, old_data)
+                self.logDelta(job.uuid, old_data, new_data, delta)
+                LOGGER.debug("Got delta: %s" % str(delta))
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
