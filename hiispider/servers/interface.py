@@ -2,6 +2,7 @@ import pprint
 import urllib
 import zlib
 import simplejson
+import traceback
 
 from uuid import uuid4
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -81,6 +82,7 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
                     break
         if function_name not in self.functions:
             raise Exception("Function %s does not exist." % function_name)
+        function = self.functions[function_name]
         uuid = uuid4().hex if function["interval"] > 0 else None
         user_id = kwargs.get('site_user_id', None)
         data = yield self.executeFunction(function_name, **kwargs)
@@ -103,8 +105,11 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         if not isinstance(job, basestring):
             uuid = job.uuid
         LOGGER.info('Deleting UUID from spider_service table: %s' % uuid)
-        sql = "DELETE FROM spider_service WHERE uuid=%s"
-        yield self.mysql.runQuery(sql, uuid)
+        try:
+            yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
+        except:
+            LOGGER.error(traceback.format_exc())
+            raise
         url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
@@ -115,3 +120,4 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         yield self.cassandra_client.remove(
             uuid,
             self.cassandra_cf_content)
+        returnValue({'success':True})

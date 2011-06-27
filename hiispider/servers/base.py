@@ -163,6 +163,7 @@ class BaseServer(object):
     @inlineCallbacks
     def executeFunction(self, function_key, **kwargs):
         """Execute a function by key w/ kwargs and return the data."""
+        LOGGER.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
         try:
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
         except Exception, e:
