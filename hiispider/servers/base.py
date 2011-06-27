@@ -11,13 +11,14 @@ from twisted.enterprise import adbapi
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
+
+PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
+LOGGER = logging.getLogger(__name__)
+
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
-PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
-
-LOGGER = logging.getLogger("main")
 
 def invert(d):
     """Invert a dictionary."""
@@ -149,15 +150,24 @@ class BaseServer(object):
         if f["check_fast_cache"]:
             job.kwargs["fast_cache"] = job.fast_cache
         try:
-            data = yield maybeDeferred(f["function"], **job.kwargs)
+            data = yield self.executeFunction(job.function_name, **job.kwargs)
         except Exception, e:
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
-            LOGGER.error("Error with %s.\n%s" % (job.function_name, e))
-            raise e
+            raise
         # If the data is None, there's nothing to store.
         if job.uuid in self.active_jobs:
             del self.active_jobs[job.uuid]
+        returnValue(data)
+
+    @inlineCallbacks
+    def executeFunction(self, function_key, **kwargs):
+        """Execute a function by key w/ kwargs and return the data."""
+        try:
+            data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
+        except Exception, e:
+            LOGGER.error("Error with %s.\n%s" % (function_key, e))
+            raise e
         returnValue(data)
 
     def _getArguments(self, func):

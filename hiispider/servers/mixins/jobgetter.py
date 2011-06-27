@@ -50,6 +50,25 @@ class JobGetterMixin(MySQLMixin):
         returnValue(data[0])
 
     @inlineCallbacks
+    def _getUserAccountByUserId(self, user_id):
+        sql = """SELECT content_userprofile.user_id as user_id, username, host, account_id, type
+            FROM spider_service, auth_user, content_userprofile
+            WHERE auth_user.id=?
+            AND auth_user.id=spider_service.user_id
+            AND auth_user.id=content_userprofile.user_id;
+        """
+        try:
+            data = yield self.mysql.runQuery(sql, user_id)
+        except Exception, e:
+            LOGGER.debug("Could not find user %s" % (user_id))
+            raise e
+        if len(data) == 0:
+            msg = "Could not find user %s" % (user_id)
+            LOGGER.error(msg)
+            raise Exception(msg)
+        returnValue(data[0])
+
+    @inlineCallbacks
     def _getServiceCredentials(self, service_type, account_id):
         sql = "SELECT * FROM content_%saccount WHERE account_id = %d" % (service_type, account_id)
         try:

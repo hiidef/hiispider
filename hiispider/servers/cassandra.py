@@ -7,6 +7,8 @@ import os
 import simplejson
 import zlib
 import pprint
+import urllib
+
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
@@ -15,10 +17,11 @@ from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
 
 from txredisapi import RedisShardingConnection
+from mixins.jobgetter import JobGetterMixin
 
 PP = pprint.PrettyPrinter(indent=4)
 
-class CassandraServer(BaseServer):
+class CassandraServer(BaseServer, JobGetterMixin):
 
     redis_client = None
 
@@ -43,6 +46,7 @@ class CassandraServer(BaseServer):
         # create the log path if required & enabled
         if self.delta_log_enabled and not os.path.exists(self.delta_log_path):
             os.makedirs(self.delta_log_path)
+        self.setupJobGetter(config)
 
     def start(self):
         start_deferred = super(CassandraServer, self).start()
@@ -102,83 +106,6 @@ class CassandraServer(BaseServer):
             column=job.uuid)
         returnValue(new_data)
 
-#    def executeReservation(self, function_name, **kwargs):
-#        uuid = None
-#        site_user_id = None
-#        if 'site_user_id' in kwargs:
-#            site_user_id = kwargs['site_user_id']
-#        if not isinstance(function_name, str):
-#            for key in self.functions:
-#                if self.functions[key]["function"] == function_name:
-#                    function_name = key
-#                    break
-#        if function_name not in self.functions:
-#            raise Exception("Function %s does not exist." % function_name)
-#        function = self.functions[function_name]
-#        if function["interval"] > 0:
-#            uuid = uuid4().hex
-#        d = self.callExposedFunction(
-#            self.functions[function_name]["function"],
-#            kwargs,
-#            function_name,
-#            uuid=uuid)
-#        d.addCallback(self._executeReservationCallback, function_name, uuid, user_id)
-#        d.addErrback(self._executeReservationErrback, function_name, uuid)
-#        return d
-
-#    def _executeReservationCallback(self, data, function_name, uuid, user_id):
-#        # If we have an place to store the response on Cassandra, do it.
-#        if uuid is not None and self.cassandra_cf_content is not None and data is not None:
-#            LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
-#            encoded_data = zlib.compress(simplejson.dumps(data))
-#            if user_id:
-#                d = self.cassandra_client.insert(
-#                    str(user_id),
-#                    self.cassandra_cf_content,
-#                    encoded_data,
-#                    column=uuid,
-#                    consistency=ConsistencyLevel.QUORUM)
-#            else:
-#                d = self.cassandra_client.insert(
-#                    uuid,
-#                    self.cassandra_cf_temp_content,
-#                    encoded_data,
-#                    column=self.cassandra_content,
-#                    consistency=ConsistencyLevel.QUORUM)
-#            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
-#        if not uuid:
-#            return data
-#        else:
-#            return {uuid: data}
-#
-#    def _executeReservationErrback(self, error, function_name, uuid):
-#        LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
-#        return error
-
-
-
-#    def _callExposedFunctionErrback(self, error, function_name, uuid):
-#        error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
-#        try:
-#            error.raiseException()
-#        except DeleteReservationException:
-#            if uuid is not None:
-#                self.deleteReservation(uuid)
-#            message = """Error with %s, %s.\n%s
-#            Reservation deleted at request of the function.""" % (
-#                function_name,
-#                uuid,
-#                error)
-#            LOGGER.debug(message)
-#            return
-#        except:
-#            pass
-#        return error
-#
-#    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-#        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-#        return data
-#
     @inlineCallbacks
     def getData(self, user_id, uuid):
         data = yield self.cassandra_client.get(

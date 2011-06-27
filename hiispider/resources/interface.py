@@ -41,6 +41,7 @@ class InterfaceResource(BaseResource):
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
             elif request.postpath[0] == "execute_reservation":
                 if "uuid" in request.args:
+                    import ipdb; ipdb.set_trace();
                     d = self.interfaceserver.executeReservation(request.args["uuid"][0])
                     d.addCallback(self._successResponse)
                     d.addErrback(self._errorResponse)
