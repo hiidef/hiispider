@@ -18,7 +18,7 @@ from ..resources import InterfaceResource
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
 
-class InterfaceServer(CassandraServer, JobGetterMixin):
+class InterfaceServer(CassandraServer):
 
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
 
