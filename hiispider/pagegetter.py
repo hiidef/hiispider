@@ -20,15 +20,15 @@ class ReportedFailure(Failure):
 
 # A UTC class.
 class CoordinatedUniversalTime(datetime.tzinfo):
-    
+
     ZERO = datetime.timedelta(0)
-    
+
     def utcoffset(self, dt):
         return self.ZERO
-        
+
     def tzname(self, dt):
         return "UTC"
-        
+
     def dst(self, dt):
         return self.ZERO
 
@@ -38,10 +38,10 @@ LOGGER = logging.getLogger("main")
 
 
 class PageGetter:
-    
-    
-    def __init__(self, 
-        cassandra_client, 
+
+
+    def __init__(self,
+        cassandra_client,
         redis_client,
         disable_negative_cache=False,
         time_offset=0,
@@ -52,7 +52,7 @@ class PageGetter:
         **Arguments:**
             * *cassandra_client* -- Cassandra client object.
         **Keyword arguments:**
-         * *rq* -- Request Queuer object. (Default ``None``)      
+         * *rq* -- Request Queuer object. (Default ``None``)
 
         """
         self.cassandra_client = cassandra_client
@@ -63,7 +63,7 @@ class PageGetter:
             self.rq = RequestQueuer()
         else:
             self.rq = rq
-    
+
     def _getPageCallback(self, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if request_kwargs["method"] != "GET":
             d = self.rq.getPage(url, **request_kwargs)
@@ -73,13 +73,13 @@ class PageGetter:
             # Cache mode -1. Bypass cache entirely.
             LOGGER.debug("Getting request %s for URL %s." % (request_hash, url))
             d = self.rq.getPage(url, **request_kwargs)
-            d.addCallback(self._returnFreshData, 
-                request_hash, 
-                url,  
+            d.addCallback(self._returnFreshData,
+                request_hash,
+                url,
                 confirm_cache_write)
             d.addErrback(self._requestWithNoCacheHeadersErrback,
-                request_hash, 
-                url, 
+                request_hash,
+                url,
                 confirm_cache_write,
                 request_kwargs,
                 host=host)
@@ -91,29 +91,29 @@ class PageGetter:
             headers_key = 'headers:%s' % request_hash
             LOGGER.debug("Checking redis headers key %s for URL %s." % (request_hash, url))
             d = self.redis_client.get(headers_key)
-            d.addCallback(self._checkCacheHeaders, 
+            d.addCallback(self._checkCacheHeaders,
                 request_hash,
-                url,  
+                url,
                 request_kwargs,
                 confirm_cache_write,
                 content_sha1,
                 host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
             return d
         elif cache == 1:
             # Cache mode 1. Use cache immediately, if possible.
             LOGGER.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
             d = self.getCachedData(request_hash)
             d.addCallback(self._returnCachedData, request_hash)
-            d.addErrback(self._requestWithNoCacheHeaders, 
-                request_hash, 
-                url, 
+            d.addErrback(self._requestWithNoCacheHeaders,
+                request_hash,
+                url,
                 request_kwargs,
                 confirm_cache_write,
                 host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)    
+            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
             return d
-                    
+
     def _negativeReqCacheCallback(self, raw_negative_req_cache_item, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if not self.disable_negative_cache:
             if raw_negative_req_cache_item:
@@ -130,12 +130,12 @@ class PageGetter:
                     self.redis_client.delete(negative_req_cache_key)
         d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
-        
+
     def checkNegativeReqCache(self, data, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         d = self.redis_client.get(negative_req_cache_key)
         d.addCallback(self._negativeReqCacheCallback, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
-        
+
     def _negativeCacheCallback(self, raw_negative_cache_host, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         if not self.disable_negative_cache:
             if raw_negative_cache_host:
@@ -152,23 +152,23 @@ class PageGetter:
                     self.redis_client.delete(negative_cache_host_key)
         d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
-        
+
     def checkNegativeCache(self, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
         d = self.redis_client.get(negative_cache_host_key)
         d.addCallback(self._negativeCacheCallback, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
-    
-    def getPage(self, 
-            url, 
-            method='GET', 
+
+    def getPage(self,
+            url,
+            method='GET',
             postdata=None,
-            headers=None, 
-            agent="HiiSpider", 
-            timeout=60, 
-            cookies=None, 
-            follow_redirect=1, 
+            headers=None,
+            agent="HiiSpider",
+            timeout=60,
+            cookies=None,
+            follow_redirect=1,
             prioritize=False,
-            hash_url=None, 
+            hash_url=None,
             cache=0,
             content_sha1=None,
             confirm_cache_write=False,
@@ -182,40 +182,40 @@ class PageGetter:
 
         **Keyword arguments:**
          * *method* -- HTTP request method. (Default ``'GET'``)
-         * *postdata* -- Dictionary of strings to post with the request. 
+         * *postdata* -- Dictionary of strings to post with the request.
            (Default ``None``)
-         * *headers* -- Dictionary of strings to send as request headers. 
+         * *headers* -- Dictionary of strings to send as request headers.
            (Default ``None``)
-         * *agent* -- User agent to send with request. (Default 
+         * *agent* -- User agent to send with request. (Default
            ``'HiiSpider'``)
          * *timeout* -- Request timeout, in seconds. (Default ``60``)
-         * *cookies* -- Dictionary of strings to send as request cookies. 
+         * *cookies* -- Dictionary of strings to send as request cookies.
            (Default ``None``).
-         * *follow_redirect* -- Boolean switch to follow HTTP redirects. 
+         * *follow_redirect* -- Boolean switch to follow HTTP redirects.
            (Default ``True``)
-         * *prioritize* -- Move this request to the front of the request 
+         * *prioritize* -- Move this request to the front of the request
            queue. (Default ``False``)
          * *hash_url* -- URL string used to indicate a common resource.
            Example: "http://digg.com" and "http://www.digg.com" could both
-           use hash_url, "http://digg.com" (Default ``None``)      
-         * *cache* -- Cache mode. ``1``, immediately return contents of 
-           cache if available. ``0``, check resource, return cache if not 
+           use hash_url, "http://digg.com" (Default ``None``)
+         * *cache* -- Cache mode. ``1``, immediately return contents of
+           cache if available. ``0``, check resource, return cache if not
            stale. ``-1``, ignore cache. (Default ``0``)
-         * *content_sha1* -- SHA-1 hash of content. If this matches the 
-           hash of data returned by the resource, raises a 
-           StaleContentException.  
+         * *content_sha1* -- SHA-1 hash of content. If this matches the
+           hash of data returned by the resource, raises a
+           StaleContentException.
          * *confirm_cache_write* -- Wait to confirm cache write before returning.
          * *check_only_tld* -- for negative cache, check only the top level domain name
          * *disable_negative_cache* -- disable negative cache for this request
-        """ 
+        """
         request_kwargs = {
-            "method":method.upper(), 
-            "postdata":postdata, 
-            "headers":headers, 
-            "agent":agent, 
-            "timeout":timeout, 
-            "cookies":cookies, 
-            "follow_redirect":follow_redirect, 
+            "method":method.upper(),
+            "postdata":postdata,
+            "headers":headers,
+            "agent":agent,
+            "timeout":timeout,
+            "cookies":cookies,
+            "follow_redirect":follow_redirect,
             "prioritize":prioritize}
         cache = int(cache)
         if cache not in [-1,0,1]:
@@ -263,17 +263,17 @@ class PageGetter:
         else:
             d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
-    
+
     def getCachedData(self, request_hash):
         headers_key = 'headers:%s' % request_hash
         http_key = 'http:%s' % request_hash
         deferreds = []
         deferreds.append(self.redis_client.get(headers_key))
         deferreds.append(self.redis_client.get(http_key))
-        d = DeferredList(deferreds, consumeErrors=True)        
+        d = DeferredList(deferreds, consumeErrors=True)
         d.addCallback(self._getCachedDataCallback)
         return d
-    
+
     def _getCachedDataCallback(self, cached_data):
         response = simplejson.loads(decompress(cached_data[1][1]))
         if len(response) == 0:
@@ -283,11 +283,11 @@ class PageGetter:
             "response": response,
         }
         return data
-    
-    def _checkCacheHeaders(self, 
-            headers, 
-            request_hash, 
-            url, 
+
+    def _checkCacheHeaders(self,
+            headers,
+            request_hash,
+            url,
             request_kwargs,
             confirm_cache_write,
             content_sha1,
@@ -295,7 +295,7 @@ class PageGetter:
         if not headers:
             d = self._requestWithNoCacheHeaders(
                 None,
-                request_hash, 
+                request_hash,
                 url,
                 request_kwargs,
                 confirm_cache_write,
@@ -335,10 +335,10 @@ class PageGetter:
                     d = self.getCachedData(request_hash)
                     d.addCallback(self._returnCachedData, request_hash)
                     d.addErrback(
-                        self._requestWithNoCacheHeaders, 
-                        request_hash, 
+                        self._requestWithNoCacheHeaders,
+                        request_hash,
                         url,
-                        request_kwargs, 
+                        request_kwargs,
                         confirm_cache_write,
                         http_history=http_history,
                         host=host)
@@ -352,30 +352,30 @@ class PageGetter:
             if "cache-last-modified" in headers:
                 modified_request_kwargs["last_modified"] = headers["cache-last-modified"]
             LOGGER.debug("Requesting %s for URL %s with etag and last-modified headers." % (request_hash, url))
-            # Make the request. A callback means a 20x response. An errback 
+            # Make the request. A callback means a 20x response. An errback
             # could be a 30x response, indicating the cache is not stale.
             d = self.rq.getPage(url, **modified_request_kwargs)
             d.addCallback(
-                self._returnFreshData, 
+                self._returnFreshData,
                 request_hash,
-                url, 
+                url,
                 confirm_cache_write,
                 http_history=http_history)
             d.addErrback(
-                self._handleRequestWithCacheHeadersError, 
-                request_hash, 
-                url, 
-                request_kwargs, 
+                self._handleRequestWithCacheHeadersError,
+                request_hash,
+                url,
+                request_kwargs,
                 confirm_cache_write,
                 headers,
                 http_history,
                 content_sha1)
             return d
-        
-    def _returnFreshData(self, 
-            data, 
-            request_hash, 
-            url,  
+
+    def _returnFreshData(self,
+            data,
+            request_hash,
+            url,
             confirm_cache_write,
             http_history=None):
         LOGGER.debug("Got request %s for URL %s." % (request_hash, url))
@@ -385,18 +385,18 @@ class PageGetter:
             if http_history["content-sha1"] == data["content-sha1"]:
                 return data
         d = maybeDeferred(self._storeData,
-            data, 
-            request_hash,  
+            data,
+            request_hash,
             confirm_cache_write,
             http_history=http_history)
         d.addErrback(self._storeDataErrback, data, request_hash)
         return d
 
-    def _requestWithNoCacheHeaders(self, 
-            error, 
-            request_hash, 
-            url, 
-            request_kwargs, 
+    def _requestWithNoCacheHeaders(self,
+            error,
+            request_hash,
+            url,
+            request_kwargs,
             confirm_cache_write,
             http_history=None,
             host=None):
@@ -411,33 +411,33 @@ class PageGetter:
         LOGGER.debug("Unable to find header for request %s on redis, fetching from %s." % (request_hash, url))
         d = self.rq.getPage(url, **request_kwargs)
         d.addCallback(
-            self._returnFreshData, 
-            request_hash, 
-            url, 
+            self._returnFreshData,
+            request_hash,
+            url,
             confirm_cache_write,
             http_history=http_history)
         d.addErrback(
-            self._requestWithNoCacheHeadersErrback, 
-            request_hash, 
-            url, 
+            self._requestWithNoCacheHeadersErrback,
+            request_hash,
+            url,
             confirm_cache_write,
             request_kwargs,
             http_history=http_history,
             host=host)
         return d
-        
+
     def _negativeCacheWriteCallback(self, data, key):
         d = self.redis_client.expire(key, 60*60*24)
         d.addCallback(self._negativeCacheWriteCallback2)
         return d
-        
+
     def _negativeCacheWriteCallback2(self, data):
         return
-        
+
     def _negativeCacheWriteErrback(self, error):
         LOGGER.error('Error writing to negative cache: %s' % str(error))
         return
-        
+
     def _setNegativeReqCacheCallback(self, data, error, negative_req_cache_key):
         if data:
             negative_req_cache_item = pickle.loads(str(decompress(data)))
@@ -459,7 +459,7 @@ class PageGetter:
         d.addCallback(self._negativeCacheWriteCallback, negative_req_cache_key)
         d.addErrback(self._negativeCacheWriteErrback)
         return d
-            
+
     def setNegativeReqCache(self, error, request_hash):
         negative_req_cache_key = 'negative_req_cache:%s' % request_hash
         d = self.redis_client.get(negative_req_cache_key)
@@ -490,25 +490,25 @@ class PageGetter:
         d.addCallback(self._negativeCacheWriteCallback, negative_cache_key)
         d.addErrback(self._negativeCacheWriteErrback)
         return d
-            
+
     def setNegativeCache(self, error, host):
         negative_cache_key = 'negative_cache:%s' % host
         d = self.redis_client.get(negative_cache_key)
         d.addCallback(self._setNegativeCacheCallback, error, host, negative_cache_key)
         return d
-        
-    def _requestWithNoCacheHeadersErrback(self, 
-            error,     
-            request_hash, 
-            url, 
+
+    def _requestWithNoCacheHeadersErrback(self,
+            error,
+            request_hash,
+            url,
             confirm_cache_write,
             request_kwargs,
             http_history=None,
             host=None):
         LOGGER.error(error.value.__dict__)
         LOGGER.error("Unable to get request %s for URL %s.\n%s" % (
-            request_hash, 
-            url, 
+            request_hash,
+            url,
             error))
         try:
             status = int(error.value.status)
@@ -547,17 +547,17 @@ class PageGetter:
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._requestWithNoCacheHeadersErrbackCallback, error)
-            return d       
+            return d
         return error
-        
+
     def _requestWithNoCacheHeadersErrbackCallback(self, data, error):
         return error
-    
-    def _handleRequestWithCacheHeadersError(self, 
-            error, 
-            request_hash, 
-            url, 
-            request_kwargs,  
+
+    def _handleRequestWithCacheHeadersError(self,
+            error,
+            request_hash,
+            url,
+            request_kwargs,
             confirm_cache_write,
             previous_headers,
             http_history,
@@ -583,16 +583,16 @@ class PageGetter:
             d = self.getCachedData(request_hash)
             d.addCallback(self._returnCachedData, request_hash)
             d.addErrback(
-                self._requestWithNoCacheHeaders, 
-                request_hash, 
-                url, 
-                request_kwargs, 
+                self._requestWithNoCacheHeaders,
+                request_hash,
+                url,
+                request_kwargs,
                 confirm_cache_write,
                 http_history=http_history)
             return d
         else:
             if http_history is None:
-                http_history = {} 
+                http_history = {}
             if "request-failures" not in http_history:
                 http_history["request-failures"] = [str(int(self.time_offset + time.time()))]
             else:
@@ -607,10 +607,10 @@ class PageGetter:
                 d.addCallback(self._handleRequestWithCacheHeadersErrorCallback, error)
                 return d
             return ReportedFailure(error)
-            
+
     def _handleRequestWithCacheHeadersErrorCallback(self, data, error):
         return ReportedFailure(error)
-        
+
     def _returnCachedData(self, data, request_hash):
         LOGGER.debug("Got request %s from Cassandra." % (request_hash))
         data["pagegetter-cache-hit"] = True
@@ -631,17 +631,17 @@ class PageGetter:
             data["headers"]["last-modified"] = data["headers"]["cache-last-modified"]
             del data["headers"]["cache-last-modified"]
         return data
-            
-    def _storeData(self, 
-            data, 
-            request_hash,  
+
+    def _storeData(self,
+            data,
+            request_hash,
             confirm_cache_write,
             http_history=None):
         if len(data["response"]) == 0:
             return self._storeDataErrback(Failure(exc_value=Exception("Response data is of length 0")), data, request_hash)
         #data["content-sha1"] = sha1(data["response"]).hexdigest()
         if http_history is None:
-            http_history = {} 
+            http_history = {}
         if "content-sha1" not in http_history:
             http_history["content-sha1"] = data["content-sha1"]
         if "content-changes" not in http_history:
@@ -692,10 +692,10 @@ class PageGetter:
             d.addErrback(self._storeDataErrback, data, request_hash)
             return d
         return data
-        
+
     def _storeDataCallback(self, data, response_data):
         return response_data
-    
+
     def _storeDataErrback(self, error, response_data, request_hash):
         LOGGER.error("Error storing data for %s" % (request_hash))
         return response_data

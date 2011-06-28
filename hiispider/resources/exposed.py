@@ -1,17 +1,17 @@
 import sys
 from twisted.web import server
-from twisted.internet.defer import maybeDeferred 
+from twisted.internet.defer import maybeDeferred
 from .base import BaseResource
 
 class ExposedResource(BaseResource):
-    
+
     isLeaf = True
-    
+
     def __init__(self, server, function_name):
         self.primary_server = server
         self.function_name = function_name
         BaseResource.__init__(self)
-    
+
     def render(self, request):
         request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
         kwargs = {}

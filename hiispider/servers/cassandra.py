@@ -1,171 +1,135 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Cassandra using version of BaseServer."""
+
+import os
 import simplejson
 import zlib
-from datetime import datetime
+import pprint
 import urllib
-from uuid import uuid4
-from twisted.internet.defer import DeferredList, inlineCallbacks
+
+from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
-from telephus.cassandra.ttypes import ColumnPath, ColumnParent, Column, ConsistencyLevel
 from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
-from ..exceptions import DeleteReservationException
-import txredisapi
 
+from txredisapi import RedisShardingConnection
+from mixins.jobgetter import JobGetterMixin
 
-class CassandraServer(BaseServer):
-    def __init__(self,
-                 aws_access_key_id=None,
-                 aws_secret_access_key=None,
-                 cassandra_server=None,
-                 cassandra_port=9160,
-                 cassandra_keyspace=None,
-                 cassandra_stats_keyspace=None,
-                 cassandra_stats_cf_daily=None,
-                 cassandra_cf_temp_content=None,
-                 cassandra_cf_content=None,
-                 cassandra_content=None,
-                 cassandra_content_error='error',
-                 cassandra_error='error',
-                 redis_hosts=None,
-                 disable_negative_cache=False,
-                 max_simultaneous_requests=100,
-                 max_requests_per_host_per_second=0,
-                 max_simultaneous_requests_per_host=0,
-                 log_file=None,
-                 log_directory=None,
-                 log_level="debug",
-                 port=8080):
-        BaseServer.__init__(
-            self,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            max_simultaneous_requests=max_simultaneous_requests,
-            max_requests_per_host_per_second=max_requests_per_host_per_second,
-            max_simultaneous_requests_per_host=max_simultaneous_requests_per_host,
-            log_file=log_file,
-            log_directory=log_directory,
-            log_level=log_level)
-        self.cassandra_server = cassandra_server
-        self.cassandra_port = cassandra_port
-        self.cassandra_keyspace = cassandra_keyspace
-        self.cassandra_cf_temp_content = cassandra_cf_temp_content
-        self.cassandra_cf_content = cassandra_cf_content
-        self.cassandra_content = cassandra_content
-        self.cassandra_content_error = cassandra_content_error
-        # Cassandra Stats
-        self.cassandra_stats_keyspace=cassandra_stats_keyspace
-        self.cassandra_stats_cf_daily=cassandra_stats_cf_daily
+PP = pprint.PrettyPrinter(indent=4)
+
+class CassandraServer(BaseServer, JobGetterMixin):
+
+    redis_client = None
+
+    def __init__(self, config):
+        super(CassandraServer, self).__init__(config)
+        self.cassandra_cf_content = config["cassandra_cf_content"]
+        self.cassandra_cf_temp_content = config["cassandra_cf_temp_content"]
         # Cassandra Clients & Factorys
-        self.cassandra_factory = ManagedCassandraClientFactory(self.cassandra_keyspace)
-        self.cassandra_client = CassandraClient(self.cassandra_factory)
-        self.cassandra_stats_factory = ManagedCassandraClientFactory(self.cassandra_stats_keyspace)
-        self.cassandra_stats_client = CassandraClient(self.cassandra_stats_factory)
+        factory = ManagedCassandraClientFactory(config["cassandra_keyspace"])
+        self.cassandra_client = CassandraClient(factory)
+        reactor.connectTCP(
+            config["cassandra_server"],
+            config["cassandra_port"],
+            factory)
         # Negative Cache
-        self.disable_negative_cache = disable_negative_cache
+        self.disable_negative_cache = config["disable_negative_cache"]
         # Redis
-        self.setup_redis_client_and_pg(redis_hosts)
-        # Casasndra reactor
-        reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_factory)
-        if self.cassandra_stats_keyspace:
-            reactor.connectTCP(cassandra_server, cassandra_port, self.cassandra_stats_factory)
+        self.redis_hosts = config["redis_hosts"]
+        # FIXME: change default to False after testing
+        self.delta_log_enabled = config.get('delta_log_enabled', True)
+        self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
+        self.delta_enabled = config.get('delta_enabled', False)
+        # create the log path if required & enabled
+        if self.delta_log_enabled and not os.path.exists(self.delta_log_path):
+            os.makedirs(self.delta_log_path)
+        self.setupJobGetter(config)
+
+    def start(self):
+        start_deferred = super(CassandraServer, self).start()
+        start_deferred.addCallback(self._cassandraStart)
+        return start_deferred
 
     @inlineCallbacks
-    def setup_redis_client_and_pg(self, redis_hosts):
-        self.redis_client = yield txredisapi.RedisShardingConnection(redis_hosts)
+    def _cassandraStart(self, started=False):
+        LOGGER.debug("Starting Cassandra components.")
+        try:
+            self.redis_client = yield RedisShardingConnection(self.redis_hosts)
+        except Exception, e:
+            LOGGER.error("Could not connect to Redis: %s" % e)
+            self.shutdown()
+            raise Exception("Could not connect to Redis.")
         self.pg = PageGetter(
             self.cassandra_client,
             redis_client=self.redis_client,
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
+        returnValue(True)
 
-    def executeReservation(self, function_name, **kwargs):
-        uuid = None
-        site_user_id = None
-        if 'site_user_id' in kwargs:
-            site_user_id = kwargs['site_user_id']
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        function = self.functions[function_name]
-        if function["interval"] > 0:
-            uuid = uuid4().hex
-        d = self.callExposedFunction(
-            self.functions[function_name]["function"],
-            kwargs,
-            function_name,
-            user_id=site_user_id,
-            uuid=uuid)
-        d.addCallback(self._executeReservationCallback, function_name, uuid)
-        d.addErrback(self._executeReservationErrback, function_name, uuid)
-        return d
+    def shutdown(self):
+        # Shutdown things here.
+        return super(CassandraServer, self).shutdown()
 
-    def _executeReservationCallback(self, data, function_name, uuid):
-        if not uuid:
-            return data
-        else:
-            return {uuid: data}
+    def logDelta(self, uuid, old, new, delta):
+        """Log a delta in a way we can examine later or incorporate into our
+        unit testing corpus."""
+        if not self.delta_log_enabled: return
+        basepath = os.path.join(self.delta_log_path, uuid)
+        with open(basepath + '.old.js', 'w') as f:
+            f.write(simplejson.dumps(old, indent=2))
+        with open(basepath + '.new.js', 'w') as f:
+            f.write(simplejson.dumps(new, indent=2))
+        with open(basepath + '.res.js', 'w') as f:
+            f.write(simplejson.dumps(delta, indent=2))
 
-    def _executeReservationErrback(self, error, function_name, uuid):
-        LOGGER.error("Unable to create reservation for %s:%s, %s.\n" % (function_name, uuid, error))
-        return error
-
-    def deleteReservation(self, uuid, function_name="Unknown"):
-        LOGGER.info("Deleting reservation %s, %s." % (function_name, uuid))
-        d = self.cassandra_client.remove(uuid, self.cassandra_cf_content)
-        d.addCallback(self._deleteReservationCallback, function_name, uuid)
-        return d
-
-    def _deleteReservationCallback(self, data, function_name, uuid):
-        LOGGER.info("Reservation %s, %s successfully deleted." % (function_name, uuid))
-        return True
-
-    def _callExposedFunctionCallback(self, data, function_name, user_id, uuid):
-        data = BaseServer._callExposedFunctionCallback(self, data, function_name, user_id, uuid)
-        # If we have an place to store the response on Cassandra, do it.
-        if uuid is not None and self.cassandra_cf_content is not None and data is not None:
-            LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
-            encoded_data = zlib.compress(simplejson.dumps(data))
-            if user_id:
-                d = self.cassandra_client.insert(
-                    str(user_id),
-                    self.cassandra_cf_content,
-                    encoded_data,
-                    column=uuid,
-                    consistency=ConsistencyLevel.QUORUM)
-            else:
-                d = self.cassandra_client.insert(
-                    uuid,
-                    self.cassandra_cf_temp_content,
-                    encoded_data,
-                    column=self.cassandra_content,
-                    consistency=ConsistencyLevel.QUORUM)
-            d.addErrback(self._exposedFunctionErrback2, data, function_name, uuid)
-        return data
-
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        error = BaseServer._callExposedFunctionErrback(self, error, function_name, uuid)
-        try:
-            error.raiseException()
-        except DeleteReservationException:
-            if uuid is not None:
-                self.deleteReservation(uuid)
-            message = """Error with %s, %s.\n%s
-            Reservation deleted at request of the function.""" % (
-                function_name,
-                uuid,
-                error)
-            LOGGER.debug(message)
+    @inlineCallbacks
+    def executeJob(self, job):
+        user_id = job.user_account["user_id"]
+        new_data = yield super(CassandraServer, self).executeJob(job)
+        if new_data is None:
             return
-        except:
-            pass
-        return error
+        if self.delta_enabled:
+            delta_func = self.functions[job.function_name]["delta"]
+            if delta_func is not None:
+                old_data = yield self.getData(user_id, job.uuid)
+                # TODO: make sure we check that old_data exists
+                delta = delta_func(new_data, old_data)
+                self.logDelta(job.uuid, old_data, new_data, delta)
+                LOGGER.debug("Got delta: %s" % str(delta))
+        yield self.cassandra_client.insert(
+            str(user_id),
+            self.cassandra_cf_content,
+            zlib.compress(simplejson.dumps(new_data)),
+            column=job.uuid)
+        returnValue(new_data)
 
-    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-        return data
+    @inlineCallbacks
+    def getData(self, user_id, uuid):
+        data = yield self.cassandra_client.get(
+            key=str(user_id),
+            column_family=self.cassandra_cf_content,
+            column=uuid)
+        returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+
+    @inlineCallbacks
+    def deleteReservation(self, uuid):
+        """Delete a reservation by uuid."""
+        # FIXME: this function is unnecessarily coupled to the job object;
+        # only a uuid is needed to delete a reservation
+        LOGGER.info('Deleting UUID from spider_service table: %s' % uuid)
+        yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
+        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
+            self.scheduler_server,
+            self.scheduler_server_port,
+            urllib.urlencode({'uuid': uuid}))
+        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
+        yield self.rq.getPage(url=url)
+        LOGGER.info('Deleting UUID from Cassandra: %s' % uuid)
+        yield self.cassandra_client.remove(
+            uuid,
+            self.cassandra_cf_content)
+        returnValue({'success':True})

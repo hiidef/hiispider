@@ -5,7 +5,7 @@ import traceback
 import simplejson
 
 class BaseResource(Resource):
-    
+
     def __init__(self):
         Resource.__init__(self)
 
@@ -15,8 +15,11 @@ class BaseResource(Resource):
         return simplejson.dumps(data)
 
     def _errorResponse(self, error):
+        from ..servers.base import LOGGER
         reason = str(error.value)
-        tb = traceback.format_exc(traceback.extract_tb(error.tb))
+        tb = error.getTraceback()
+        LOGGER.error("\n%s" % tb)
+        #tb = traceback.format_exc(traceback.extract_tb(error.tb))
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):

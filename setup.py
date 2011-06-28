@@ -1,13 +1,12 @@
 from setuptools import setup, find_packages
-from hiispider import __version__
+from hiispider import VERSION
 # Also requires python-dev and python-openssl
+version = '.'.join(VERSION)
+
 setup(
-
     name = "HiiSpider",
-
-    version = __version__,
-
-    packages = find_packages(),
+    packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
+    version = version,
 
     install_requires = ['twisted>=8.1', 'genshi>=0.5.1', 'python-dateutil>=1.4', 'simplejson>=2.1.3', 'boto'],
     include_package_data = True,
@@ -18,6 +17,7 @@ setup(
     description = "HiiDef Web Services web crawler",
     license = "MIT License",
     keywords = "twisted spider crawler",
-    url = "http://github.com/rays/hiispider"
+    url = "http://github.com/hiidef/hiispider",
+    test_suite="tests",
 
 )

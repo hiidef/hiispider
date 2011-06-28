@@ -18,15 +18,15 @@ class ReportedFailure(twisted.python.failure.Failure):
 
 # A UTC class.
 class CoordinatedUniversalTime(datetime.tzinfo):
-    
+
     ZERO = datetime.timedelta(0)
-    
+
     def utcoffset(self, dt):
         return self.ZERO
-        
+
     def tzname(self, dt):
         return "UTC"
-        
+
     def dst(self, dt):
         return self.ZERO
 
@@ -36,9 +36,9 @@ LOGGER = logging.getLogger("main")
 
 
 class PageGetter:
-    
+
     negitive_cache = {}
-    
+
     def __init__(self, rq=None):
         """
         Create an Cassandra based HTTP cache.
@@ -47,26 +47,26 @@ class PageGetter:
          * *cassandra_client* -- Cassandra client object.
 
         **Keyword arguments:**
-         * *rq* -- Request Queuer object. (Default ``None``)      
+         * *rq* -- Request Queuer object. (Default ``None``)
 
         """
         if rq is None:
             self.rq = RequestQueuer()
         else:
             self.rq = rq
-    
-        
-    def getPage(self, 
-            url, 
-            method='GET', 
+
+
+    def getPage(self,
+            url,
+            method='GET',
             postdata=None,
-            headers=None, 
-            agent="HiiSpider", 
-            timeout=60, 
-            cookies=None, 
-            follow_redirect=1, 
+            headers=None,
+            agent="HiiSpider",
+            timeout=60,
+            cookies=None,
+            follow_redirect=1,
             prioritize=False,
-            hash_url=None, 
+            hash_url=None,
             cache=0,
             content_sha1=None,
             confirm_cache_write=False,
@@ -81,38 +81,38 @@ class PageGetter:
 
         **Keyword arguments:**
          * *method* -- HTTP request method. (Default ``'GET'``)
-         * *postdata* -- Dictionary of strings to post with the request. 
+         * *postdata* -- Dictionary of strings to post with the request.
            (Default ``None``)
-         * *headers* -- Dictionary of strings to send as request headers. 
+         * *headers* -- Dictionary of strings to send as request headers.
            (Default ``None``)
-         * *agent* -- User agent to send with request. (Default 
+         * *agent* -- User agent to send with request. (Default
            ``'HiiSpider'``)
          * *timeout* -- Request timeout, in seconds. (Default ``60``)
-         * *cookies* -- Dictionary of strings to send as request cookies. 
+         * *cookies* -- Dictionary of strings to send as request cookies.
            (Default ``None``).
-         * *follow_redirect* -- Boolean switch to follow HTTP redirects. 
+         * *follow_redirect* -- Boolean switch to follow HTTP redirects.
            (Default ``True``)
-         * *prioritize* -- Move this request to the front of the request 
+         * *prioritize* -- Move this request to the front of the request
            queue. (Default ``False``)
          * *hash_url* -- URL string used to indicate a common resource.
            Example: "http://digg.com" and "http://www.digg.com" could both
-           use hash_url, "http://digg.com" (Default ``None``)      
-         * *cache* -- Cache mode. ``1``, immediately return contents of 
-           cache if available. ``0``, check resource, return cache if not 
+           use hash_url, "http://digg.com" (Default ``None``)
+         * *cache* -- Cache mode. ``1``, immediately return contents of
+           cache if available. ``0``, check resource, return cache if not
            stale. ``-1``, ignore cache. (Default ``0``)
-         * *content_sha1* -- SHA-1 hash of content. If this matches the 
-           hash of data returned by the resource, raises a 
-           StaleContentException.  
-         * *confirm_cache_write* -- Wait to confirm cache write before returning.       
-        """ 
+         * *content_sha1* -- SHA-1 hash of content. If this matches the
+           hash of data returned by the resource, raises a
+           StaleContentException.
+         * *confirm_cache_write* -- Wait to confirm cache write before returning.
+        """
         request_kwargs = {
-            "method":method.upper(), 
-            "postdata":postdata, 
-            "headers":headers, 
-            "agent":agent, 
-            "timeout":timeout, 
-            "cookies":cookies, 
-            "follow_redirect":follow_redirect, 
+            "method":method.upper(),
+            "postdata":postdata,
+            "headers":headers,
+            "agent":agent,
+            "timeout":timeout,
+            "cookies":cookies,
+            "follow_redirect":follow_redirect,
             "prioritize":prioritize}
         cache = int(cache)
         cache=0
@@ -136,11 +136,11 @@ class PageGetter:
         # either the URL or user-provided hash_url.
         if hash_url is None:
             request_hash = hashlib.sha1(simplejson.dumps([
-                url, 
+                url,
                 agent])).hexdigest()
         else:
             request_hash = hashlib.sha1(simplejson.dumps([
-                hash_url, 
+                hash_url,
                 agent])).hexdigest()
 
         d = self.rq.getPage(url, **request_kwargs)
@@ -159,7 +159,7 @@ class PageGetter:
             raise StaleContentException(content_sha1)
         else:
             return data
-            
+
     def _getPageErrback(self, error, host):
         try:
             status = int(error.value.status)

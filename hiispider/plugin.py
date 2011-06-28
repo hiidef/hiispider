@@ -1,19 +1,34 @@
 import inspect
-import types 
+import types
+from .delta import autogenerate
 
-
-__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin"]
+__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
 FUNCTION_ALIASES = {}
+DELTA_FUNCTIONS = {}
+
 
 def aliases(*args):
     def decorator(f):
         FUNCTION_ALIASES[id(f)] = args
         return f
     return decorator
-    
+
+
+def autodelta(func):
+    DELTA_FUNCTIONS[id(func)] = autogenerate
+    return func
+
+
+def delta(handler):
+    def decorator(f):
+        DELTA_FUNCTIONS[id(f)] = handler
+        return f
+    return decorator
+
+
 def expose(func=None, interval=0, name=None, memoize=False):
     if func is not None:
         EXPOSED_FUNCTIONS[id(func)] = {"interval":interval, "name":name}
@@ -35,13 +50,17 @@ def make_callable(func=None, interval=0, name=None, memoize=False):
 
 
 class HiiSpiderPlugin(object):
-    
+
     def __init__(self, spider):
         self.spider = spider
         check_method = lambda x:isinstance(x[1], types.MethodType)
         instance_methods = filter(check_method, inspect.getmembers(self))
         for instance_method in instance_methods:
             instance_id = id(instance_method[1].__func__)
+            if instance_id in DELTA_FUNCTIONS:
+                self.spider.delta(
+                    instance_method[1],
+                    DELTA_FUNCTIONS[instance_id])
             if instance_id in EXPOSED_FUNCTIONS:
                 self.spider.expose(
                     instance_method[1],
@@ -52,7 +71,7 @@ class HiiSpiderPlugin(object):
                         self.spider.expose(
                             instance_method[1],
                             interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
-                            name=name)                        
+                            name=name)
             if instance_id in CALLABLE_FUNCTIONS:
                 self.spider.expose(
                     instance_method[1],
@@ -64,13 +83,10 @@ class HiiSpiderPlugin(object):
                             instance_method[1],
                             interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                             name=name)
-                            
-    def setReservationFastCache(self, uuid, data):
-        return self.spider.setReservationFastCache(uuid, data)
-   
-    def setReservationCache(self, uuid, data):
-        return self.spider.setReservationCache(uuid, data)
-    
+
+    def setFastCache(self, uuid, data):
+        return self.spider.setFastCache(uuid, data)
+
     def getPage(self, *args, **kwargs):
         return self.spider.getPage(*args, **kwargs)
-        
+
