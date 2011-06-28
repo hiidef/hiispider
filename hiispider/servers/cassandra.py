@@ -28,6 +28,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
     def __init__(self, config):
         super(CassandraServer, self).__init__(config)
         self.cassandra_cf_content = config["cassandra_cf_content"]
+        self.cassandra_cf_temp_content = config["cassandra_cf_temp_content"]
         # Cassandra Clients & Factorys
         factory = ManagedCassandraClientFactory(config["cassandra_keyspace"])
         self.cassandra_client = CassandraClient(factory)
