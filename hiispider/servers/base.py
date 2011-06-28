@@ -305,11 +305,10 @@ class BaseServer(object):
                 else:
                     raise Exception("Could not find argument: %s" % key)
             for key in f['optional_arguments']:
-                if mapping[key] in job.kwargs:
-                    if key in mapping and mapping[key] in job.kwargs:
-                        kwargs[key] = job.kwargs[mapping[key]]
-                    elif key in job.kwargs:
-                        kwargs[key] = job.kwargs[key]
+                if key in mapping and mapping[key] in job.kwargs:
+                    kwargs[key] = job.kwargs[mapping[key]]
+                elif key in job.kwargs:
+                    kwargs[key] = job.kwargs[key]
             job.kwargs = kwargs
         job.mapped = True
         return job
