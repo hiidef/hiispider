@@ -12,6 +12,10 @@ class InterfaceResource(BaseResource):
         BaseResource.__init__(self)
 
     def render(self, request):
+        def add_callbacks(d):
+            d.addCallback(self._successResponse)
+            d.addErrback(self._errorResponse)
+            d.addCallback(self._immediateResponse, request)
         request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
         if len(request.postpath) > 0:
             if request.postpath[0] == "show_reservation":
@@ -21,9 +25,7 @@ class InterfaceResource(BaseResource):
                         deferreds.append(self.interfaceserver.showReservation(uuid))
                     d = DeferredList(deferreds, consumeErrors=True)
                     d.addCallback(self._showReservationCallback, request.args["uuid"])
-                    d.addCallback(self._successResponse)
-                    d.addErrback(self._errorResponse)
-                    d.addCallback(self._immediateResponse, request)
+                    add_callbacks(d)
                     return server.NOT_DONE_YET
                 else:
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
@@ -33,27 +35,21 @@ class InterfaceResource(BaseResource):
                     for uuid in request.args["uuid"]:
                         deferreds.append(self.interfaceserver.enqueueUUID(uuid))
                     d = DeferredList(deferreds, consumeErrors=True)
-                    d.addCallback(self._successResponse)
-                    d.addErrback(self._errorResponse)
-                    d.addCallback(self._immediateResponse, request)
+                    add_callbacks(d)
                     return server.NOT_DONE_YET
                 else:
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
             elif request.postpath[0] == "execute_reservation":
                 if "uuid" in request.args:
                     d = self.interfaceserver.executeReservation(request.args["uuid"][0])
-                    d.addCallback(self._successResponse)
-                    d.addErrback(self._errorResponse)
-                    d.addCallback(self._immediateResponse, request)
+                    add_callbacks(d)
                     return server.NOT_DONE_YET
                 else:
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
             elif request.postpath[0] == "delete_reservation":
                 if "uuid" in request.args:
                     d = self.interfaceserver.deleteReservation(request.args["uuid"][0])
-                    d.addCallback(self._successResponse)
-                    d.addErrback(self._errorResponse)
-                    d.addCallback(self._immediateResponse, request)
+                    add_callbacks(d)
                     return server.NOT_DONE_YET
                 else:
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))

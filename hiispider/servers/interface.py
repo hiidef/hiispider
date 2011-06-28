@@ -96,28 +96,3 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         else:
             returnValue({uuid: data})
 
-    @inlineCallbacks
-    def deleteReservation(self, job):
-        """Delete a reservation."""
-        # FIXME: this function is unnecessarily coupled to the job object;
-        # only a uuid is needed to delete a reservation
-        uuid = job
-        if not isinstance(job, basestring):
-            uuid = job.uuid
-        LOGGER.info('Deleting UUID from spider_service table: %s' % uuid)
-        try:
-            yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
-        except:
-            LOGGER.error(traceback.format_exc())
-            raise
-        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
-            self.scheduler_server,
-            self.scheduler_server_port,
-            urllib.urlencode({'uuid': uuid}))
-        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
-        yield self.rq.getPage(url=url)
-        LOGGER.info('Deleting UUID from Cassandra: %s' % uuid)
-        yield self.cassandra_client.remove(
-            uuid,
-            self.cassandra_cf_content)
-        returnValue({'success':True})

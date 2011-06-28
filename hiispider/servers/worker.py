@@ -102,25 +102,9 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             yield super(WorkerServer, self).executeJob(job)
             self.jobs_complete += 1
         except DeleteReservationException:
-            yield self.deleteReservation(job)
+            yield self.deleteReservation(job.uuid)
         self.logStatus()
         yield self.clearPageCache(job)
-
-    @inlineCallbacks
-    def deleteReservation(self, job):
-        LOGGER.info('Deleting UUID from spider_service table: %s' % job.uuid)
-        sql = "DELETE FROM spider_service WHERE uuid=%s" % job.uuid
-        yield self.mysql.runQuery(sql)
-        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
-            self.scheduler_server,
-            self.scheduler_server_port,
-            urllib.urlencode({'uuid': job.uuid}))
-        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
-        yield self.rq.getPage(url=url)
-        LOGGER.info('Deleting UUID from Cassandra: %s' % job.uuid)
-        yield self.cassandra_client.remove(
-            job.uuid,
-            self.cassandra_cf_content)
 
     @inlineCallbacks
     def getFastCache(self, uuid):

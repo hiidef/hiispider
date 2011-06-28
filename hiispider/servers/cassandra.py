@@ -114,3 +114,21 @@ class CassandraServer(BaseServer, JobGetterMixin):
             column=uuid)
         returnValue(simplejson.loads(zlib.decompress(data.column.value)))
 
+    @inlineCallbacks
+    def deleteReservation(self, uuid):
+        """Delete a reservation by uuid."""
+        # FIXME: this function is unnecessarily coupled to the job object;
+        # only a uuid is needed to delete a reservation
+        LOGGER.info('Deleting UUID from spider_service table: %s' % uuid)
+        yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
+        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
+            self.scheduler_server,
+            self.scheduler_server_port,
+            urllib.urlencode({'uuid': uuid}))
+        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
+        yield self.rq.getPage(url=url)
+        LOGGER.info('Deleting UUID from Cassandra: %s' % uuid)
+        yield self.cassandra_client.remove(
+            uuid,
+            self.cassandra_cf_content)
+        returnValue({'success':True})
