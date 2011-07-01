@@ -67,7 +67,7 @@ class InterfaceServer(CassandraServer):
             else:
                 yield self.cassandra_client.insert(uuid,
                     self.cassandra_cf_temp_content, encoded_data,
-                    column=self.cassandra_content)
+                    column=self.cassandra_cf_content)
         except Exception, e:
             LOGGER.error("Error putting result for uuid %s on Cassandra:\n%s\n" % (uuid, e))
             raise
