@@ -18,7 +18,7 @@ class BaseResource(Resource):
         from ..servers.base import LOGGER
         reason = str(error.value)
         tb = error.getTraceback()
-        LOGGER.error("\n%s" % tb)
+        LOGGER.error("%s\n%s" % (reason, tb))
         #tb = traceback.format_exc(traceback.extract_tb(error.tb))
         return simplejson.dumps({"error":reason, "traceback":tb})
 
