@@ -8,18 +8,21 @@ import simplejson
 import zlib
 import pprint
 import urllib
+import traceback
+import logging
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
-from .base import BaseServer, LOGGER
 from ..pagegetter import PageGetter
 
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 
 PP = pprint.PrettyPrinter(indent=4)
+
+logger = logging.getLogger(__name__)
 
 class CassandraServer(BaseServer, JobGetterMixin):
 
@@ -56,11 +59,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def _cassandraStart(self, started=False):
-        LOGGER.debug("Starting Cassandra components.")
+        logger.debug("Starting Cassandra components.")
         try:
             self.redis_client = yield RedisShardingConnection(self.redis_hosts)
         except Exception, e:
-            LOGGER.error("Could not connect to Redis: %s" % e)
+            logger.error("Could not connect to Redis: %s" % e)
             self.shutdown()
             raise Exception("Could not connect to Redis.")
         self.pg = PageGetter(
@@ -99,7 +102,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 # TODO: make sure we check that old_data exists
                 delta = delta_func(new_data, old_data)
                 self.logDelta(job.uuid, old_data, new_data, delta)
-                LOGGER.debug("Got delta: %s" % str(delta))
+                logger.debug("Got delta: %s" % str(delta))
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
@@ -120,15 +123,21 @@ class CassandraServer(BaseServer, JobGetterMixin):
         """Delete a reservation by uuid."""
         # FIXME: this function is unnecessarily coupled to the job object;
         # only a uuid is needed to delete a reservation
-        LOGGER.info('Deleting UUID from spider_service table: %s' % uuid)
+        logger.info('Deleting UUID from spider_service table: %s' % uuid)
         yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
         url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
-        LOGGER.info('Sending UUID to scheduler to be dequeued: %s' % url)
-        yield self.rq.getPage(url=url)
-        LOGGER.info('Deleting UUID from Cassandra: %s' % uuid)
+        logger.info('Sending UUID to scheduler to be dequeued: %s' % url)
+        try:
+            yield self.rq.getPage(url=url)
+        except Exception, e:
+            tb = traceback.format_exc()
+            logger.error("failed to deque job %s on scheduler (url was: %s):\n%s" % (
+                uuid, url, tb))
+            # TODO: punt here?
+        logger.info('Deleting UUID from Cassandra: %s' % uuid)
         yield self.cassandra_client.remove(
             uuid,
             self.cassandra_cf_content)
