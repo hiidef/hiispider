@@ -13,7 +13,7 @@ import logging
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from txamqp.content import Content
 from .base import BaseServer
 from .mixins import MySQLMixin, AMQPMixin
@@ -173,14 +173,13 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         if function_name not in self.functions:
             raise Exception("Function %s does not exist." % function_name)
         function = self.functions[function_name]
-        logger.error("Calling function %s with kwargs %s" % (function_name, kwargs))
+        logger.debug("Calling function %s with kwargs %s" % (function_name, kwargs))
         try:
             data = yield self.executeFunction(function_name, **kwargs)
         except Exception, e:
             tb = traceback.format_exc()
             logger.error("function %s failed with args %s:\n%s" % (
                 function_name, kwargs, tb))
-        logger.info("function %s returned successfully with %s" % (function_name, data))
         if data is None:
             returnValue({'success':True})
         returnValue(data)
