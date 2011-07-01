@@ -37,7 +37,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             config.get("cassandra_port", 9160),
             factory)
         # Negative Cache
-        self.disable_negative_cache = config["disable_negative_cache"]
+        self.disable_negative_cache = config.get("disable_negative_cache", False)
         # Redis
         self.redis_hosts = config["redis_hosts"]
         # FIXME: change default to False after testing
