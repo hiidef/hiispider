@@ -82,11 +82,16 @@ class BaseServer(object):
             config.get("log_level", 'DEBUG'))
 
     def _setupLogging(self, log_file, log_directory, log_level):
-        if log_directory is None:
+        path = None
+        if log_file and not log_file.startswith('/'):
+            try: path = os.path.join(log_directory, log_file)
+            except: pass
+        elif log_file:
+            path = log_file
+        if not path:
             self.logging_handler = logging.StreamHandler()
         else:
-            self.logging_handler = logging.handlers.TimedRotatingFileHandler(
-                os.path.join(log_directory, log_file),
+            self.logging_handler = logging.handlers.TimedRotatingFileHandler(path,
                 when='D',
                 interval=1)
         log_format = "%(levelname)s: %(message)s %(pathname)s:%(lineno)d"
