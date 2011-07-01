@@ -3,6 +3,9 @@ from twisted.web.resource import Resource
 import cStringIO, gzip
 import traceback
 import simplejson
+import logging
+
+logger = logging.getLogger(__name__)
 
 class BaseResource(Resource):
 
@@ -27,6 +30,7 @@ class BaseResource(Resource):
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
+        logger.debug("%s received for %s" % (data, request))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = cStringIO.StringIO()

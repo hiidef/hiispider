@@ -180,6 +180,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             tb = traceback.format_exc()
             logger.error("function %s failed with args %s:\n%s" % (
                 function_name, kwargs, tb))
+        logger.info("function %s returned successfully with %s" % (function_name, data))
         if data is None:
             returnValue({'success':True})
         returnValue(data)
