@@ -77,7 +77,9 @@ class BaseServer(object):
             self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
-        self._setupLogging(config["log_file"], config["log_directory"], config["log_level"])
+        self._setupLogging(config.get("log_file", ''),
+            config.get("log_directory", ''),
+            config.get("log_level", 'DEBUG'))
 
     def _setupLogging(self, log_file, log_directory, log_level):
         if log_directory is None:
