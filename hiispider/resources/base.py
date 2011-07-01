@@ -17,10 +17,13 @@ class BaseResource(Resource):
     def _errorResponse(self, error):
         from ..servers.base import LOGGER
         reason = str(error.value)
-        tb = error.getTraceback()
-        tb2 = traceback.format_exc(traceback.extract_tb(error.tb))
-        LOGGER.error("%s\n%s\n%s" % (reason, tb, tb2))
-        #tb = traceback.format_exc(traceback.extract_tb(error.tb))
+        # there are two ways to extract a traceback;  we pick whichever one
+        # is longer as that probably has more information
+        tbs = (error.getTraceback(),
+               traceback.format_exc(traceback.extract_tb(error.tb)))
+        tbs.sort(key=lambda x: len(x), reverse=True)
+        tb = tbs[0]
+        LOGGER.error("%s\n%s\n%s" % (reason, tb))
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
