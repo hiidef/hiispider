@@ -15,10 +15,11 @@ from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks
 from txamqp.content import Content
-from .base import BaseServer, LOGGER
+from .base import BaseServer
 from .mixins import MySQLMixin, AMQPMixin
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 from twisted.web.resource import Resource
 
@@ -90,7 +91,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
         if self.amqp_queue_size < 100000:
-            LOGGER.debug("%s:%s" % (self.heap[0][0], now))
+            logger.debug("%s:%s" % (self.heap[0][0], now))
             while self.heap[0][0] < now and queued_items < 1000:
                 job = heappop(self.heap)
                 uuid = UUID(bytes=job[1][0])
@@ -103,11 +104,11 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
                 else:
                     self.unscheduled_items.remove(uuid.hex)
         else:
-            LOGGER.critical('AMQP queue is at or beyond max limit (%d/100000)'
+            logger.critical('AMQP queue is at or beyond max limit (%d/100000)'
                 % self.amqp_queue_size)
 
     def enqueueUUID(self, uuid):
-        LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
+        logger.debug('enqueueUUID: uuid=%s' % uuid)
         self.chan.basic_publish(
             exchange=self.amqp_exchange,
             content=Content(UUID(uuid).bytes))
@@ -115,15 +116,15 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
     def remoteAddToHeap(self, uuid=None, type=None):
         if uuid and type:
-            LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
+            logger.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
             self.addToHeap(uuid, type)
             return {}
         else:
-            LOGGER.error('Required parameters are uuid and type')
+            logger.error('Required parameters are uuid and type')
             return {'error': 'Required parameters are uuid and type'}
 
     def remoteRemoveFromHeap(self, uuid):
-        LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
+        logger.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
         self.removeFromHeap(uuid)
 
     def addToHeap(self, uuid, type):
@@ -131,35 +132,35 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         # then rewrite type to the proper resource
         if not uuid in self.unscheduled_items:
             if self.service_mapping and type in self.service_mapping:
-                LOGGER.info('Remapping resource %s to %s'
+                logger.info('Remapping resource %s to %s'
                     % (type, self.service_mapping[type]))
                 type = self.service_mapping[type]
             try:
                 # Make sure the uuid is in bytes
                 uuid_bytes = UUID(uuid).bytes
             except ValueError:
-                LOGGER.error('Cound not turn UUID into bytes using string: "%s" with type of "%s"'
+                logger.error('Cound not turn UUID into bytes using string: "%s" with type of "%s"'
                     % (uuid, type))
                 return
             if type in self.functions and 'interval' in self.functions[type]:
                 interval = int(self.functions[type]['interval'])
             else:
-                LOGGER.error('Could not find interval for type %s' % type)
+                logger.error('Could not find interval for type %s' % type)
                 return
             # Enqueue randomly over the interval so it doesn't
             # flood the server at the interval time. only if an interval is defined
             if interval:
                 enqueue_time = int(time.time() + random.randint(0, interval))
                 # Add a UUID to the heap.
-                LOGGER.debug('Adding %s to heap with time %s and interval of %s'
+                logger.debug('Adding %s to heap with time %s and interval of %s'
                     % (uuid, enqueue_time, interval))
                 heappush(self.heap, (enqueue_time, (uuid_bytes, interval)))
         else:
-            LOGGER.info('Unscheduling %s' % uuid)
+            logger.info('Unscheduling %s' % uuid)
             self.unscheduled_items.remove(uuid)
 
     def removeFromHeap(self, uuid):
-        LOGGER.info('Removing %s from heap' % uuid)
+        logger.info('Removing %s from heap' % uuid)
         self.unscheduled_items.append(uuid)
 
     @inlineCallbacks
@@ -172,7 +173,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         if function_name not in self.functions:
             raise Exception("Function %s does not exist." % function_name)
         function = self.functions[function_name]
-        logger.debug("Calling function %s with kwargs %s" % (function_name, kwargs))
+        logger.error("Calling function %s with kwargs %s" % (function_name, kwargs))
         try:
             data = yield self.executeFunction(function_name, **kwargs)
         except Exception, e:
