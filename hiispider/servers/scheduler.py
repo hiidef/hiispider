@@ -1,6 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""SchedulerServer base."""
+
 from uuid import UUID
+
 import time
 import random
+import traceback
+import logging
+
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
@@ -9,6 +18,7 @@ from txamqp.content import Content
 from .base import BaseServer, LOGGER
 from .mixins import MySQLMixin, AMQPMixin
 
+logger = logging.getLogger(__name__)
 
 from twisted.web.resource import Resource
 
@@ -151,3 +161,24 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
     def removeFromHeap(self, uuid):
         LOGGER.info('Removing %s from heap' % uuid)
         self.unscheduled_items.append(uuid)
+
+    @inlineCallbacks
+    def executeReservation(self, function_name, **kwargs):
+        if not isinstance(function_name, str):
+            for key in self.functions:
+                if self.functions[key]["function"] == function_name:
+                    function_name = key
+                    break
+        if function_name not in self.functions:
+            raise Exception("Function %s does not exist." % function_name)
+        function = self.functions[function_name]
+        logger.debug("Calling function %s with kwargs %s" % (function_name, kwargs))
+        try:
+            data = yield self.executeFunction(function_name, **kwargs)
+        except Exception, e:
+            tb = traceback.format_exc()
+            logger.error("function %s failed with args %s:\n%s" % (
+                function_name, kwargs, tb))
+        returnValue(data)
+
+
