@@ -175,7 +175,7 @@ class BaseServer(object):
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
         except Exception, e:
             LOGGER.error("Error with %s.\n%s" % (function_key, e))
-            raise e
+            raise
         returnValue(data)
 
     def _getArguments(self, func):
