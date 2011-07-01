@@ -34,7 +34,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         self.cassandra_client = CassandraClient(factory)
         reactor.connectTCP(
             config["cassandra_server"],
-            config["cassandra_port"],
+            config.get("cassandra_port", 9160),
             factory)
         # Negative Cache
         self.disable_negative_cache = config["disable_negative_cache"]

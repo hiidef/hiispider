@@ -8,7 +8,7 @@ class MySQLMixin(object):
         self.mysql = adbapi.ConnectionPool(
             "MySQLdb",
             db=config["mysql_database"],
-            port=config["mysql_port"],
+            port=config.get("mysql_port", 3306),
             user=config["mysql_username"],
             passwd=config["mysql_password"],
             host=config["mysql_host"],
