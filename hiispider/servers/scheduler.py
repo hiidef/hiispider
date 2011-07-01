@@ -19,7 +19,7 @@ from .base import BaseServer
 from .mixins import MySQLMixin, AMQPMixin
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 from twisted.web.resource import Resource
 
@@ -125,7 +125,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
     def remoteRemoveFromHeap(self, uuid):
         logger.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
-        self.removeFromHeap(uuid)
+        return self.removeFromHeap(uuid)
 
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
@@ -180,6 +180,8 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
             tb = traceback.format_exc()
             logger.error("function %s failed with args %s:\n%s" % (
                 function_name, kwargs, tb))
+        if data is None:
+            returnValue({'success':True})
         returnValue(data)
 
 
