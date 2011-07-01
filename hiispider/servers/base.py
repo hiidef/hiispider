@@ -94,9 +94,12 @@ class BaseServer(object):
             self.logging_handler = logging.handlers.TimedRotatingFileHandler(path,
                 when='D',
                 interval=1)
-        log_format = "%(levelname)s: %(message)s %(pathname)s:%(lineno)d"
+        log_format = "%(name)s %(levelname)s: %(message)s %(pathname)s:%(lineno)d"
         self.logging_handler.setFormatter(logging.Formatter(log_format))
-        LOGGER.addHandler(self.logging_handler)
+        # set our handler on the default logger so everything logs to the same place
+        # in the same way
+        default_logger = logging.getLogger()
+        default_logger.addHandler(self.logging_handler)
         log_level = log_level.lower()
         log_levels = {
             "debug":logging.DEBUG,
