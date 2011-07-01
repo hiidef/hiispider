@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 from hiispider import VERSION
 # Also requires python-dev and python-openssl
-version = '.'.join(VERSION)
+version = '.'.join(map(str, VERSION))
 
 setup(
     name = "HiiSpider",
