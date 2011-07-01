@@ -15,6 +15,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
+from .base import BaseServer
 from ..pagegetter import PageGetter
 
 from txredisapi import RedisShardingConnection
