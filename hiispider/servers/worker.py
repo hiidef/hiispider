@@ -1,6 +1,7 @@
 import urllib
+import logging
+
 from .cassandra import CassandraServer
-from .base import LOGGER
 from ..resources import WorkerResource
 from .mixins import AMQPMixin, JobGetterMixin
 from twisted.internet import reactor, task
@@ -12,6 +13,7 @@ from ..exceptions import DeleteReservationException
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
+logger = logging.getLogger(__name__)
 
 
 class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
@@ -45,7 +47,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
 
     @inlineCallbacks
     def _workerStart(self, started=None):
-        LOGGER.debug("Starting worker components.")
+        logger.debug("Starting worker components.")
         yield self.startJobQueue()
         yield self.startPageCacheQueue()
         self.jobsloop = task.LoopingCall(self.executeJobs)
@@ -65,7 +67,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         self.logStatus()
         while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
-            LOGGER.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
+            logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
             self.dequeue_item()
 
     @inlineCallbacks
@@ -73,22 +75,22 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         try:
             uuid = yield self.getJobUUID()
         except Exception, e:
-            LOGGER.error('Dequeue Error: %s' % e)
+            logger.error('Dequeue Error: %s' % e)
             return
         self.queue_requests -= 1
-        LOGGER.debug('Got job %s' % uuid)
+        logger.debug('Got job %s' % uuid)
         try:
             job = yield self.getJob(uuid)
         except Exception, e:
-            LOGGER.error('Job Error: %s\n%s' % (e, format_exc()))
+            logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
         if job.function_name in self.functions:
-            LOGGER.debug('Successfully pulled job off of AMQP queue')
+            logger.debug('Successfully pulled job off of AMQP queue')
             if self.functions[job.function_name]["check_fast_cache"]:
                 job.fast_cache = yield self.getFastCache(job.uuid)
             self.job_queue.append(job)
         else:
-            LOGGER.error("Could not find function %s." % job.function_name)
+            logger.error("Could not find function %s." % job.function_name)
             return
 
     def executeJobs(self):
@@ -111,7 +113,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         try:
             data = yield self.redis_client.get("fastcache:%s" % uuid)
         except:
-            LOGGER.debug("Could not get Fast Cache for %s" % uuid)
+            logger.debug("Could not get Fast Cache for %s" % uuid)
         returnValue(data)
 
     @inlineCallbacks
@@ -122,11 +124,11 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             return
         try:
             yield self.redis_client.set("fastcache:%s" % uuid, data)
-            LOGGER.debug("Successfully set fast cache for %s" % uuid)
+            logger.debug("Successfully set fast cache for %s" % uuid)
         except Exception, e:
-            LOGGER.error("Could not set fast cache: %s" % e)
+            logger.error("Could not set fast cache: %s" % e)
 
     def logStatus(self):
-        LOGGER.debug('Completed Jobs: %d' % self.jobs_complete)
-        LOGGER.debug('Queued Jobs: %d' % len(self.job_queue))
-        LOGGER.debug('Active Jobs: %d' % len(self.active_jobs))
+        logger.debug('Completed Jobs: %d' % self.jobs_complete)
+        logger.debug('Queued Jobs: %d' % len(self.job_queue))
+        logger.debug('Active Jobs: %d' % len(self.active_jobs))

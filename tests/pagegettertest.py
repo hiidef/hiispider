@@ -16,8 +16,7 @@ import yaml
 import hashlib
 
 import logging
-import logging.handlers
-LOGGER = logging.getLogger("main")
+logger = logging.getLogger(__name__)
 
 import twisted
 twisted.internet.base.DelayedCall.debug = True
@@ -43,13 +42,13 @@ class PageGetterTestCase(unittest.TestCase):
         self.logging_handler = logging.StreamHandler()
         formatter = logging.Formatter("%(levelname)s: %(message)s %(pathname)s:%(lineno)d")
         self.logging_handler.setFormatter(formatter)
-        LOGGER.addHandler(self.logging_handler)
-        LOGGER.setLevel(logging.DEBUG)
+        logger.addHandler(self.logging_handler)
+        logger.setLevel(logging.DEBUG)
         d = self.s3.putBucket(self.uuid)
         return d
         
     def tearDown(self):
-        LOGGER.removeHandler(self.logging_handler)
+        logger.removeHandler(self.logging_handler)
         a = self.mini_web_server.shutdown()
         b = self.pg.clearCache()
         d = DeferredList([a, b])

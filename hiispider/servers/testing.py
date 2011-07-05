@@ -2,7 +2,6 @@ from uuid import UUID, uuid4
 import time
 import random
 import logging
-import logging.handlers
 import random
 
 from twisted.internet import reactor, task
@@ -13,9 +12,11 @@ from twisted.internet.defer import Deferred, inlineCallbacks, DeferredList
 from twisted.internet import task
 from twisted.internet.threads import deferToThread
 from txamqp.content import Content
-from .base import BaseServer, LOGGER
+from .base import BaseServer
 
 from twisted.web.resource import Resource
+
+logger = logging.getLogger(__name__)
 
 class TestingServer(BaseServer):
 
@@ -71,7 +72,7 @@ class TestingServer(BaseServer):
 
     @inlineCallbacks
     def shutdown(self):
-        LOGGER.info('Closing MYSQL Connnection Pool')
+        logger.info('Closing MYSQL Connnection Pool')
         yield self.mysql.close()
 
     def listUUIDs(self, username):
@@ -80,7 +81,7 @@ class TestingServer(BaseServer):
                  INNER JOIN auth_user ON spider_service.user_id = auth_user.id
                  WHERE auth_user.username = %s
               """
-        LOGGER.debug(sql)
+        logger.debug(sql)
         d = self.mysql.runQuery(sql, username)
         d.addCallback(self._listUUIDsCallback)
         return d
@@ -89,7 +90,7 @@ class TestingServer(BaseServer):
         return data
 
     def _genericErrback(self, error, type):
-        LOGGER.error("%s - %s" % (type, error))
+        logger.error("%s - %s" % (type, error))
 
     def executeUUID(self, uuid):
         sql = "SELECT account_id, type FROM spider_service WHERE uuid = %s"
@@ -106,7 +107,7 @@ class TestingServer(BaseServer):
             d.addCallback(self._getJobCallback2, spider_info, uuid)
             d.addErrback(self._genericErrback, 'Get MySQL Account')
             return d
-        LOGGER.debug('No spider_info given for uuid %s' % uuid)
+        logger.debug('No spider_info given for uuid %s' % uuid)
         return None
 
     def _getJobCallback2(self, account_info, spider_info, uuid):
@@ -115,7 +116,7 @@ class TestingServer(BaseServer):
         job = {}
         job['type'] = function_name.split('/')[1]
         if self.service_mapping and self.service_mapping.has_key(function_name):
-            LOGGER.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
+            logger.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
             function_name = self.service_mapping[function_name]
         job['exposed_function'] = self.functions[function_name]
         job['function_name'] = function_name
@@ -148,6 +149,6 @@ class TestingServer(BaseServer):
         for arg in exposed_function['optional_arguments']:
             if arg in job['account']:
                 kwargs[str(arg)] = job['account'][arg]
-        LOGGER.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
+        logger.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
         return kwargs
 

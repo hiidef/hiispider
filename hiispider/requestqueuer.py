@@ -9,7 +9,7 @@ from OpenSSL import SSL
 import logging
 
 
-LOGGER = logging.getLogger("main")
+logger = logging.getLogger(__name__)
 
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):

@@ -1,12 +1,13 @@
 from uuid import UUID
 import simplejson
+import logging
 from hashlib import sha256
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import task
 from txamqp.content import Content
-from ..base import LOGGER
 from ...amqp import amqp as AMQP
 
+logger = logging.getLogger(__name__)
 
 class AMQPMixin(object):
 
@@ -96,7 +97,7 @@ class AMQPMixin(object):
     @inlineCallbacks
     def stopJobQueue(self):
         self.jobstatusloop.stop()
-        LOGGER.info('Closing job queue')
+        logger.info('Closing job queue')
         yield self.chan.channel_close()
         chan0 = yield self.conn.channel(0)
         yield chan0.connection_close()
@@ -105,12 +106,12 @@ class AMQPMixin(object):
     def stopPageCacheQueue(self):
         self.pagecachestatusloop.stop()
         try:
-            LOGGER.info('Closing pagecache queue')
+            logger.info('Closing pagecache queue')
             yield self.pagecache_chan.channel_close()
             pagecache_chan0 = yield self.pagecache_conn.channel(0)
             yield pagecache_chan0.connection_close()
         except Exception, e:
-            LOGGER.error("Could not close pagecache queue: %s" % e)
+            logger.error("Could not close pagecache queue: %s" % e)
 
 
     @inlineCallbacks
@@ -122,7 +123,7 @@ class AMQPMixin(object):
             queue=self.amqp_queue,
             passive=True)
         self.amqp_queue_size = queue_status.fields[1]
-        LOGGER.debug('Job queue size: %d' % self.amqp_queue_size)
+        logger.debug('Job queue size: %d' % self.amqp_queue_size)
 
     @inlineCallbacks
     def pagecacheQueueStatusCheck(self):
@@ -133,17 +134,17 @@ class AMQPMixin(object):
             queue=self.amqp_queue,
             passive=True)
         self.amqp_pagecache_queue_size = pagecache_queue_status.fields[1]
-        LOGGER.debug('Pagecache queue size: %d' % self.amqp_pagecache_queue_size)
+        logger.debug('Pagecache queue size: %d' % self.amqp_pagecache_queue_size)
 
     @inlineCallbacks
     def getJobUUID(self):
         msg = yield self.queue.get()
         if msg.delivery_tag:
             try:
-                LOGGER.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
+                logger.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
                 yield self.chan.basic_ack(msg.delivery_tag)
             except Exception, e:
-                LOGGER.error('basic_ack Error: %s' % e)
+                logger.error('basic_ack Error: %s' % e)
         returnValue(UUID(bytes=msg.content.body).hex)
 
     @inlineCallbacks
@@ -153,7 +154,7 @@ class AMQPMixin(object):
         if not self.amqp_pagecache_vhost:
             return
         if self.amqp_pagecache_queue_size > 100000:
-            LOGGER.error('Pagecache Queue Size has exceeded 100,000 items')
+            logger.error('Pagecache Queue Size has exceeded 100,000 items')
             return
         pagecache_msg = {}
         if "host" in job.user_account and job.user_account['host']:
@@ -171,4 +172,4 @@ class AMQPMixin(object):
                 exchange=self.amqp_exchange,
                 content=msg)
         except Exception, e:
-            LOGGER.error('Pagecache Error: %s' % str(error))
+            logger.error('Pagecache Error: %s' % str(error))

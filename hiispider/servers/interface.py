@@ -3,6 +3,7 @@ import urllib
 import zlib
 import simplejson
 import traceback
+import logging
 
 from uuid import uuid4
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -11,11 +12,12 @@ from twisted.internet import reactor
 from twisted.web import server
 from .mixins import JobGetterMixin
 from .cassandra import CassandraServer
-from .base import LOGGER, Job
+from .base import Job
 from ..resources import InterfaceResource
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
+logger = logging.getLogger(__name__)
 
 
 class InterfaceServer(CassandraServer):
@@ -46,7 +48,7 @@ class InterfaceServer(CassandraServer):
 
     @inlineCallbacks
     def shutdown(self):
-        LOGGER.debug("%s stopping on main HTTP interface." % self.name)
+        logger.debug("%s stopping on main HTTP interface." % self.name)
         yield self.site_port.stopListening()
         yield super(InterfaceServer, self).shutdown()
 
@@ -55,7 +57,7 @@ class InterfaceServer(CassandraServer):
             self.scheduler_server,
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
-        LOGGER.info('Sending UUID to scheduler to be queued: %s' % url)
+        logger.info('Sending UUID to scheduler to be queued: %s' % url)
         return self.rq.getPage(url=url)
 
     @inlineCallbacks
@@ -69,7 +71,7 @@ class InterfaceServer(CassandraServer):
                     self.cassandra_cf_temp_content, encoded_data,
                     column=self.cassandra_cf_content)
         except Exception, e:
-            LOGGER.error("Error putting result for uuid %s on Cassandra:\n%s\n" % (uuid, e))
+            logger.error("Error putting result for uuid %s on Cassandra:\n%s\n" % (uuid, e))
             raise
         returnValue(None)
 
@@ -88,7 +90,7 @@ class InterfaceServer(CassandraServer):
         data = yield self.executeFunction(function_name, **kwargs)
 
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
-            LOGGER.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
+            logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
             encoded_data = zlib.compress(simplejson.dumps(data))
             yield self.insertData(encoded_data, uuid, user_id)
         if not uuid:

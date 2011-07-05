@@ -1,9 +1,13 @@
 
 import cPickle
+import logging
+
 from twisted.internet.defer import inlineCallbacks, returnValue
 from zlib import compress, decompress
 from .mysql import MySQLMixin
-from ..base import LOGGER, Job
+from ..base import Job
+
+logger = logging.getLogger(__name__)
 
 class JobGetterMixin(MySQLMixin):
 
@@ -41,11 +45,11 @@ class JobGetterMixin(MySQLMixin):
         try:
             data = yield self.mysql.runQuery(sql)
         except Exception, e:
-            LOGGER.debug("Could not find user %s" % uuid)
+            logger.debug("Could not find user %s" % uuid)
             raise e
         if len(data) == 0: # No results?
             message = "Could not find user %s: %s" % uuid
-            LOGGER.error(message)
+            logger.error(message)
             raise Exception(message)
         returnValue(data[0])
 
@@ -60,11 +64,11 @@ class JobGetterMixin(MySQLMixin):
         try:
             data = yield self.mysql.runQuery(sql, user_id)
         except Exception, e:
-            LOGGER.debug("Could not find user %s" % (user_id))
+            logger.debug("Could not find user %s" % (user_id))
             raise e
         if len(data) == 0:
             msg = "Could not find user %s" % (user_id)
-            LOGGER.error(msg)
+            logger.error(msg)
             raise Exception(msg)
         returnValue(data[0])
 
@@ -78,7 +82,7 @@ class JobGetterMixin(MySQLMixin):
             raise e
         if len(data) == 0: # No results?
             message = "Could not find service %s:%s" % (service_type, account_id)
-            LOGGER.error(message)
+            logger.error(message)
             raise Exception(message)
         returnValue(data[0])
 
@@ -89,10 +93,10 @@ class JobGetterMixin(MySQLMixin):
             data = yield self.redis_client.get(uuid)
             if data:
                 job = cPickle.loads(decompress(data))
-                LOGGER.debug('Found uuid in Redis: %s' % uuid)
+                logger.debug('Found uuid in Redis: %s' % uuid)
                 returnValue(job)
         except Exception, e:
-            LOGGER.debug('Could not find uuid in Redis: %s' % e)
+            logger.debug('Could not find uuid in Redis: %s' % e)
             raise e
         raise Exception('Could not find uuid in Redis: %s' % e)
 
@@ -105,4 +109,4 @@ class JobGetterMixin(MySQLMixin):
             yield self.redis_client.set(job.uuid, job_data)
             yield self.redis_client.expire(job.uuid, 60*60*24*7)
         except Exception, e:
-            LOGGER.error(str(e))
+            logger.error(str(e))

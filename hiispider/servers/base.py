@@ -13,7 +13,7 @@ from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
@@ -77,41 +77,6 @@ class BaseServer(object):
             self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
-        self._setupLogging(config.get("log_file", ''),
-            config.get("log_directory", ''),
-            config.get("log_level", 'DEBUG'))
-
-    def _setupLogging(self, log_file, log_directory, log_level):
-        path = None
-        if log_file and not log_file.startswith('/'):
-            try: path = os.path.join(log_directory, log_file)
-            except: pass
-        elif log_file:
-            path = log_file
-        if not path:
-            self.logging_handler = logging.StreamHandler()
-        else:
-            self.logging_handler = logging.handlers.TimedRotatingFileHandler(path,
-                when='D',
-                interval=1)
-        log_format = "%(name)s %(levelname)s: %(message)s %(pathname)s:%(lineno)d"
-        self.logging_handler.setFormatter(logging.Formatter(log_format))
-        # set our handler on the default logger so everything logs to the same place
-        # in the same way
-        default_logger = logging.getLogger()
-        default_logger.addHandler(self.logging_handler)
-        log_level = log_level.lower()
-        log_levels = {
-            "debug":logging.DEBUG,
-            "info":logging.INFO,
-            "warning":logging.WARNING,
-            "error":logging.ERROR,
-            "critical":logging.CRITICAL
-        }
-        if log_level in log_levels:
-            LOGGER.setLevel(log_levels[log_level])
-        else:
-            LOGGER.setLevel(logging.DEBUG)
 
     def start(self):
         start_deferred = Deferred()
@@ -119,7 +84,7 @@ class BaseServer(object):
         return start_deferred
 
     def _baseStart(self, start_deferred):
-        LOGGER.debug("Starting Base components.")
+        logger.debug("Starting Base components.")
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
             'before',
             'shutdown',
@@ -129,7 +94,7 @@ class BaseServer(object):
     @inlineCallbacks
     def shutdown(self):
         while self.rq.getPending() > 0 or self.rq.getActive() > 0:
-            LOGGER.debug("%s requests active, %s requests pending." % (
+            logger.debug("%s requests active, %s requests pending." % (
                 self.rq.getPending(),
                 self.rq.getActive()
             ))
@@ -138,8 +103,8 @@ class BaseServer(object):
             reactor.callLater(1, shutdown_deferred.callback)
             yield shutdown_deferred
         self.shutdown_trigger_id = None
-        LOGGER.critical("Server shut down.")
-        LOGGER.removeHandler(self.logging_handler)
+        logger.critical("Server shut down.")
+        logger.removeHandler(self.logging_handler)
         returnValue(True)
 
     def delta(self, func, handler):
@@ -173,11 +138,11 @@ class BaseServer(object):
     @inlineCallbacks
     def executeFunction(self, function_key, **kwargs):
         """Execute a function by key w/ kwargs and return the data."""
-        LOGGER.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
+        logger.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
         try:
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
         except Exception, e:
-            LOGGER.error("Error with %s.\n%s" % (function_key, e))
+            logger.error("Error with %s.\n%s" % (function_key, e))
             raise
         returnValue(data)
 
@@ -226,12 +191,12 @@ class BaseServer(object):
         for key in required_arguments:
             if key in self.reserved_arguments:
                 message = "Required argument name '%s' is reserved." % key
-                LOGGER.error(message)
+                logger.error(message)
                 raise Exception(message)
         for key in optional_arguments:
             if key in self.reserved_arguments:
                 message = "Optional argument name '%s' is reserved." % key
-                LOGGER.error(message)
+                logger.error(message)
                 raise Exception(message)
         # Make sure we don't already have a function with the same name.
         if function_name in self.functions:
@@ -247,7 +212,7 @@ class BaseServer(object):
             "get_job_uuid":get_job_uuid,
             "delta":self.delta_functions.get(id(func), None)
         }
-        LOGGER.info("Function %s is now callable." % function_name)
+        logger.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
             self.exposed_functions.append(function_name)
             er = ExposedResource(self, function_name)
@@ -262,7 +227,7 @@ class BaseServer(object):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.function_resource.putChild(function_name_parts[0], er)
-            LOGGER.info("%s is now available via HTTP." % function_name)
+            logger.info("%s is now available via HTTP." % function_name)
         return function_name
 
     def getPage(self, *args, **kwargs):
@@ -286,7 +251,7 @@ class BaseServer(object):
             "active_requests":self.rq.getActive(),
             "pending_requests":self.rq.getPending()
         }
-        LOGGER.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
+        logger.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
         return data
 
     def setFastCache(self, uuid, data):
@@ -298,7 +263,7 @@ class BaseServer(object):
 
     def mapJob(self, job):
         if job.function_name in self.service_mapping:
-            LOGGER.debug('Remapping resource %s to %s' % (
+            logger.debug('Remapping resource %s to %s' % (
                 job.function_name,
                 self.service_mapping[job.function_name]))
             job.function_name = self.service_mapping[job.function_name]

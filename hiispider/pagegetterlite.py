@@ -32,7 +32,7 @@ class CoordinatedUniversalTime(datetime.tzinfo):
 
 
 UTC = CoordinatedUniversalTime()
-LOGGER = logging.getLogger("main")
+logger = logging.getLogger(__name__)
 
 
 class PageGetter:
@@ -130,7 +130,7 @@ class PageGetter:
             host = host_split[len(host_split)-1]
         if host in self.negitive_cache:
             if not self.negitive_cache[host]['timeout'] < time.time():
-                LOGGER.error('Found %s in negitive cache, raising last known exception' % host)
+                logger.error('Found %s in negitive cache, raising last known exception' % host)
                 return self.negitive_cache[host]['error'].raiseException()
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
@@ -150,12 +150,12 @@ class PageGetter:
 
     def _checkForStaleContent(self, data, content_sha1, request_hash, host):
         if host in self.negitive_cache:
-            LOGGER.error('Removing %s from negitive cache' % host)
+            logger.error('Removing %s from negitive cache' % host)
             del self.negitive_cache[host]
         if "content-sha1" not in data:
             data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
-            LOGGER.debug("Raising StaleContentException (4) on %s" % request_hash)
+            logger.debug("Raising StaleContentException (4) on %s" % request_hash)
             raise StaleContentException(content_sha1)
         else:
             return data
@@ -167,7 +167,7 @@ class PageGetter:
             status = 500
         if status >= 500:
             if not host in self.negitive_cache:
-                LOGGER.error('Adding %s to negitive cache' % host)
+                logger.error('Adding %s to negitive cache' % host)
                 self.negitive_cache[host] = {
                     'timeout': time.time() + 300,
                     'retries': 1,
@@ -181,5 +181,5 @@ class PageGetter:
                     self.negitive_cache[host]['timeout'] = time.time() + 3600
                     self.negitive_cache[host]['retries'] += 1
                 self.negitive_cache[host]['error'] = error
-                LOGGER.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
+                logger.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
         error.raiseException()
