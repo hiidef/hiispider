@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import pprint
+
 from decimal import Decimal
 from uuid import uuid4
 from MySQLdb import OperationalError
@@ -40,6 +41,9 @@ class Job(object):
         self.subservice = function_name
         self.uuid = uuid
         self.user_account = user_account
+
+    def __str__(self):
+        return 'Job %s: \n%s' % (self.uuid, pprint.pformat(self.__dict__))
 
 class BaseServer(object):
 
@@ -272,6 +276,7 @@ class BaseServer(object):
             kwargs = {}
             mapping = self.inverted_args_mapping[service_name]
             f = self.functions[job.function_name]
+            logger.debug('Mapping arguments for job %s' % job)
             for key in f['required_arguments']:
                 if key in mapping and mapping[key] in job.kwargs:
                     kwargs[key] = job.kwargs[mapping[key]]
