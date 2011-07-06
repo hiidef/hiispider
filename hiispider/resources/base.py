@@ -30,7 +30,7 @@ class BaseResource(Resource):
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
-        logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
+        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = cStringIO.StringIO()
