@@ -78,8 +78,9 @@ class JobGetterMixin(MySQLMixin):
         try:
             data = yield self.mysql.runQuery(sql)
         except Exception, e:
-            message = "Could not find service %s:%s, %s" % (service_type, account_id)
-            raise e
+            message = "Could not find service %s:%s, %s" % (service_type, account_id, sql)
+            logger.error(message)
+            raise
         if len(data) == 0: # No results?
             message = "Could not find service %s:%s" % (service_type, account_id)
             logger.error(message)
