@@ -4,6 +4,7 @@ import cStringIO, gzip
 import traceback
 import simplejson
 import logging
+import pprint
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class BaseResource(Resource):
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
-        logger.debug("%s received for %s" % (data, request))
+        logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = cStringIO.StringIO()
@@ -46,3 +47,4 @@ class BaseResource(Resource):
         else:
             request.write(data)
         request.finish()
+

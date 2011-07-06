@@ -278,6 +278,10 @@ class BaseServer(object):
                 elif key in job.kwargs:
                     kwargs[key] = job.kwargs[key]
                 else:
+                    logger.error('Could not find required argument %s for function %s' % (
+                        key, job.function_name))
+                    # FIXME: we shouldn't except here because a log message and quiet
+                    # failure is enough;  we need some quiet error channel
                     raise Exception("Could not find argument: %s" % key)
             for key in f['optional_arguments']:
                 if key in mapping and mapping[key] in job.kwargs:
