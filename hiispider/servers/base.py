@@ -36,6 +36,12 @@ class Job(object):
             service_credentials,
             user_account,
             uuid=None):
+        """An encaspulated job object.  The ``function_name`` is its path on
+        the http interface of the spider, the ``service_credentials`` (called
+        ``kwargs`` on the job) are colums from the ``content_(service)account``
+        table, and the ``user_account`` is a row of the ``spider_service``
+        table along with the user's flavors username and chosen DNS host."""
+
         self.function_name = function_name
         self.kwargs = service_credentials
         self.subservice = function_name
@@ -276,15 +282,18 @@ class BaseServer(object):
             kwargs = {}
             mapping = self.inverted_args_mapping[service_name]
             f = self.functions[job.function_name]
-            logger.debug('Mapping arguments for job %s' % job)
             for key in f['required_arguments']:
                 if key in mapping and mapping[key] in job.kwargs:
                     kwargs[key] = job.kwargs[mapping[key]]
                 elif key in job.kwargs:
                     kwargs[key] = job.kwargs[key]
+                # mimic the behavior of the old job mapper, mapping args (like 'type')
+                # to the spider_service object itself in addition to the job kwargs
+                elif key in job.user_account:
+                    kwargs[key] = job.user_account[key]
                 else:
-                    logger.error('Could not find required argument %s for function %s' % (
-                        key, job.function_name))
+                    logger.error('Could not find required argument %s for function %s in %s' % (
+                        key, job.function_name, job))
                     # FIXME: we shouldn't except here because a log message and quiet
                     # failure is enough;  we need some quiet error channel
                     raise Exception("Could not find argument: %s" % key)
