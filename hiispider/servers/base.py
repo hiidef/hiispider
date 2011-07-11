@@ -221,8 +221,8 @@ class BaseServer(object):
             "optional_arguments":optional_arguments,
             "check_fast_cache":check_fast_cache,
             "get_job_uuid":get_job_uuid,
-            "delta":self.delta_functions.get(id(func), None)
-            "category"category,
+            "delta":self.delta_functions.get(id(func), None),
+            "category":category,
         }
         logger.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
