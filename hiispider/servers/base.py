@@ -41,7 +41,8 @@ class Job(object):
         ``kwargs`` on the job) are colums from the ``content_(service)account``
         table, and the ``user_account`` is a row of the ``spider_service``
         table along with the user's flavors username and chosen DNS host."""
-
+        logger.debug("Creating job %s (%s) with kwargs %s and user %s" % (
+            uuid, function_name, service_credentials, user_account))
         self.function_name = function_name
         self.kwargs = service_credentials
         self.subservice = function_name

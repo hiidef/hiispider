@@ -117,7 +117,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 # logger.debug("Got delta: %s" % str(delta))
                 for data in delta:
                     delta_id = uuid4().hex
-                    yield self.cassandra_client.insert(
+                    yield self.cassandra_client.batch_insert(
                         key=delta_id,
                         column_family=self.cassandra_cf_delta,
                         mapping={
