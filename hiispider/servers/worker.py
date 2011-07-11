@@ -75,6 +75,9 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         try:
             uuid = yield self.getJobUUID()
         except Exception, e:
+            # if we've started shutting down, ignore this error
+            if self.shutdown_trigger_id is None:
+                return
             logger.error('Dequeue Error: %s' % e)
             return
         self.queue_requests -= 1
