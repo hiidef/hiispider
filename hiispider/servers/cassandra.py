@@ -44,13 +44,20 @@ class CassandraServer(BaseServer, JobGetterMixin):
         self.disable_negative_cache = config.get("disable_negative_cache", False)
         # Redis
         self.redis_hosts = config["redis_hosts"]
-        # FIXME: change default to False after testing
-        self.delta_log_enabled = config.get('delta_log_enabled', True)
+        # deltas
+        self.delta_log_enabled = config.get('delta_log_enabled', False)
         self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
         self.delta_enabled = config.get('delta_enabled', False)
         # create the log path if required & enabled
-        if self.delta_log_enabled and not os.path.exists(self.delta_log_path):
+        if self.delta_enabled and self.delta_log_enabled and not os.path.exists(self.delta_log_path):
             os.makedirs(self.delta_log_path)
+        self.cassandra_cf_delta = config.get('cassandra_cf_delta', None)
+        self.cassandra_cf_delta_user = config.get('cassandra_cf_delta_user', None)
+        # sanity check config;  if cfs aren't set, turn deltas off
+        if not all([self.cassandra_cf_delta, self.cassandra_cf_delta_user]):
+            logger.warn('Disabling cassandra deltas; both cf_delta and'
+                ' cf_delta_user must be set in the config.')
+            self.delta_enabled = False
         self.setupJobGetter(config)
 
     def start(self):
