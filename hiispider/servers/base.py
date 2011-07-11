@@ -67,6 +67,7 @@ class BaseServer(object):
         "reservation_error"]
     functions = {}
     delta_functions = {}
+    categories = {}
     fast_cache = {}
     function_resource = None
 
@@ -169,7 +170,7 @@ class BaseServer(object):
         optional_arguments = arguments[len(arguments) - len(kwarg_defaults):]
         return required_arguments, optional_arguments
 
-    def makeCallable(self, func, interval=0, name=None, expose=False):
+    def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
         required_arguments, optional_arguments = self._getArguments(func)
         # Reservation fast cache is stored on with the reservation
         if "fast_cache" in required_arguments:
@@ -221,6 +222,7 @@ class BaseServer(object):
             "check_fast_cache":check_fast_cache,
             "get_job_uuid":get_job_uuid,
             "delta":self.delta_functions.get(id(func), None)
+            "category"category,
         }
         logger.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:

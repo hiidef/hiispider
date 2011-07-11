@@ -10,6 +10,8 @@ import pprint
 import urllib
 import traceback
 import logging
+import time
+from uuid import uuid4
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
@@ -103,14 +105,36 @@ class CassandraServer(BaseServer, JobGetterMixin):
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
             return
+        ts = time.time()
         if self.delta_enabled:
             delta_func = self.functions[job.function_name]["delta"]
             if delta_func is not None:
+                service = job.subservice.split('/')[0]
                 old_data = yield self.getData(user_id, job.uuid)
                 # TODO: make sure we check that old_data exists
                 delta = delta_func(new_data, old_data)
                 self.logDelta(job.uuid, old_data, new_data, delta)
-                logger.debug("Got delta: %s" % str(delta))
+                # logger.debug("Got delta: %s" % str(delta))
+                for data in delta:
+                    delta_id = uuid4().hex
+                    yield self.cassandra_client.insert(
+                        key=delta_id,
+                        column_family=self.cassandra_cf_delta,
+                        mapping={
+                            'data': zlib.compress(simplejson.dumps(data)),
+                            'user_id': user_id,
+                            'category': self.functions[job.function_name]['category'],
+                            'service': service,
+                            'subservice': job.subservice,
+                        },
+                    )
+                    yield self.cassandra_client.insert(
+                        key=user_id,
+                        column_family=self.cassandra_cf_delta_user,
+                        column='%0.2f:%s:%s:%s' % (ts, delta_id, service, job.subservice),
+                        value=None,
+                    )
+
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,

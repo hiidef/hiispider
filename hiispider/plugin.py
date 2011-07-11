@@ -21,7 +21,6 @@ def autodelta(func):
     DELTA_FUNCTIONS[id(func)] = autogenerate
     return func
 
-
 def delta(handler):
     def decorator(f):
         DELTA_FUNCTIONS[id(f)] = handler
@@ -29,22 +28,22 @@ def delta(handler):
     return decorator
 
 
-def expose(func=None, interval=0, name=None, memoize=False):
+def expose(func=None, interval=0, category=None, name=None, memoize=False):
     if func is not None:
-        EXPOSED_FUNCTIONS[id(func)] = {"interval":interval, "name":name}
+        EXPOSED_FUNCTIONS[id(func)] = {"interval":interval, "name":name, 'category':category}
         return func
     def decorator(f):
-        EXPOSED_FUNCTIONS[id(f)] = {"interval":interval, "name":name}
+        EXPOSED_FUNCTIONS[id(f)] = {"interval":interval, "name":name, 'category':category}
         return f
     return decorator
 
 
-def make_callable(func=None, interval=0, name=None, memoize=False):
+def make_callable(func=None, interval=0, category=None, name=None, memoize=False):
     if func is not None:
-        CALLABLE_FUNCTIONS[id(func)] = {"interval":interval, "name":name}
+        CALLABLE_FUNCTIONS[id(func)] = {"interval":interval, "name":name, 'category':category}
         return func
     def decorator(f):
-        CALLABLE_FUNCTIONS[id(f)] = {"interval":interval, "name":name}
+        CALLABLE_FUNCTIONS[id(f)] = {"interval":interval, "name":name, 'category':category}
         return f
     return decorator
 
@@ -65,7 +64,8 @@ class HiiSpiderPlugin(object):
                 self.spider.expose(
                     instance_method[1],
                     interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
-                    name=EXPOSED_FUNCTIONS[instance_id]["name"])
+                    name=EXPOSED_FUNCTIONS[instance_id]["name"],
+                    category=EXPOSED_FUNCTIONS[instance_id]["category"])
                 if instance_id in FUNCTION_ALIASES:
                     for name in FUNCTION_ALIASES[instance_id]:
                         self.spider.expose(
@@ -76,7 +76,8 @@ class HiiSpiderPlugin(object):
                 self.spider.expose(
                     instance_method[1],
                     interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
-                    name=CALLABLE_FUNCTIONS[instance_id]["name"])
+                    name=CALLABLE_FUNCTIONS[instance_id]["name"],
+                    category=CALLABLE_FUNCTIONS[instance_id]["category"])
                 if instance_id in FUNCTION_ALIASES:
                     for name in CALLABLE_FUNCTIONS[instance_id]:
                         self.spider.expose(
