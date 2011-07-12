@@ -126,8 +126,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 for delta_id, data in iterate_deltas(delta):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice),
-                    logger.info("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
+                    user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice)
+                    logger.info("Inserting delta id %s, user column: %s"  % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
                         'user_id': str(user_id),
@@ -139,12 +139,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         key=str(delta_id),
                         column_family=self.cassandra_cf_delta,
                         mapping=mapping)
-                    logger.debug("Inserting user column: %s" % user_column)
                     yield self.cassandra_client.insert(
                         key=str(user_id),
                         column_family=self.cassandra_cf_delta_user,
                         column=user_column,
-                        value='',
+                        value=''
                     )
 
         yield self.cassandra_client.insert(
