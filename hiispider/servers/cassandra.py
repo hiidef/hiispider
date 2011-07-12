@@ -128,18 +128,20 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     service = job.subservice.split('/')[0]
                     user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice),
                     logger.info("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
+                    mapping = {
+                        'data': zlib.compress(simplejson.dumps(data)),
+                        'user_id': str(user_id),
+                        'category': category,
+                        'service': service,
+                        'subservice': job.subservice,
+                    }
                     yield self.cassandra_client.batch_insert(
-                        key=delta_id,
+                        key=str(delta_id),
                         column_family=self.cassandra_cf_delta,
-                        mapping = {
-                            'data': zlib.compress(simplejson.dumps(data)),
-                            'user_id': str(user_id),
-                            'category': category,
-                            'service': service,
-                            'subservice': job.subservice,
-                        })
+                        mapping=mapping)
+                    logger.debug("Inserting user column: %s" % user_column)
                     yield self.cassandra_client.insert(
-                        key=int(user_id),
+                        key=str(user_id),
                         column_family=self.cassandra_cf_delta_user,
                         column=user_column,
                         value='',
