@@ -106,7 +106,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             category = self.functions[job.function_name]['category']
             service = job.subservice.split('/')[0]
             user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice),
-            loggger.debug("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
+            loggger.info("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
             yield self.cassandra_client.batch_insert(
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
@@ -136,7 +136,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 # TODO: make sure we check that old_data exists
                 delta = delta_func(new_data, old_data)
                 self.logDelta(job.uuid, old_data, new_data, delta)
-                # logger.debug("Got delta: %s" % str(delta))
+                logger.debug("Got delta: %s" % str(delta))
                 if isinstance(delta, dict):
                     # use keys as delta ids
                     for key,value in delta.iteritems():
