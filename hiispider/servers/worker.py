@@ -64,7 +64,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         yield super(WorkerServer, self).shutdown()
 
     def dequeue(self):
-        self.logStatus()
+        # self.logStatus()
         while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
             logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
@@ -107,12 +107,14 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
 
     @inlineCallbacks
     def executeJob(self, job):
+        prev_complete = self.jobs_complete
         try:
             yield super(WorkerServer, self).executeJob(job)
             self.jobs_complete += 1
         except DeleteReservationException:
             yield self.deleteReservation(job.uuid)
-        self.logStatus()
+        if (prev_complete != self.jobs_complete) or len(self.active_jobs):
+            self.logStatus()
         yield self.clearPageCache(job)
 
     @inlineCallbacks

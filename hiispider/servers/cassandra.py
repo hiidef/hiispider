@@ -101,28 +101,14 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def executeJob(self, job):
-        def insertDelta(delta_id, data, job, user_id, ts):
-            """Actually insert data into the cassandra."""
-            category = self.functions[job.function_name]['category']
-            service = job.subservice.split('/')[0]
-            user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice),
-            loggger.info("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
-            yield self.cassandra_client.batch_insert(
-                key=delta_id,
-                column_family=self.cassandra_cf_delta,
-                mapping = {
-                    'data': zlib.compress(simplejson.dumps(data)),
-                    'user_id': user_id,
-                    'category': category,
-                    'service': service,
-                    'subservice': job.subservice,
-                })
-            yield self.cassandra_client.insert(
-                key=user_id,
-                column_family=self.cassandra_cf_delta_user,
-                column=user_column,
-                value=None,
-            )
+        def iterate_deltas(deltas):
+            if isinstance(deltas, dict):
+                for key,value in delta.iteritems():
+                    yield key, value
+            else:
+                for data in deltas:
+                    yield uuid4().hex, data
+
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
@@ -136,15 +122,28 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 # TODO: make sure we check that old_data exists
                 delta = delta_func(new_data, old_data)
                 self.logDelta(job.uuid, old_data, new_data, delta)
-                logger.debug("Got delta: %s" % str(delta))
-                if isinstance(delta, dict):
-                    # use keys as delta ids
-                    for key,value in delta.iteritems():
-                        insertDelta(key, value, job, user_id, ts)
-                else:
-                    for data in delta:
-                        delta_id = uuid4().hex
-                        insertDelta(delta_id, data, job, user_id, ts)
+                logger.debug("Got delta: %s ..." % str(delta)[:1000])
+                for delta_id, data in iterate_deltas(delta):
+                    category = self.functions[job.function_name]['category']
+                    service = job.subservice.split('/')[0]
+                    user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice),
+                    logger.info("Inserting delta id %s, user column: %s"  % (delta_id, user_column))
+                    yield self.cassandra_client.batch_insert(
+                        key=delta_id,
+                        column_family=self.cassandra_cf_delta,
+                        mapping = {
+                            'data': zlib.compress(simplejson.dumps(data)),
+                            'user_id': int(user_id),
+                            'category': category,
+                            'service': service,
+                            'subservice': job.subservice,
+                        })
+                    yield self.cassandra_client.insert(
+                        key=int(user_id),
+                        column_family=self.cassandra_cf_delta_user,
+                        column=user_column,
+                        value=None,
+                    )
 
         yield self.cassandra_client.insert(
             str(user_id),
