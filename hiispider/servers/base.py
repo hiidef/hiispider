@@ -159,20 +159,32 @@ class BaseServer(object):
         returnValue(data)
 
     def _getArguments(self, func):
-        argspec = inspect.getargspec(func)
-        # Get required / optional arguments
-        arguments = argspec[0]
-        kwarg_defaults = argspec[3]
-        if len(arguments) > 0 and arguments[0:1][0] == 'self':
-            arguments.pop(0)
-        if kwarg_defaults is None:
-            kwarg_defaults = []
-        required_arguments = arguments[0:len(arguments) - len(kwarg_defaults)]
-        optional_arguments = arguments[len(arguments) - len(kwarg_defaults):]
-        return required_arguments, optional_arguments
+        """Get required or optional arguments for a plugin method.  This
+        function returns a quadruple similar to inspect.getargspec (upon
+        which it is based).  The argument ``self`` is always ignored.  If
+        varargs or keywords (*args or **kwargs) are available, the caller
+        should call call with all available arguments as kwargs.  If there
+        are positional arguments required by the original function not
+        present in the kwargs from the job, be sure to add that to the keyword
+        arguments map in your spider config.  Unlike getargspec, the first element
+        contains only required (positional) arguments, and the third element
+        contains only keyword arguments in the argspec, not their defaults."""
+        # this returns (args, varargs, keywords, defaults)
+        argspec = list(inspect.getargspec(func))
+        if argspec[0] and argspec[0][0] == 'self':
+            argspec[0] = argspec[0][1:]
+        args, defaults = argspec[0], argspec[3]
+        defaults = [] if defaults is None else defaults
+        argspec[0] = args[0:len(args) - len(defaults)]
+        argspec[3] = args[len(args) - len(defaults):]
+        return argspec
 
     def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
-        required_arguments, optional_arguments = self._getArguments(func)
+        argspec = self._getArguments(func)
+        required_arguments, optional_arguments = argspec[0], argspec[3]
+        variadic = all(argspec[1:3])
+        if variadic:
+            required_arguments, optional_arguments = [], []
         # Reservation fast cache is stored on with the reservation
         if "fast_cache" in required_arguments:
             del required_arguments[required_arguments.index("fast_cache")]
@@ -221,6 +233,7 @@ class BaseServer(object):
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,
             "check_fast_cache":check_fast_cache,
+            "variadic":variadic,
             "get_job_uuid":get_job_uuid,
             "delta":self.delta_functions.get(id(func), None),
             "category":category,
@@ -285,26 +298,38 @@ class BaseServer(object):
             kwargs = {}
             mapping = self.inverted_args_mapping[service_name]
             f = self.functions[job.function_name]
-            for key in f['required_arguments']:
-                if key in mapping and mapping[key] in job.kwargs:
-                    kwargs[key] = job.kwargs[mapping[key]]
-                elif key in job.kwargs:
-                    kwargs[key] = job.kwargs[key]
-                # mimic the behavior of the old job mapper, mapping args (like 'type')
-                # to the spider_service object itself in addition to the job kwargs
-                elif key in job.user_account:
-                    kwargs[key] = job.user_account[key]
-                else:
-                    logger.error('Could not find required argument %s for function %s in %s' % (
-                        key, job.function_name, job))
-                    # FIXME: we shouldn't except here because a log message and quiet
-                    # failure is enough;  we need some quiet error channel
-                    raise Exception("Could not find argument: %s" % key)
-            for key in f['optional_arguments']:
-                if key in mapping and mapping[key] in job.kwargs:
-                    kwargs[key] = job.kwargs[mapping[key]]
-                elif key in job.kwargs:
-                    kwargs[key] = job.kwargs[key]
+            # add in support for completely variadic methods;  these are methods
+            # that accept *args, **kwargs in some fashion (usually because of a
+            # decorator like inlineCallbacks);  note that these will be called
+            # with the full amt of kwargs pulled in by the jobGetter and should
+            # therefore take **kwargs somewhere underneath and have all of its
+            # real positional args mapped in the inverted_args_mapping
+            if f['variadic']:
+                kwargs = dict(job.kwargs)
+                for key,value in mapping.iteritems():
+                    if value in kwargs:
+                        kwargs[key] = kwargs.pop(value)
+            else:
+                for key in f['required_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+                    # mimic the behavior of the old job mapper, mapping args (like 'type')
+                    # to the spider_service object itself in addition to the job kwargs
+                    elif key in job.user_account:
+                        kwargs[key] = job.user_account[key]
+                    else:
+                        logger.error('Could not find required argument %s for function %s in %s' % (
+                            key, job.function_name, job))
+                        # FIXME: we shouldn't except here because a log message and quiet
+                        # failure is enough;  we need some quiet error channel
+                        raise Exception("Could not find argument: %s" % key)
+                for key in f['optional_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
             job.kwargs = kwargs
         job.mapped = True
         return job
