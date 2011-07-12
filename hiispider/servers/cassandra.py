@@ -133,7 +133,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         column_family=self.cassandra_cf_delta,
                         mapping = {
                             'data': zlib.compress(simplejson.dumps(data)),
-                            'user_id': int(user_id),
+                            'user_id': str(user_id),
                             'category': category,
                             'service': service,
                             'subservice': job.subservice,
@@ -142,7 +142,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         key=int(user_id),
                         column_family=self.cassandra_cf_delta_user,
                         column=user_column,
-                        value=None,
+                        value='',
                     )
 
         yield self.cassandra_client.insert(
