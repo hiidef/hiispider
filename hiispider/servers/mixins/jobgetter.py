@@ -18,12 +18,15 @@ class JobGetterMixin(MySQLMixin):
     def getJob(self, uuid):
         try:
             job = yield self._getCachedJob(uuid)
+            logger.debug("Found job %s (%s) in cache." % (job.subservice, uuid))
             returnValue(job)
         except:
             pass
         user_account = yield self._getUserAccount(uuid)
         service_type = user_account['type'].split('/')[0].lower()
         account_id = user_account['account_id']
+        if service_type.startswith('custom_'):
+            returnValue(None)
         service_credentials = yield self._getServiceCredentials(service_type, account_id)
         job = Job(
             function_name=user_account['type'],

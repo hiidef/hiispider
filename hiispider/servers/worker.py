@@ -87,6 +87,10 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         except Exception, e:
             logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
+        # getJob can return None if it encounters an error that is not 
+        # exceptional, like seeing custom_* jobs in the scheduler
+        if job is None:
+            return
         if job.function_name in self.functions:
             logger.debug('Successfully pulled job off of AMQP queue')
             if self.functions[job.function_name]["check_fast_cache"]:
