@@ -100,9 +100,9 @@ class JobGetterMixin(MySQLMixin):
                 logger.debug('Found uuid in Redis: %s' % uuid)
                 returnValue(job)
         except Exception, e:
-            logger.debug('Could not find uuid in Redis: %s' % e)
-            raise e
-        raise Exception('Could not find uuid in Redis: %s' % e)
+            logger.debug('Could not find uuid %s in Redis: %s' % (uuid,e))
+            raise
+        raise Exception('Could not find uuid in Redis: %s' % uuid)
 
     @inlineCallbacks
     def _setJobCache(self, job):
