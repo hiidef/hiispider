@@ -20,6 +20,26 @@ from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
+# mock logd stats collection so that stats logged by this library do not cause
+# any problems if a configured stats object is not provided
+
+class Noop(object):
+    def __getattr__(self, attr):
+        return self.noop
+
+    def noop(self, *args, **kwargs):
+        return
+
+class StatsNoop(Noop):
+    def __init__(self):
+        super(StatsNoop, self).__init__(self)
+        self.timer = Noop()
+
+    def timed(self, *args, **kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
 
 def invert(d):
     """Invert a dictionary."""
@@ -90,6 +110,8 @@ class BaseServer(object):
         else:
             self.pg = pg
 
+        self.stats = config.get('stats', StatsNoop())
+
     def start(self):
         start_deferred = Deferred()
         reactor.callWhenRunning(self._baseStart, start_deferred)
@@ -141,6 +163,7 @@ class BaseServer(object):
         except Exception, e:
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
+            logger.debug("Received exception %s" % e)
             raise
         # If the data is None, there's nothing to store.
         if job.uuid in self.active_jobs:
