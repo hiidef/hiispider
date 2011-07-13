@@ -32,14 +32,13 @@ class Noop(object):
 
 class StatsNoop(Noop):
     def __init__(self):
-        super(StatsNoop, self).__init__(self)
+        super(StatsNoop, self).__init__()
         self.timer = Noop()
 
     def timed(self, *args, **kwargs):
         def decorator(f):
             return f
         return decorator
-
 
 def invert(d):
     """Invert a dictionary."""
