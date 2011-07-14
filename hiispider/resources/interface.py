@@ -55,7 +55,6 @@ class InterfaceResource(BaseResource):
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
 
     def _showReservationCallback(self, data, uuids):
-        print data[0][1]
         response = {}
         for i in range(0, len(uuids)):
             if data[i][0] == True:
