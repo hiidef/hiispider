@@ -107,13 +107,14 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     yield key, value
             else:
                 for data in deltas:
-                    yield uuid4().hex, data
+                    ts = time.time()
+                    delta_uuid = '%0.2f:%s' % (ts, uuid4().hex)
+                    yield delta_uuid, data
 
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
             return
-        ts = time.time()
         if self.delta_enabled:
             delta_func = self.functions[job.function_name]["delta"]
             if delta_func is not None:
@@ -126,14 +127,17 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 for delta_id, data in iterate_deltas(delta):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = '%0.2f:%s:%s:%s' % (ts, delta_id, category, job.subservice)
-                    logger.info("Inserting delta id %s, user column: %s"  % (str(delta_id), user_column))
+                    user_column = '%s:%s:%s' % (delta_id, category, job.subservice)
+                    logger.info("Inserting delta id %s to user_column: %s" % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
+                        'old_data': zlib.compress(simplejson.dumps(old_data)),
+                        'new_data': zlib.compress(simplejson.dumps(new_data)),
                         'user_id': str(user_id),
                         'category': category,
                         'service': service,
                         'subservice': job.subservice,
+                        'uuid': job.uuid,
                     }
                     yield self.cassandra_client.batch_insert(
                         key=str(delta_id),
