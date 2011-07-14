@@ -132,6 +132,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
                         'old_data': zlib.compress(simplejson.dumps(old_data)),
+                        'new_data': zlib.compress(simplejson.dumps(new_data)),
                         'user_id': str(user_id),
                         'category': category,
                         'service': service,
