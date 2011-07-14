@@ -1,9 +1,9 @@
 import inspect
 import logging
-import logging.handlers
 import os
 import time
 import pprint
+
 from decimal import Decimal
 from uuid import uuid4
 from MySQLdb import OperationalError
@@ -11,16 +11,49 @@ from twisted.web.resource import Resource
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, maybeDeferred
+from twisted.internet.defer import inlineCallbacks, returnValue
+
+PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
+logger = logging.getLogger(__name__)
+
 from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
-PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 
-LOGGER = logging.getLogger("main")
+def invert(d):
+    """Invert a dictionary."""
+    return dict([(v, k) for (k, v) in d.iteritems()])
+
+class Job(object):
+
+    mapped = False
+    fast_cache = None
+    uuid = None
+
+    def __init__(self,
+            function_name,
+            service_credentials,
+            user_account,
+            uuid=None):
+        """An encaspulated job object.  The ``function_name`` is its path on
+        the http interface of the spider, the ``service_credentials`` (called
+        ``kwargs`` on the job) are colums from the ``content_(service)account``
+        table, and the ``user_account`` is a row of the ``spider_service``
+        table along with the user's flavors username and chosen DNS host."""
+        logger.debug("Creating job %s (%s) with kwargs %s and user %s" % (
+            uuid, function_name, service_credentials, user_account))
+        self.function_name = function_name
+        self.kwargs = service_credentials
+        self.subservice = function_name
+        self.uuid = uuid
+        self.user_account = user_account
+
+    def __str__(self):
+        return 'Job %s: \n%s' % (self.uuid, pprint.pformat(self.__dict__))
 
 class BaseServer(object):
-    
+
     exposed_functions = []
     exposed_function_resources = {}
     logging_handler = None
@@ -29,145 +62,147 @@ class BaseServer(object):
     start_time = time.time()
     active_jobs = {}
     reserved_arguments = [
-        "reservation_function_name", 
-        "reservation_created", 
-        "reservation_next_request", 
+        "reservation_function_name",
+        "reservation_created",
+        "reservation_next_request",
         "reservation_error"]
     functions = {}
     delta_functions = {}
-    reservation_fast_caches = {}
+    categories = {}
+    fast_cache = {}
     function_resource = None
-    
-    def __init__(self,
-                 aws_access_key_id=None,
-                 aws_secret_access_key=None,
-                 max_simultaneous_requests=100,
-                 max_requests_per_host_per_second=0,
-                 max_simultaneous_requests_per_host=0,
-                 log_file=None,
-                 log_directory=None,
-                 log_level="debug",
-                 port=8080,
-                 pg=None):
-        self.start_deferred = Deferred()
-        self.rq = RequestQueuer( 
-            max_simultaneous_requests=int(max_simultaneous_requests), 
-            max_requests_per_host_per_second=int(max_requests_per_host_per_second), 
-            max_simultaneous_requests_per_host=int(max_simultaneous_requests_per_host))
+
+    def __init__(self, config, pg=None):
+        # Resource Mappings
+        self.service_mapping = config["service_mapping"]
+        self.service_args_mapping = config["service_args_mapping"]
+        self.inverted_args_mapping = dict([(s[0], invert(s[1]))
+            for s in self.service_args_mapping.items()])
+        # Request Queuer
+        self.rq = RequestQueuer(
+            max_simultaneous_requests=config["max_simultaneous_requests"],
+            max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
+            max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
         self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
         self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
-        self.aws_access_key_id=aws_access_key_id
-        self.aws_secret_access_key=aws_secret_access_key
         if pg is None:
             self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
-        self._setupLogging(log_file, log_directory, log_level)
-
-    def _setupLogging(self, log_file, log_directory, log_level):
-        if log_directory is None:
-            self.logging_handler = logging.StreamHandler()
-        else:
-            self.logging_handler = logging.handlers.TimedRotatingFileHandler(
-                os.path.join(log_directory, log_file), 
-                when='D', 
-                interval=1)
-        log_format = "%(levelname)s: %(message)s %(pathname)s:%(lineno)d"
-        self.logging_handler.setFormatter(logging.Formatter(log_format))
-        LOGGER.addHandler(self.logging_handler)
-        log_level = log_level.lower()
-        log_levels = {
-            "debug":logging.DEBUG, 
-            "info":logging.INFO, 
-            "warning":logging.WARNING, 
-            "error":logging.ERROR,
-            "critical":logging.CRITICAL
-        }
-        if log_level in log_levels:
-            LOGGER.setLevel(log_levels[log_level])
-        else:
-            LOGGER.setLevel(logging.DEBUG)
 
     def start(self):
-        reactor.callWhenRunning(self._baseStart)
-        return self.start_deferred
-    
-    def _baseStart(self):
+        start_deferred = Deferred()
+        reactor.callWhenRunning(self._baseStart, start_deferred)
+        return start_deferred
+
+    def _baseStart(self, start_deferred):
+        logger.debug("Starting Base components.")
         self.shutdown_trigger_id = reactor.addSystemEventTrigger(
-            'before', 
-            'shutdown', 
+            'before',
+            'shutdown',
             self.shutdown)
-        LOGGER.critical("Starting.")
-        self._baseStartCallback2(None)
+        start_deferred.callback(True)
 
-    def _baseStartCallback2(self, data):
-        self.start_deferred.callback(True)
-
-    def _startHandleError(self, data, error):
-        self.start_deferred.errback(error)
-        
+    @inlineCallbacks
     def shutdown(self):
-        LOGGER.debug("Waiting for shutdown.")
-        d = Deferred()
-        reactor.callLater(0, self._waitForShutdown, d)
-        return d
-
-    def _waitForShutdown(self, shutdown_deferred):          
-        if self.rq.getPending() > 0 or self.rq.getActive() > 0:
-            LOGGER.debug("Waiting for shutdown.")
-            reactor.callLater(1, self._waitForShutdown, shutdown_deferred)
-            return
+        while self.rq.getPending() > 0 or self.rq.getActive() > 0:
+            logger.debug("%s requests active, %s requests pending." % (
+                self.rq.getPending(),
+                self.rq.getActive()
+            ))
+            shutdown_deferred = Deferred()
+            # Call the Deferred after a second to continue the loop.
+            reactor.callLater(1, shutdown_deferred.callback)
+            yield shutdown_deferred
         self.shutdown_trigger_id = None
-        LOGGER.debug("Shut down.")
-        LOGGER.removeHandler(self.logging_handler)
-        shutdown_deferred.callback(True)
+        logger.critical("Server shut down.")
+        logger.removeHandler(self.logging_handler)
+        returnValue(True)
 
-    def _exposedFunctionErrback2(self, error, data, function_name, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        LOGGER.error("Could not put results of %s, %s on Cassandra.\n%s" % (function_name, uuid, error))
-        return data
-        
-    def _exposedFunctionCallback2(self, s3_callback_data, data, uuid):
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-        
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
-        
+
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
-    def makeCallable(self, func, interval=0, name=None, expose=False):
-        argspec = inspect.getargspec(func)
-        # Get required / optional arguments
-        arguments = argspec[0]
-        if len(arguments) > 0 and arguments[0:1][0] == 'self':
-            arguments.pop(0)
-        kwarg_defaults = argspec[3]
-        if kwarg_defaults is None:
-            kwarg_defaults = []
-        required_arguments = arguments[0:len(arguments) - len(kwarg_defaults)]
-        optional_arguments = arguments[len(arguments) - len(kwarg_defaults):]
+    @inlineCallbacks
+    def executeJob(self, job):
+        if not job.mapped:
+            job = self.mapJob(job)
+        f = self.functions[job.function_name]
+        if job.uuid is not None:
+            self.active_jobs[job.uuid] = True
+        if f["get_job_uuid"]:
+            job.kwargs["job_uuid"] = job.uuid
+        if f["check_fast_cache"]:
+            job.kwargs["fast_cache"] = job.fast_cache
+        try:
+            data = yield self.executeFunction(job.function_name, **job.kwargs)
+        except Exception, e:
+            if job.uuid in self.active_jobs:
+                del self.active_jobs[job.uuid]
+            raise
+        # If the data is None, there's nothing to store.
+        if job.uuid in self.active_jobs:
+            del self.active_jobs[job.uuid]
+        returnValue(data)
+
+    @inlineCallbacks
+    def executeFunction(self, function_key, **kwargs):
+        """Execute a function by key w/ kwargs and return the data."""
+        logger.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
+        try:
+            data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
+        except Exception, e:
+            logger.error("Error with %s.\n%s" % (function_key, e))
+            raise
+        returnValue(data)
+
+    def _getArguments(self, func):
+        """Get required or optional arguments for a plugin method.  This
+        function returns a quadruple similar to inspect.getargspec (upon
+        which it is based).  The argument ``self`` is always ignored.  If
+        varargs or keywords (*args or **kwargs) are available, the caller
+        should call call with all available arguments as kwargs.  If there
+        are positional arguments required by the original function not
+        present in the kwargs from the job, be sure to add that to the keyword
+        arguments map in your spider config.  Unlike getargspec, the first element
+        contains only required (positional) arguments, and the third element
+        contains only keyword arguments in the argspec, not their defaults."""
+        # this returns (args, varargs, keywords, defaults)
+        argspec = list(inspect.getargspec(func))
+        if argspec[0] and argspec[0][0] == 'self':
+            argspec[0] = argspec[0][1:]
+        args, defaults = argspec[0], argspec[3]
+        defaults = [] if defaults is None else defaults
+        argspec[0] = args[0:len(args) - len(defaults)]
+        argspec[3] = args[len(args) - len(defaults):]
+        return argspec
+
+    def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
+        argspec = self._getArguments(func)
+        required_arguments, optional_arguments = argspec[0], argspec[3]
+        variadic = all(argspec[1:3])
+        if variadic:
+            required_arguments, optional_arguments = [], []
         # Reservation fast cache is stored on with the reservation
-        if "reservation_fast_cache" in required_arguments:
-            del required_arguments[required_arguments.index("reservation_fast_cache")]
-            check_reservation_fast_cache = True
-        elif "reservation_fast_cache" in optional_arguments:
-            del optional_arguments[optional_arguments.index("reservation_fast_cache")]
-            check_reservation_fast_cache = True
+        if "fast_cache" in required_arguments:
+            del required_arguments[required_arguments.index("fast_cache")]
+            check_fast_cache = True
+        elif "fast_cache" in optional_arguments:
+            del optional_arguments[optional_arguments.index("fast_cache")]
+            check_fast_cache = True
         else:
-            check_reservation_fast_cache = False
+            check_fast_cache = False
         # Indicates whether to send the reservation's UUID to the function
-        if "reservation_uuid" in required_arguments:
-            del required_arguments[required_arguments.index("reservation_uuid")]
-            get_reservation_uuid = True
-        elif "reservation_uuid" in optional_arguments:
-            del optional_arguments[optional_arguments.index("reservation_uuid")]
-            get_reservation_uuid = True
+        if "job_uuid" in required_arguments:
+            del required_arguments[required_arguments.index("job_uuid")]
+            get_job_uuid = True
+        elif "job_uuid" in optional_arguments:
+            del optional_arguments[optional_arguments.index("job_uuid")]
+            get_job_uuid = True
         else:
-            get_reservation_uuid = False
+            get_job_uuid = False
         # Get function name, usually class/method
         if name is not None:
             function_name = name
@@ -179,29 +214,31 @@ class BaseServer(object):
         # Make sure the function isn't using any reserved arguments.
         for key in required_arguments:
             if key in self.reserved_arguments:
-                message = "Required argument name '%s' used in function %s is reserved." % (key, function_name)
-                LOGGER.error(message)
+                message = "Required argument name '%s' is reserved." % key
+                logger.error(message)
                 raise Exception(message)
         for key in optional_arguments:
             if key in self.reserved_arguments:
-                message = "Optional argument name '%s' used in function %s is reserved." % (key, function_name)
-                LOGGER.error(message)
+                message = "Optional argument name '%s' is reserved." % key
+                logger.error(message)
                 raise Exception(message)
         # Make sure we don't already have a function with the same name.
         if function_name in self.functions:
-            raise Exception("A method or function with the name %s is already callable." % function_name)
+            raise Exception("Function %s is already callable." % function_name)
         # Add it to our list of callable functions.
         self.functions[function_name] = {
             "function":func,
             "id":id(func),
-            "has_delta":id(func) in self.delta_functions,
             "interval":interval,
             "required_arguments":required_arguments,
             "optional_arguments":optional_arguments,
-            "check_reservation_fast_cache":check_reservation_fast_cache,
-            "get_reservation_uuid":get_reservation_uuid
+            "check_fast_cache":check_fast_cache,
+            "variadic":variadic,
+            "get_job_uuid":get_job_uuid,
+            "delta":self.delta_functions.get(id(func), None),
+            "category":category,
         }
-        LOGGER.info("Function %s is now callable." % function_name)
+        logger.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
             self.exposed_functions.append(function_name)
             er = ExposedResource(self, function_name)
@@ -216,19 +253,19 @@ class BaseServer(object):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.function_resource.putChild(function_name_parts[0], er)
-            LOGGER.info("Function %s is now available via the HTTP interface." % function_name)
+            logger.info("%s is now available via HTTP." % function_name)
         return function_name
 
     def getPage(self, *args, **kwargs):
         return self.pg.getPage(*args, **kwargs)
-        
+
     def setHostMaxRequestsPerSecond(self, *args, **kwargs):
         return self.rq.setHostMaxRequestsPerSecond(*args, **kwargs)
 
     def setHostMaxSimultaneousRequests(self, *args, **kwargs):
         return self.rq.setHostMaxSimultaneousRequests(*args, **kwargs)
 
-    def getServerData(self):    
+    def getServerData(self):
         running_time = time.time() - self.start_time
         active_requests_by_host = self.rq.getActiveRequestsByHost()
         pending_requests_by_host = self.rq.getPendingRequestsByHost()
@@ -240,66 +277,62 @@ class BaseServer(object):
             "active_requests":self.rq.getActive(),
             "pending_requests":self.rq.getPending()
         }
-        LOGGER.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
+        logger.debug("Got server data:\n%s" % PRETTYPRINTER.pformat(data))
         return data
 
-    def setReservationFastCache(self, uuid, data):
+    def setFastCache(self, uuid, data):
         if not isinstance(data, str):
-            raise Exception("ReservationFastCache must be a string.")
+            raise Exception("FastCache must be a string.")
         if uuid is None:
             return None
-        self.reservation_fast_caches[uuid] = data
+        self.fast_cache[uuid] = data
 
-    def callExposedFunction(self, func, kwargs, function_name, user_id=None, reservation_fast_cache=None, uuid=None):
-        if uuid is not None:
-            self.active_jobs[uuid] = True
-        if self.functions[function_name]["get_reservation_uuid"]:
-            kwargs["reservation_uuid"] = uuid 
-        if self.functions[function_name]["check_reservation_fast_cache"] and \
-                reservation_fast_cache is not None:
-            kwargs["reservation_fast_cache"] = reservation_fast_cache
-        elif self.functions[function_name]["check_reservation_fast_cache"]:
-            kwargs["reservation_fast_cache"] = None
-        d = maybeDeferred(func, **kwargs)
-        d.addCallback(self._callExposedFunctionCallback, function_name, user_id, uuid)
-        d.addErrback(self._callExposedFunctionErrback, function_name, uuid)
-        return d
-
-    def _callExposedFunctionErrback(self, error, function_name, uuid):
-        if uuid is not None and uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        if uuid is None:
-            LOGGER.error("Error with %s.\n%s" % (function_name, error))
-        else:
-            LOGGER.error("Error with %s.\nUUID:%s\n%s" % (
-                function_name, 
-                uuid,
-                error))
-        return error
-
-    def _callExposedFunctionCallback(self, data, function_name, user_id, uuid):
-        LOGGER.debug("Function %s returned successfully." % (function_name))
-        # If the UUID is None, this is a one-off type of thing.
-        if uuid is None:
-            return data
-        # If the data is None, there's nothing to store.
-        if uuid in self.active_jobs:
-            del self.active_jobs[uuid]
-        return data
-
-    def executeReservation(self, function_name, **kwargs):
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        d = self.callExposedFunction(
-            self.functions[function_name]["function"], 
-            kwargs, 
-            function_name)
-        return d
+    def mapJob(self, job):
+        if job.function_name in self.service_mapping:
+            logger.debug('Remapping resource %s to %s' % (
+                job.function_name,
+                self.service_mapping[job.function_name]))
+            job.function_name = self.service_mapping[job.function_name]
+        service_name = job.function_name.split('/')[0]
+        if service_name in self.inverted_args_mapping:
+            kwargs = {}
+            mapping = self.inverted_args_mapping[service_name]
+            f = self.functions[job.function_name]
+            # add in support for completely variadic methods;  these are methods
+            # that accept *args, **kwargs in some fashion (usually because of a
+            # decorator like inlineCallbacks);  note that these will be called
+            # with the full amt of kwargs pulled in by the jobGetter and should
+            # therefore take **kwargs somewhere underneath and have all of its
+            # real positional args mapped in the inverted_args_mapping
+            if f['variadic']:
+                kwargs = dict(job.kwargs)
+                for key,value in mapping.iteritems():
+                    if value in kwargs:
+                        kwargs[key] = kwargs.pop(value)
+            else:
+                for key in f['required_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+                    # mimic the behavior of the old job mapper, mapping args (like 'type')
+                    # to the spider_service object itself in addition to the job kwargs
+                    elif key in job.user_account:
+                        kwargs[key] = job.user_account[key]
+                    else:
+                        logger.error('Could not find required argument %s for function %s in %s' % (
+                            key, job.function_name, job))
+                        # FIXME: we shouldn't except here because a log message and quiet
+                        # failure is enough;  we need some quiet error channel
+                        raise Exception("Could not find argument: %s" % key)
+                for key in f['optional_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+            job.kwargs = kwargs
+        job.mapped = True
+        return job
 
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):

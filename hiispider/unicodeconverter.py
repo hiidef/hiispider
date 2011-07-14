@@ -29,14 +29,14 @@ except ImportError:
     pass
 
 def convertToUnicode( s ):
-    s = UnicodeConverter( s ).unicode 
+    s = UnicodeConverter( s ).unicode
     if isinstance( s, unicode ):
         return s
     else:
         return None
-        
+
 def convertToUTF8( s ):
-    s = UnicodeConverter( s ).unicode 
+    s = UnicodeConverter( s ).unicode
     if isinstance( s, unicode ):
         return s.encode("utf-8")
     else:
@@ -56,18 +56,18 @@ class UnicodeConverter:
                         "x-sjis" : "shift-jis" }
 
     def __init__(self, markup):
-        
+
         self.markup = markup
         documentEncoding = None
         sniffedEncoding = None
-        
+
         self.triedEncodings = []
-        
+
         if markup == '' or isinstance(markup, unicode):
             self.originalEncoding = None
             self.unicode = unicode(markup)
             return
-        
+
         u = None
 
         # If no luck and we have auto-detection library, try that:

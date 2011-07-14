@@ -1,269 +1,187 @@
-from uuid import UUID, uuid4
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""SchedulerServer base."""
+
+from uuid import UUID
+
 import time
 import random
+import traceback
 import logging
-import logging.handlers
-import random
+
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.enterprise import adbapi
-from MySQLdb.cursors import DictCursor
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredList
-from twisted.internet import task
-from twisted.internet.threads import deferToThread
+from twisted.internet.defer import inlineCallbacks, returnValue
 from txamqp.content import Content
-from .base import BaseServer, LOGGER
-from ..resources import SchedulerResource
-from ..amqp import amqp as AMQP
+from .base import BaseServer
+from .mixins import MySQLMixin, AMQPMixin
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 from twisted.web.resource import Resource
 
 
-class SchedulerServer(BaseServer):
+class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
-    name = "HiiSpider Schedule Server UUID: %s" % str(uuid4())
     heap = []
+    # TODO: make this a set()
     unscheduled_items = []
     enqueueCallLater = None
-    statusloop = None
-    amqp_queue_size = 0
+    enqueueloop = None
 
-    def __init__(self,
-            mysql_username,
-            mysql_password,
-            mysql_host,
-            mysql_database,
-            amqp_host,
-            amqp_username,
-            amqp_password,
-            amqp_vhost,
-            amqp_queue,
-            amqp_exchange,
-            amqp_port=5672,
-            mysql_port=3306,
-            port=5001,
-            service_mapping=None,
-            log_file='schedulerserver.log',
-            log_directory=None,
-            log_level="debug"):
-        self.function_resource = Resource()
-        # Create MySQL connection.
-        self.mysql = adbapi.ConnectionPool(
-            "MySQLdb",
-            db=mysql_database,
-            port=mysql_port,
-            user=mysql_username,
-            passwd=mysql_password,
-            host=mysql_host,
-            cp_reconnect=True,
-            cursorclass=DictCursor)
-        # Resource Mappings
-        self.service_mapping = service_mapping
-        # AMQP connection parameters
-        self.amqp_host = amqp_host
-        self.amqp_vhost = amqp_vhost
-        self.amqp_port = amqp_port
-        self.amqp_username = amqp_username
-        self.amqp_password = amqp_password
-        self.amqp_queue = amqp_queue
-        self.amqp_exchange = amqp_exchange
+    def __init__(self, config, port=None):
+        super(SchedulerServer, self).__init__(config)
+        self.setupAMQP(config)
+        self.setupMySQL(config)
         # HTTP interface
         resource = Resource()
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
+        if port is None:
+            port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         # Logging, etc
-        BaseServer.__init__(
-            self,
-            log_file=log_file,
-            log_directory=log_directory,
-            log_level=log_level)
         self.expose(self.remoteRemoveFromHeap)
         self.expose(self.remoteAddToHeap)
         self.expose(self.enqueueUUID)
 
     def start(self):
-        reactor.callWhenRunning(self._start)
-        return self.start_deferred
+        start_deferred = super(SchedulerServer, self).start()
+        start_deferred.addCallback(self._schedulerStart)
+        return start_deferred
 
     @inlineCallbacks
-    def _start(self):
-        # Load in names of functions supported by plugins
-        self.function_names = self.functions.keys()
-        LOGGER.info('Connecting to broker.')
-        self.conn = yield AMQP.createClient(
-            self.amqp_host,
-            self.amqp_vhost,
-            self.amqp_port)
-        yield self.conn.authenticate(self.amqp_username, self.amqp_password)
-        self.chan = yield self.conn.channel(1)
-        yield self.chan.channel_open()
-        # Create Queue
-        yield self.chan.queue_declare(
-            queue=self.amqp_queue,
-            durable=False,
-            exclusive=False,
-            auto_delete=False)
-        # Create Exchange
-        yield self.chan.exchange_declare(
-            exchange=self.amqp_exchange,
-            type="fanout",
-            durable=False,
-            auto_delete=False)
-        yield self.chan.queue_bind(
-            queue=self.amqp_queue,
-            exchange=self.amqp_exchange)
-        # Build heap from data in MySQL
+    def _schedulerStart(self, started=None):
+        yield self.startJobQueue()
         yield self._loadFromMySQL()
-        self.statusloop = task.LoopingCall(self.queueStatusCheck)
-        self.statusloop.start(60)
+        self.enqueueloop = task.LoopingCall(self.enqueue)
+        self.enqueueloop.start(1)
 
-    def _loadFromMySQL(self, start=0):
-        # Select the entire spider_service DB, 100k rows at at time.
-        sql = """SELECT uuid, type
-                 FROM spider_service
-                 ORDER BY id LIMIT %s, 100000
-              """ % start
-        LOGGER.debug(sql)
-        d = self.mysql.runQuery(sql)
-        d.addCallback(self._loadFromMySQLCallback, start)
-        d.addErrback(self._loadFromMySQLErrback)
-        return d
-
-    def _loadFromMySQLCallback(self, data, start):
-        [self.addToHeap(row["uuid"], row["type"]) for row in data]
-        # Load next chunk.
-        if len(data) >= 100000:
-            return self._loadFromMySQL(start=start + 100000)
-        # Done loading, start queuing
-        self.enqueue()
-        d = BaseServer.start(self)
-        return d
-
-    def _loadFromMySQLErrback(self, error):
-        return error
+    @inlineCallbacks
+    def _loadFromMySQL(self):
+        data = []
+        start = 0
+        while len(data) >= 100000 or start == 0:
+            sql = """SELECT uuid, type
+                     FROM spider_service
+                     ORDER BY id LIMIT %s, 100000
+                  """ % start
+            start += 100000
+            data = yield self.mysql.runQuery(sql)
+            for row in data:
+                self.addToHeap(row["uuid"], row["type"])
 
     @inlineCallbacks
     def shutdown(self):
-        LOGGER.debug("Closting connection")
+        self.enqueueloop.stop()
         try:
             self.enqueueCallLater.cancel()
         except:
             pass
-        # Shut things down
-        LOGGER.info('Closing broker connection')
-        yield self.chan.channel_close()
-        chan0 = yield self.conn.channel(0)
-        yield chan0.connection_close()
-        LOGGER.info('Closing MYSQL Connnection Pool')
-        yield self.mysql.close()
-
-    # def enqueue(self):
-    #     # Defer this to a thread so we don't block on the web interface.
-    #     deferToThread(self._enqueue)
-    @inlineCallbacks
-    def queueStatusCheck(self):
-        yield self.chan.queue_bind(
-            queue=self.amqp_queue,
-            exchange=self.amqp_exchange)
-        queue_status = yield self.chan.queue_declare(
-            queue=self.amqp_queue,
-            passive=True)
-        self.amqp_queue_size = queue_status.fields[1]
-        LOGGER.debug('AMQP queue size: %d' % self.amqp_queue_size)
+        yield self.stopJobQueue()
+        yield super(SchedulerServer, self).shutdown()
 
     def enqueue(self):
         now = int(time.time())
         # Compare the heap min timestamp with now().
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
-        queue_items = []
+        queued_items = 0
         if self.amqp_queue_size < 100000:
-            queue_items_a = queue_items.append
-            LOGGER.debug("%s:%s" % (self.heap[0][0], now))
-            while self.heap[0][0] < now and len(queue_items) < 1000:
+            logger.debug("%s:%s" % (self.heap[0][0], now))
+            while self.heap[0][0] < now and queued_items < 1000:
                 job = heappop(self.heap)
                 uuid = UUID(bytes=job[1][0])
                 if not uuid.hex in self.unscheduled_items:
-                    queue_items_a(job[1][0])
-                    new_job = (now + job[1][1], job[1])
-                    heappush(self.heap, new_job)
+                    queued_items += 1
+                    self.chan.basic_publish(
+                        exchange=self.amqp_exchange,
+                        content=Content(job[1][0]))
+                    heappush(self.heap, (now + job[1][1], job[1]))
                 else:
                     self.unscheduled_items.remove(uuid.hex)
         else:
-            LOGGER.critical('AMQP queue is at or beyond max limit (%d/100000)'
+            logger.critical('AMQP queue is at or beyond max limit (%d/100000)'
                 % self.amqp_queue_size)
-        # add items to amqp
-        if queue_items:
-            LOGGER.info('Found %d new uuids, adding them to the queue'
-                % len(queue_items))
-            msgs = [Content(uuid) for uuid in queue_items]
-            deferreds = [self.chan.basic_publish(
-                exchange=self.amqp_exchange, content=msg) for msg in msgs]
-            d = DeferredList(deferreds, consumeErrors=True)
-            d.addCallbacks(self._addToQueueComplete, self._addToQueueErr)
-        else:
-            self.enqueueCallLater = reactor.callLater(1, self.enqueue)
-
-    def _addToQueueComplete(self, data):
-        LOGGER.info('Completed adding items into the queue...')
-        self.enqueueCallLater = reactor.callLater(2, self.enqueue)
-
-    def _addToQueueErr(self, error):
-        LOGGER.error(error.printBriefTraceback)
-        raise
 
     def enqueueUUID(self, uuid):
-        LOGGER.debug('enqueueUUID: uuid=%s' % uuid)
-        self.chan.basic_publish(exchange=self.amqp_exchange, content=Content(UUID(uuid).bytes))
-        return uuid        
-        
+        logger.debug('enqueueUUID: uuid=%s' % uuid)
+        self.chan.basic_publish(
+            exchange=self.amqp_exchange,
+            content=Content(UUID(uuid).bytes))
+        return uuid
+
     def remoteAddToHeap(self, uuid=None, type=None):
         if uuid and type:
-            LOGGER.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
+            logger.debug('remoteAddToHeap: uuid=%s, type=%s' % (uuid, type))
             self.addToHeap(uuid, type)
             return {}
         else:
-            LOGGER.error('remoteAddToHeap: Required parameters are uuid and type')
+            logger.error('Required parameters are uuid and type')
             return {'error': 'Required parameters are uuid and type'}
 
     def remoteRemoveFromHeap(self, uuid):
-        LOGGER.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
-        self.removeFromHeap(uuid)
-        
+        logger.debug('remoteRemoveFromHeap: uuid=%s' % uuid)
+        return self.removeFromHeap(uuid)
+
     def addToHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
         # then rewrite type to the proper resource
         if not uuid in self.unscheduled_items:
             if self.service_mapping and type in self.service_mapping:
-                LOGGER.info('Remapping resource %s to %s'
+                logger.info('Remapping resource %s to %s'
                     % (type, self.service_mapping[type]))
                 type = self.service_mapping[type]
             try:
                 # Make sure the uuid is in bytes
                 uuid_bytes = UUID(uuid).bytes
             except ValueError:
-                LOGGER.error('Cound not turn UUID into bytes using string: "%s" with type of "%s"'
+                logger.error('Cound not turn UUID into bytes using string: "%s" with type of "%s"'
                     % (uuid, type))
                 return
             if type in self.functions and 'interval' in self.functions[type]:
                 interval = int(self.functions[type]['interval'])
             else:
-                LOGGER.error('Could not find interval for type %s' % type)
+                logger.error('Could not find interval for type %s' % type)
                 return
             # Enqueue randomly over the interval so it doesn't
             # flood the server at the interval time. only if an interval is defined
             if interval:
-                enqueue_time = int(time.time() + random.randint(0,interval))
+                enqueue_time = int(time.time() + random.randint(0, interval))
                 # Add a UUID to the heap.
-                LOGGER.debug('Adding %s to heap with time %s and interval of %s'
+                logger.debug('Adding %s to heap with time %s and interval of %s'
                     % (uuid, enqueue_time, interval))
                 heappush(self.heap, (enqueue_time, (uuid_bytes, interval)))
         else:
-            LOGGER.info('Unscheduling %s' % uuid)
+            logger.info('Unscheduling %s' % uuid)
             self.unscheduled_items.remove(uuid)
-            
+
     def removeFromHeap(self, uuid):
-        LOGGER.info('Removing %s from heap' % uuid)
+        logger.info('Removing %s from heap' % uuid)
         self.unscheduled_items.append(uuid)
+
+    @inlineCallbacks
+    def executeReservation(self, function_name, **kwargs):
+        if not isinstance(function_name, str):
+            for key in self.functions:
+                if self.functions[key]["function"] == function_name:
+                    function_name = key
+                    break
+        if function_name not in self.functions:
+            raise Exception("Function %s does not exist." % function_name)
+        function = self.functions[function_name]
+        logger.debug("Calling function %s with kwargs %s" % (function_name, kwargs))
+        try:
+            data = yield self.executeFunction(function_name, **kwargs)
+        except Exception, e:
+            tb = traceback.format_exc()
+            logger.error("function %s failed with args %s:\n%s" % (
+                function_name, kwargs, tb))
+        if data is None:
+            returnValue({'success':True})
+        returnValue(data)
+
+

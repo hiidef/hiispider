@@ -3,9 +3,13 @@ from twisted.web.resource import Resource
 import cStringIO, gzip
 import traceback
 import simplejson
+import logging
+import pprint
+
+logger = logging.getLogger(__name__)
 
 class BaseResource(Resource):
-    
+
     def __init__(self):
         Resource.__init__(self)
 
@@ -16,10 +20,17 @@ class BaseResource(Resource):
 
     def _errorResponse(self, error):
         reason = str(error.value)
-        tb = traceback.format_exc(traceback.extract_tb(error.tb))
+        # there are two ways to extract a traceback;  we pick whichever one
+        # is longer as that probably has more information
+        tbs = [error.getTraceback(),
+               traceback.format_exc(traceback.extract_tb(error.tb))]
+        tbs.sort(key=lambda x: len(x), reverse=True)
+        tb = tbs[0]
+        logger.error("%s\n%s" % (reason, tb))
         return simplejson.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
+        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = cStringIO.StringIO()
@@ -36,3 +47,4 @@ class BaseResource(Resource):
         else:
             request.write(data)
         request.finish()
+

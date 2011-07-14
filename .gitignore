@@ -6,3 +6,5 @@ AWSpider.egg-info
 build
 dist
 HiiSpider.egg-info
+tags
+*.swp
