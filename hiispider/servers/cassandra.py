@@ -108,7 +108,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
             else:
                 for data in deltas:
                     ts = time.time()
-                    yield '%0.2f:%s' % (ts, uuid4().hex), data
+                    delta_uuid = '%0.2f:%s' % (ts, uuid4().hex)
+                    yield delta_uuid, data
 
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
@@ -127,7 +128,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 for delta_id, data in iterate_deltas(delta):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = '%s:%s:%s' % (delta_id, category, service, job.subservice)
+                    user_column = '%s:%s:%s:%s' % (delta_id, category, service, job.subservice)
                     logger.info("Inserting delta id %s, user column: %s"  % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
