@@ -107,7 +107,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     yield key, value
             else:
                 for data in deltas:
-                    yield uuid4().hex, data
+                    ts = time.time()
+                    yield '%0.2f:%s' % (ts, uuid4().hex), data
 
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
@@ -130,10 +131,12 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     logger.info("Inserting delta id %s, user column: %s"  % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
+                        'old_data': zlib.compress(simplejson.dumps(old_data)),
                         'user_id': str(user_id),
                         'category': category,
                         'service': service,
                         'subservice': job.subservice,
+                        'uuid': job.uuid,
                     }
                     yield self.cassandra_client.batch_insert(
                         key=str(delta_id),
