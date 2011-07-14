@@ -115,7 +115,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
             return
-        ts = time.time()
         if self.delta_enabled:
             delta_func = self.functions[job.function_name]["delta"]
             if delta_func is not None:
@@ -129,7 +128,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
                     user_column = '%s:%s:%s:%s' % (delta_id, category, service, job.subservice)
-                    logger.info("Inserting delta id %s, user column: %s"  % (str(delta_id), user_column))
+                    logger.info("Inserting delta id %s to user_column: %s" % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
                         'old_data': zlib.compress(simplejson.dumps(old_data)),
