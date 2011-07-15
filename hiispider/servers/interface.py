@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class InterfaceServer(CassandraServer):
 
+    disable_negative_cache = True
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
 
     def __init__(self, config, port=None):

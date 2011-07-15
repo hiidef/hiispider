@@ -246,7 +246,7 @@ class PageGetter:
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
-        if not disable_negative_cache:
+        if not disable_negative_cache and not self.disable_negative_cache:
             negative_req_cache_key = 'negative_req_cache:%s' % request_hash
             negative_cache_host_key = 'negative_cache:%s' % host
             d = self.checkNegativeCache(
