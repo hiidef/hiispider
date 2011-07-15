@@ -76,6 +76,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
             logger.error("Could not connect to Redis: %s" % e)
             self.shutdown()
             raise Exception("Could not connect to Redis.")
+        if self.disable_negative_cache:
+            logger.warning("Disabling negative cache.")
         self.pg = PageGetter(
             self.cassandra_client,
             redis_client=self.redis_client,
