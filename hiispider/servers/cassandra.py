@@ -12,7 +12,7 @@ import traceback
 import logging
 import time
 from uuid import uuid4
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, unified_diff
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
@@ -27,6 +27,28 @@ from mixins.jobgetter import JobGetterMixin
 PP = pprint.PrettyPrinter(indent=4)
 
 logger = logging.getLogger(__name__)
+
+def recursive_sort(x):
+    if isinstance(x, basestring):
+        return x
+    elif isinstance(x, list):
+        y = []
+        for value in x:
+            value = recursive_sort(value)
+            if isinstance(value, dict):
+                y.append((PP.pformat(value), value))
+            else:
+                y.append((value, value))
+        return [a[1] for a in sorted(y, key=lambda b:b[0])]
+    elif isinstance(x, dict):
+        for key in x:
+            x[key] = recursive_sort(x[key])
+        return x
+    else:
+        try:
+            return sorted(x)
+        except TypeError:
+            return x
 
 class CassandraServer(BaseServer, JobGetterMixin):
 
@@ -211,24 +233,28 @@ class CassandraServer(BaseServer, JobGetterMixin):
         deltas = list(self.iterate_deltas(delta_func(new_data, old_data)))
         # If no delta exists, clear the old data out.
         if len(deltas) == 0:
-            replacement_delta = ""
+            replacement_delta = None
             yield self.cassandra_client.batch_insert(
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data":"",
+                    "data":zlib.compress(simplejson.dumps("")),
                     "updated":str(time.time())
                 })
+            logger.debug("DELTA %s\nEmpty delta." % delta_id)
         # If one delta exists, replace the old data with the new delta.
         elif len(deltas) == 1:
-            replacement_delta = simplejson.dumps(deltas[0][1])
+            replacement_delta = deltas[0][1]
             yield self.cassandra_client.batch_insert(
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data":zlib.compress(replacement_delta),
+                    "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())
                 })
+            logger.debug("DELTA %s\nOne result:\n%s" % (
+                delta_id, 
+                PP.pformat(deltas[0][1])))
         # If multiple deltas exists, replace them with the closest match.
         else:
             delta_options = []
@@ -238,16 +264,22 @@ class CassandraServer(BaseServer, JobGetterMixin):
             for k, v in deltas:
                 value = simplejson.dumps(v)
                 s.set_seq2(value)
-                delta_options.append((s.ratio(), value))
+                delta_options.append((s.ratio(), value, v))
             # Sort to find the most similar option.
-            value = sorted(delta_options, key=lambda x:x[0]).pop()[1]
-            replacement_delta = value
+            delta_options = sorted(delta_options, key=lambda x:x[0])
+            replacement_delta = delta_options[-1][2]
             yield self.cassandra_client.batch_insert(
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data":zlib.compress(value),
+                    "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())})
+            logger.debug("DELTA %s\nMultiple results:\n%s" % (
+                delta_id,
+                PP.pformat([x[2] for x in delta_options])))
+            logger.debug("DIFF: " + "\n".join(list(unified_diff(
+                PP.pformat(recursive_sort(old_data)).split("\n"),
+                PP.pformat(recursive_sort(new_data)).split("\n")))))
         returnValue({
             'replacement_delta':replacement_delta,
-            'deltas':simplejson.dumps([x[1] for x in deltas])})
+            'deltas':[x[1] for x in deltas]})

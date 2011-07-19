@@ -1,6 +1,39 @@
 import marshal
 import cPickle
-from collections import Hashable
+from collections import Hashable, Iterable
+
+
+def _recursive_hash_sort(x):
+    if isinstance(x, basestring):
+        # Don't try to sort strings.
+        return x
+    elif isinstance(x, dict):
+        values = []
+        # Recurse through all items.
+        for key in x:
+            values.append((key, _recursive_hash_sort(x[key])))
+        # Convert into a list, sorted by key.
+        return sorted(values, key=lambda x:x[0])
+    elif isinstance(x, Iterable):
+        return sorted([_recursive_hash_sort(y) for y in x])
+    return x
+    
+
+def _structured_hash(x):
+     # Item is hashable. No need to serialize.
+    if isinstance(x, Hashable):
+        return hash(x)
+    # As dictionaries and other types of iterables don't have order,
+    # marshalling then hashing identical dictionaries won't provide
+    # the same hash. To remedy this we convert dictionaries and other
+    # iterables into lists and sort the lists prior to hashing.
+    x = _recursive_hash_sort(x)
+    try:
+        # Marshal is fast. Try it first.
+        return hash(marshal.dumps(x))
+    except ValueError:
+        # Try cPickle.
+        return hash(cPickle.dumps(x))
 
 
 def _convert_to_hashed_dict(a):
@@ -8,19 +41,7 @@ def _convert_to_hashed_dict(a):
     Convert a list into a dictionary suitable for comparison of structured
     data types.
     """
-    hashed = {}
-    for x in a:
-        # Item is hashable. No need to serialize.
-        if isinstance(x, Hashable):
-            hashed[hash(x)] = x
-        else:
-            try:
-                # Marshal is fast. Try it first.
-                hashed[hash(marshal.dumps(x))] = x
-            except ValueError:
-                # Try cPickle.
-                hashed[hash(cPickle.dumps(x))] = x
-    return hashed
+    return dict([(_structured_hash(x), x) for x in a])
 
 
 def _compare_lists(a, b):
@@ -41,7 +62,7 @@ def _compare_lists(a, b):
     return [hashed_a[x] for x in set(hashed_a.keys()) - set(hashed_b.keys())]
 
 
-def _compare_dicts(a, b):
+def _compare_dicts(a, b, depth=0):
     """
     Compare two dictonaries composed of objects.
 
@@ -72,12 +93,12 @@ def _compare_dicts(a, b):
             elif isinstance(a[key], dict):
                 # Return new items in dicts at key.
                 delta = {}
-                for x in _compare_dicts(a[key], b[key]):
+                for x in _compare_dicts(a[key], b[key], depth=1):
                     delta.update(x)
                 if len(delta) > 0:
                     values.append({key:delta})
                 continue
-            if hash(cPickle.dumps(a[key])) != hash(cPickle.dumps(b[key])):
+            if _structured_hash(a[key]) != _structured_hash(b[key]):
                 values.append({key:a[key]})
         else:
             values.append({key:a[key]})
