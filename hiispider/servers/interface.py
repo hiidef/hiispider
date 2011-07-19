@@ -38,7 +38,9 @@ class InterfaceServer(CassandraServer):
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
-
+        if self.delta_debug:
+            self.expose(self.regenerate_delta)
+            
     def start(self):
         start_deferred = super(InterfaceServer, self).start()
         start_deferred.addCallback(self._interfaceStart)

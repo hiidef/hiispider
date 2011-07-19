@@ -12,6 +12,7 @@ import traceback
 import logging
 import time
 from uuid import uuid4
+from difflib import SequenceMatcher
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
@@ -50,6 +51,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         self.delta_log_enabled = config.get('delta_log_enabled', False)
         self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
         self.delta_enabled = config.get('delta_enabled', False)
+        self.delta_debug = config.get('delta_debug', False)
         # create the log path if required & enabled
         if self.delta_enabled and self.delta_log_enabled and not os.path.exists(self.delta_log_path):
             os.makedirs(self.delta_log_path)
@@ -101,18 +103,18 @@ class CassandraServer(BaseServer, JobGetterMixin):
         with open(basepath + '.res.js', 'w') as f:
             f.write(simplejson.dumps(delta, indent=2))
 
+    def iterate_deltas(self, deltas):
+        if isinstance(deltas, dict):
+            for key,value in delta.iteritems():
+                yield key, value
+        else:
+            for data in deltas:
+                ts = time.time()
+                delta_uuid = '%0.2f:%s' % (ts, uuid4().hex)
+                yield delta_uuid, data
+
     @inlineCallbacks
     def executeJob(self, job):
-        def iterate_deltas(deltas):
-            if isinstance(deltas, dict):
-                for key,value in delta.iteritems():
-                    yield key, value
-            else:
-                for data in deltas:
-                    ts = time.time()
-                    delta_uuid = '%0.2f:%s' % (ts, uuid4().hex)
-                    yield delta_uuid, data
-
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
@@ -126,21 +128,25 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 delta = delta_func(new_data, old_data)
                 self.logDelta(job.uuid, old_data, new_data, delta)
                 logger.debug("Got delta: %s ..." % str(delta)[:1000])
-                for delta_id, data in iterate_deltas(delta):
+                for delta_id, data in self.iterate_deltas(delta):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
                     user_column = '%s:%s:%s' % (delta_id, category, job.subservice)
                     logger.info("Inserting delta id %s to user_column: %s" % (str(delta_id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(data)),
-                        'old_data': zlib.compress(simplejson.dumps(old_data)),
-                        'new_data': zlib.compress(simplejson.dumps(new_data)),
                         'user_id': str(user_id),
                         'category': category,
                         'service': service,
                         'subservice': job.subservice,
-                        'uuid': job.uuid,
-                    }
+                        'uuid': job.uuid}
+                    if self.delta_debug:
+                        ts = str(time.time())
+                        mapping.update({
+                            'old_data': zlib.compress(simplejson.dumps(old_data)),
+                            'new_data': zlib.compress(simplejson.dumps(new_data)),
+                            'generated': ts,
+                            'updated': ts})
                     yield self.cassandra_client.batch_insert(
                         key=str(delta_id),
                         column_family=self.cassandra_cf_delta,
@@ -149,9 +155,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         key=str(user_id),
                         column_family=self.cassandra_cf_delta_user,
                         column=user_column,
-                        value=''
-                    )
-
+                        value='')
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
@@ -191,4 +195,59 @@ class CassandraServer(BaseServer, JobGetterMixin):
             uuid,
             self.cassandra_cf_content)
         returnValue({'success':True})
-
+        
+    @inlineCallbacks
+    def regenerate_delta(self, delta_id):
+        # Get the delta data, the old data, the new data, and the subservice.
+        data = yield self.cassandra_client.get_slice(
+            key=delta_id,
+            names=["data", "old_data", "new_data", "subservice"],
+            column_family=self.cassandra_cf_delta)
+        row = dict([(x.column.name, x.column.value) for x in data])
+        new_data = simplejson.loads(zlib.decompress(row["new_data"]))
+        old_data = simplejson.loads(zlib.decompress(row["old_data"]))
+        delta_func = self.functions[row["subservice"]]["delta"]
+        # Generate deltas.
+        deltas = list(self.iterate_deltas(delta_func(new_data, old_data)))
+        # If no delta exists, clear the old data out.
+        if len(deltas) == 0:
+            replacement_delta = ""
+            yield self.cassandra_client.batch_insert(
+                key=delta_id,
+                column_family=self.cassandra_cf_delta,
+                mapping={
+                    "data":"",
+                    "updated":str(time.time())
+                })
+        # If one delta exists, replace the old data with the new delta.
+        elif len(deltas) == 1:
+            replacement_delta = simplejson.dumps(deltas[0][1])
+            yield self.cassandra_client.batch_insert(
+                key=delta_id,
+                column_family=self.cassandra_cf_delta,
+                mapping={
+                    "data":zlib.compress(replacement_delta),
+                    "updated":str(time.time())
+                })
+        # If multiple deltas exists, replace them with the closest match.
+        else:
+            delta_options = []
+            # Generate tuples of (similiarity ratio, JSON formatted data)
+            s = SequenceMatcher()
+            s.set_seq1(zlib.decompress(row["data"]))
+            for k, v in deltas:
+                value = simplejson.dumps(v)
+                s.set_seq2(value)
+                delta_options.append((s.ratio(), value))
+            # Sort to find the most similar option.
+            value = sorted(delta_options, key=lambda x:x[0]).pop()[1]
+            replacement_delta = value
+            yield self.cassandra_client.batch_insert(
+                key=delta_id,
+                column_family=self.cassandra_cf_delta,
+                mapping={
+                    "data":zlib.compress(value),
+                    "updated":str(time.time())})
+        returnValue({
+            'replacement_delta':replacement_delta,
+            'deltas':simplejson.dumps([x[1] for x in deltas])})
