@@ -5,7 +5,7 @@ from collections import Hashable, Iterable
 
 class AutogenerateException(Exception):
     pass
-    
+
 
 def _recursive_hash_sort(x, ignores, includes):
     if isinstance(x, basestring):
@@ -18,21 +18,21 @@ def _recursive_hash_sort(x, ignores, includes):
         # Recurse through all items.
         for key in x:
             if key in included_keys:
-                values.append((key, 
-                    _recursive_hash_sort(x[key], 
+                values.append((key,
+                    _recursive_hash_sort(x[key],
                         [y[1:] for y in ignores],
                         [y[1:] for y in includes])))
             elif len(included_keys) == 0 and key not in ignored_keys:
-                values.append((key, 
-                    _recursive_hash_sort(x[key], 
+                values.append((key,
+                    _recursive_hash_sort(x[key],
                         [y[1:] for y in ignores],
                         [y[1:] for y in includes])))
         # Convert into a list, sorted by key.
-        return sorted(values, key=lambda x:x[0])
+        return sorted(values, key=lambda x: x[0])
     elif isinstance(x, Iterable):
         return sorted([_recursive_hash_sort(y, ignores, includes) for y in x])
     return x
-    
+
 
 def _structured_hash(x, ignores, includes):
      # Item is hashable no need to serialize.
@@ -70,10 +70,10 @@ def _narrow_list(a, path):
     elif isinstance(a, dict):
         key = path[0]
         if key in a:
-            return {key:_narrow_list(a[key], path[1:])}
+            return {key: _narrow_list(a[key], path[1:])}
     return []
-    
-    
+
+
 def _compare_lists(a, b, path, ignores, includes):
     """
     Compare two lists composed of objects.
@@ -81,12 +81,11 @@ def _compare_lists(a, b, path, ignores, includes):
     Returns a list of objects in 'a' not contained in 'b' or in the event
     there are no common elements, an empty list.
     """
- 
     a = _narrow_list(a, path)
     b = _narrow_list(b, path)
     try:
         return list(set(a) - set(b))
-    except TypeError, e:
+    except TypeError:
         # A and b are not hashable.
         # We don't need to worry about ignores here
         # as dicts aren't hashable anyway.
@@ -121,46 +120,46 @@ def _compare_dicts(a, b, path, ignores, includes):
                 continue
             elif isinstance(a[key], Hashable) and isinstance(b[key], Hashable):
                 # Values are hashable, like strings, but not equal.
-                values.append({key:a[key]})
+                values.append({key: a[key]})
                 continue
             # Moving beyond the built-in comparisons.
             if a[key].__class__ != b[key].__class__:
                 # Values are different types.
-                values.append({key:a[key]})
+                values.append({key: a[key]})
                 continue
             elif isinstance(a[key], list):
                 # Return new items in lists at key.
                 deltas = _compare_lists(
-                    a[key], 
-                    b[key], 
-                    path[1:], 
+                    a[key],
+                    b[key],
+                    path[1:],
                     [x[1:] for x in ignores],
                     [x[1:] for x in includes])
                 if len(deltas) > 0:
-                    values.append({key:deltas})
+                    values.append({key: deltas})
                 continue
             elif isinstance(a[key], dict):
                 # Return new items in dicts at key.
                 delta = {}
                 deltas = _compare_dicts(
-                    a[key], 
-                    b[key], 
+                    a[key],
+                    b[key],
                     path[1:],
                     [x[1:] for x in ignores],
                     [x[1:] for x in includes])
                 for x in deltas:
                     delta.update(x)
                 if len(delta) > 0:
-                    values.append({key:delta})
+                    values.append({key: delta})
                 continue
             if _structured_hash(a[key], ignores, includes) != _structured_hash(b[key], ignores, includes):
-                values.append({key:a[key]})
+                values.append({key: a[key]})
         else:
-            values.append({key:a[key]})
+            values.append({key: a[key]})
     return values
 
+
 class Autogenerator(object):
-    
     def __init__(self, paths=None, ignores=None, includes=None):
         paths = self.parse_paths(paths)
         includes = self.parse_paths(includes)
@@ -174,9 +173,9 @@ class Autogenerator(object):
             self.paths = []
             for path in paths:
                 path_parameters = {
-                    "path":path,
-                    "includes":[],
-                    "ignores":[]}
+                    "path": path,
+                    "includes": [],
+                    "ignores": []}
                 for include in includes:
                     if include[0:len(path)] == path:
                         path_parameters["includes"].append(include)
@@ -191,7 +190,7 @@ class Autogenerator(object):
                             raise AutogenerateException("%s ignore supersedes"
                                 " %s include." % (ignore, path))
                 self.paths.append(path_parameters)
-        
+
     def __call__(self, a, b):
         """
         Compare dictionaries or lists of objects. Returns a list.
@@ -199,11 +198,11 @@ class Autogenerator(object):
         deltas = []
         for path in self.paths:
             deltas += self.call(
-                a, 
-                b, 
+                a,
+                b,
                 path)
         return deltas
-    
+
     def call(self, a, b, path):
         # Native Python comparison. Should be well optimized across VMs.
         if a == b:
@@ -218,14 +217,14 @@ class Autogenerator(object):
             raise TypeError("Cannot generate delta from strings.")
         if isinstance(a, list):
             return _compare_lists(
-                a, 
+                a,
                 b,
                 path["path"],
                 path["ignores"],
                 path["includes"])
         if isinstance(a, dict):
             return _compare_dicts(
-                a, 
+                a,
                 b,
                 path["path"],
                 path["ignores"],
@@ -241,5 +240,3 @@ class Autogenerator(object):
             raise TypeError("Parameter must be str, unicode, or list.")
         # Filters a list of paths split on '/' to remove empty strings.
         return [[x for x in path.split("/") if x] for path in paths]
-        
-        
