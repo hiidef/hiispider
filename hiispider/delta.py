@@ -6,6 +6,8 @@ from collections import Hashable, Iterable
 class AutogenerateException(Exception):
     pass
     
+class DeltaBubble(dict):
+    pass
 
 def _recursive_hash_sort(x, ignores, includes):
     if isinstance(x, basestring):
@@ -137,7 +139,13 @@ def _compare_dicts(a, b, path, ignores, includes):
                     [x[1:] for x in ignores],
                     [x[1:] for x in includes])
                 if len(deltas) > 0:
-                    values.append({key:deltas})
+                    # If a path is specified and this is the final branch of
+                    # that path, treat each item in the list as an individual delta.
+                    if len(path) == 1:
+                        for delta in deltas:
+                            values.append(DeltaBubble([(key, x) for x in deltas]))
+                    else:
+                        values.append({key:deltas})
                 continue
             elif isinstance(a[key], dict):
                 # Return new items in dicts at key.
