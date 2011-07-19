@@ -277,9 +277,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
             logger.debug("DELTA %s\nMultiple results:\n%s" % (
                 delta_id,
                 PP.pformat([x[2] for x in delta_options])))
-            logger.debug("DIFF: " + "\n".join(list(unified_diff(
-                PP.pformat(recursive_sort(old_data)).split("\n"),
-                PP.pformat(recursive_sort(new_data)).split("\n")))))
+        logger.debug("DIFF: " + "\n".join(list(unified_diff(
+            PP.pformat(recursive_sort(old_data)).split("\n"),
+            PP.pformat(recursive_sort(new_data)).split("\n")))))
         returnValue({
             'replacement_delta':replacement_delta,
             'deltas':[x[1] for x in deltas]})

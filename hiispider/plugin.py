@@ -1,6 +1,6 @@
 import inspect
 import types
-from .delta import autogenerate
+from .delta import Autogenerator
 
 __all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
 EXPOSED_FUNCTIONS = {}
@@ -17,9 +17,12 @@ def aliases(*args):
     return decorator
 
 
-def autodelta(func):
-    DELTA_FUNCTIONS[id(func)] = autogenerate
-    return func
+def autodelta(paths=None, includes=None, ignores=None):
+    def decorator(f):
+        DELTA_FUNCTIONS[id(f)] = Autogenerator(paths=paths, includes=includes, ignores=ignores)
+        return f
+    return decorator
+    
 
 def delta(handler):
     def decorator(f):
