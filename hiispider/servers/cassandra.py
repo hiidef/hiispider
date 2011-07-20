@@ -20,7 +20,7 @@ from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
 from .base import BaseServer
 from ..pagegetter import PageGetter
-
+from ..delta import Autogenerator
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 
@@ -219,7 +219,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue({'success':True})
         
     @inlineCallbacks
-    def regenerate_delta(self, delta_id):
+    def regenerate_delta(self, delta_id, paths=None, includes=None, ignores=None):
         # Get the delta data, the old data, the new data, and the subservice.
         data = yield self.cassandra_client.get_slice(
             key=delta_id,
@@ -228,7 +228,17 @@ class CassandraServer(BaseServer, JobGetterMixin):
         row = dict([(x.column.name, x.column.value) for x in data])
         new_data = simplejson.loads(zlib.decompress(row["new_data"]))
         old_data = simplejson.loads(zlib.decompress(row["old_data"]))
-        delta_func = self.functions[row["subservice"]]["delta"]
+        if not all([x is None in (paths, includes, ignores)]):
+            if paths:
+                paths = paths.split(",")
+            if includes:
+                includes = includes.split(",")
+            if ignores:
+                ignores = ignores.split(",")
+            delta_func = Autogenerator(paths, ignores, includes)
+            logger.debug("Using custom Autogenerator.")
+        else:
+            delta_func = self.functions[row["subservice"]]["delta"]
         # Generate deltas.
         deltas = list(self.iterate_deltas(delta_func(new_data, old_data)))
         # If no delta exists, clear the old data out.
@@ -252,9 +262,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())
                 })
-#            logger.debug("DELTA %s\nOne result:\n%s" % (
-#                delta_id, 
-#                PP.pformat(deltas[0][1])))
+            logger.debug("DELTA %s\nOne result:\n%s" % (
+                delta_id, 
+                PP.pformat(deltas[0][1])))
         # If multiple deltas exists, replace them with the closest match.
         else:
             delta_options = []
@@ -274,12 +284,12 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 mapping={
                     "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())})
-#            logger.debug("DELTA %s\nMultiple results:\n%s" % (
-#                delta_id,
-#                PP.pformat([x[2] for x in delta_options])))
-#        logger.debug("DIFF: " + "\n".join(list(unified_diff(
-#            PP.pformat(recursive_sort(old_data)).split("\n"),
-#            PP.pformat(recursive_sort(new_data)).split("\n")))))
+            logger.debug("DELTA %s\nMultiple results:\n%s" % (
+                delta_id,
+                PP.pformat([x[2] for x in delta_options])))
+        logger.debug("DIFF: " + "\n".join(list(unified_diff(
+            PP.pformat(recursive_sort(old_data)).split("\n"),
+            PP.pformat(recursive_sort(new_data)).split("\n")))))
         returnValue({
             'replacement_delta':replacement_delta,
             'deltas':[x[1] for x in deltas]})
