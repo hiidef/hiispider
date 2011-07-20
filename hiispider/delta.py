@@ -133,24 +133,24 @@ def _compare_dicts(a, b, ignores, includes):
             # Values are hashable, but not equal.
             values.append({key:x})
         # Moving beyond the built-in comparisons.
-        if x.__class__ != y.__class__:
+        elif x.__class__ != y.__class__:
             # Values are different types.
-            return x
+            values.append({key:x})
         elif isinstance(x, list):
             # Return new items in lists at key.
             deltas = _compare_lists(x, y, _shift(ignores), _shift(includes))
             if len(deltas) > 0:
                 values.append({key:deltas})
-        elif isinstance(a, dict):
+        elif isinstance(x, dict):
             # Return new items in dicts at key.
-            deltas = _compare_dicts(a, b, _shift(ignores), _shift(includes))
+            deltas = _compare_dicts(x, y, _shift(ignores), _shift(includes))
             if len(deltas) > 0:
                 delta = {}
-                for x in deltas:
-                    delta.update(x)
+                for z in deltas:
+                    delta.update(z)
                 values.append({key:delta})
-        elif _hash(a, ignores, includes) != _hash(b, ignores, includes):
-            values.append({key:a})
+        elif _hash(x, ignores, includes) != _hash(y, ignores, includes):
+            values.append({key:x})
     return values
 
 
