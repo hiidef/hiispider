@@ -160,6 +160,8 @@ class Autogenerator(object):
         includes = self._parse_paths(includes)
         ignores = self._parse_paths(ignores)
         if len(paths) == 0:
+            # TODO check ignore / include paths
+            # TODO use ignore.startswith(path) 
             self.paths = [{
                 "path":[],
                 "includes":includes,
@@ -167,21 +169,26 @@ class Autogenerator(object):
         else:
             self.paths = []
             for path in paths:
+                for ignore in ignores:
+                    for include in includes:
+                        if include.startswith(ignore):
+                            raise AutogenerateException("%s ignore supersedes"
+                                " %s include." % (ignore, include))
                 path_parameters = {
                     "path": path,
                     "includes": [],
                     "ignores": []}
                 for include in includes:
-                    if include[0:len(path)] == path:
+                    if include.startswith(path):
                         path_parameters["includes"].append(include)
                 for ignore in ignores:
-                    if ignore[0:len(path)] == path:
+                    if ignore.startswith(path):
                         path_parameters["ignores"].append(ignore)
-                    if path[0:len(ignore)] == ignore:
+                    if path.startswith(ignore):
                         raise AutogenerateException("%s ignore supersedes"
                             " %s path." % (ignore, path))
                     for include in includes:
-                        if include[0:len(ignore)] == ignore:
+                        if include.startswith(ignore):
                             raise AutogenerateException("%s ignore supersedes"
                                 " %s include." % (ignore, path))
                 self.paths.append(path_parameters)
