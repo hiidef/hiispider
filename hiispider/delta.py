@@ -4,8 +4,17 @@ from collections import Hashable, Iterable
 from copy import copy
 from itertools import chain
 
+
 class AutogenerateException(Exception):
     pass
+
+
+def _included(includes):
+    return [x[0] for x in includes if len(x) > 0]
+
+
+def _ignored(ignores):
+    return [x[0] for x in ignores if len(x) == 1]
 
 
 def _shift(a):
@@ -18,12 +27,12 @@ def _sort(a, ignores, includes):
         return a
     elif isinstance(a, dict):
         # If there are include paths, iterate through keys in these paths.
-        included_keys = [x[0] for x in includes if len(x) > 0]
-        if len(included_keys) > 0:
+        included_keys = _included(includes)
+        if included_keys:
             keys = set(a.keys()).intersection(included_keys)
         else:
             # Disregard keys at the top level of the ignore paths.
-            ignored_keys = [x[0] for x in ignores if len(x) == 1]
+            ignored_keys = _ignored(ignores)
             keys = set(a.keys()).difference(ignored_keys)
         # Return a sorted list of (key, value) tuples with the included
         # or ignored keys.
@@ -31,7 +40,10 @@ def _sort(a, ignores, includes):
             [(x, _sort(a[x], _shift(ignores), _shift(includes))) for x in keys], 
             key=lambda x: x[0])
     elif isinstance(a, Iterable):
-        return sorted([_sort(x, ignores, includes) for x in a])
+        try:
+            return sorted([_sort(x, ignores, includes) for x in a])
+        except ValueError:
+            return a
     return a
 
 
@@ -66,7 +78,7 @@ def _narrow_list(a, path):
     of list 'a'
     """
     # If the path is empty, no need to narrow any further.
-    if len(path) == 0:
+    if not path:
         return a
     # Recurse through elements in the list, keeping the same path level.
     elif isinstance(a, list):
@@ -114,12 +126,12 @@ def _compare_dicts(a, b, ignores, includes):
     event there are no common elements, an empty list.
     """ 
     # If there are include paths, iterate through keys in these paths.
-    included_keys = [x[0] for x in includes if len(x) > 0]
-    if len(included_keys) > 0:
+    included_keys = _included(includes)
+    if included_keys:
         keys = set(a.keys()).intersection(included_keys)
     else:
         # Disregard keys at the top level of the ignore paths.
-        ignored_keys = [x[0] for x in ignores if len(x) == 1]
+        ignored_keys = _ignored(ignores)
         keys = set(a.keys()).difference(ignored_keys)
     values = []
     for key in keys:
@@ -162,7 +174,7 @@ class Autogenerator(object):
         if len(paths) == 0:
             for ignore in ignores:
                 for include in includes:
-                    if include.startswith(ignore):
+                    if include[0:len(ignore)] == ignore:
                         raise AutogenerateException("%s ignore supersedes"
                             " %s include." % (ignore, include))
             self.paths = [{
@@ -177,20 +189,20 @@ class Autogenerator(object):
                     "includes": [],
                     "ignores": []}
                 for include in includes:
-                    if include.startswith(path):
+                    if include[0:len(path)] == path:
                         path_parameters["includes"].append(include)
                 for ignore in ignores:
-                    if ignore.startswith(path):
+                    if ignore[0:len(path)] == path:
                         path_parameters["ignores"].append(ignore)
-                    if path.startswith(ignore):
+                    if path[0:len(ignore)] == ignore:
                         raise AutogenerateException("%s ignore supersedes"
                             " %s path." % (ignore, path))
                     for include in includes:
-                        if include.startswith(ignore):
+                        if include[0:len(ignore)] == ignore:
                             raise AutogenerateException("%s ignore supersedes"
                                 " %s include." % (ignore, include))
                 self.paths.append(path_parameters)
-        
+
     def __call__(self, a, b):
         """
         Compare dictionaries or lists of objects. Returns a list.

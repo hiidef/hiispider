@@ -13,7 +13,6 @@ import logging
 import time
 from uuid import uuid4
 from difflib import SequenceMatcher, unified_diff
-
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from telephus.protocol import ManagedCassandraClientFactory
@@ -24,9 +23,10 @@ from ..delta import Autogenerator
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 
-PP = pprint.PrettyPrinter(indent=4)
 
+PP = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
+
 
 def recursive_sort(x):
     if isinstance(x, basestring):
@@ -49,6 +49,7 @@ def recursive_sort(x):
             return sorted(x)
         except TypeError:
             return x
+
 
 class CassandraServer(BaseServer, JobGetterMixin):
 
@@ -262,9 +263,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())
                 })
-            #logger.debug("DELTA %s\nOne result:\n%s" % (
-            #    delta_id, 
-            #    PP.pformat(deltas[0][1])))
+            logger.debug("DELTA %s\nOne result:\n%s" % (
+                delta_id, 
+                PP.pformat(deltas[0][1])))
         # If multiple deltas exists, replace them with the closest match.
         else:
             delta_options = []
@@ -284,12 +285,12 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 mapping={
                     "data":zlib.compress(simplejson.dumps(replacement_delta)),
                     "updated":str(time.time())})
-#            logger.debug("DELTA %s\nMultiple results:\n%s" % (
-#                delta_id,
-#                PP.pformat([x[2] for x in delta_options])))
-#        logger.debug("DIFF: " + "\n".join(list(unified_diff(
-#            PP.pformat(recursive_sort(old_data)).split("\n"),
-#            PP.pformat(recursive_sort(new_data)).split("\n")))))
+            logger.debug("DELTA %s\nMultiple results:\n%s" % (
+                delta_id,
+                PP.pformat([x[2] for x in delta_options])))
+        logger.debug("DIFF: " + "\n".join(list(unified_diff(
+            PP.pformat(recursive_sort(old_data)).split("\n"),
+            PP.pformat(recursive_sort(new_data)).split("\n")))))
         returnValue({
             'replacement_delta':replacement_delta,
             'deltas':[x[1] for x in deltas]})
