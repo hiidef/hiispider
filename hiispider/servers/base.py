@@ -20,25 +20,8 @@ from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
-# mock logd stats collection so that stats logged by this library do not cause
-# any problems if a configured stats object is not provided
+from hiispider import stats
 
-class Noop(object):
-    def __getattr__(self, attr):
-        return self.noop
-
-    def noop(self, *args, **kwargs):
-        return
-
-class StatsNoop(Noop):
-    def __init__(self):
-        super(StatsNoop, self).__init__()
-        self.timer = Noop()
-
-    def timed(self, *args, **kwargs):
-        def decorator(f):
-            return f
-        return decorator
 
 def invert(d):
     """Invert a dictionary."""
@@ -97,6 +80,9 @@ class BaseServer(object):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
+        # configure stats
+        self.stats = config.get('stats', stats.stats)
+        stats.stats = self.stats
         # Request Queuer
         self.rq = RequestQueuer(
             max_simultaneous_requests=config["max_simultaneous_requests"],
@@ -109,7 +95,6 @@ class BaseServer(object):
         else:
             self.pg = pg
 
-        self.stats = config.get('stats', StatsNoop())
 
     def start(self):
         start_deferred = Deferred()
@@ -148,6 +133,10 @@ class BaseServer(object):
 
     @inlineCallbacks
     def executeJob(self, job):
+        dotted_function = '.'.join(job.function_name.split('/'))
+        timer = 'job.%s.duration' % (dotted_function)
+        self.stats.timer.start(timer)
+        self.stats.timer.start('job.time')
         if not job.mapped:
             job = self.mapJob(job)
         f = self.functions[job.function_name]
@@ -163,10 +152,17 @@ class BaseServer(object):
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
             logger.debug("Received exception %s" % e)
+            self.stats.increment('job.%s.failure' % dotted_function)
+            self.stats.timer.stop(timer)
+            self.stats.timer.stop('job.time')
             raise
         # If the data is None, there's nothing to store.
         if job.uuid in self.active_jobs:
             del self.active_jobs[job.uuid]
+        # stats collection
+        self.stats.increment('job.%s.success' % dotted_function)
+        self.stats.timer.stop(timer)
+        self.stats.timer.stop('job.time')
         returnValue(data)
 
     @inlineCallbacks

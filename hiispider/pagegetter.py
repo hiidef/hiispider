@@ -14,6 +14,7 @@ from .exceptions import StaleContentException
 from twisted.web.client import _parse
 from twisted.python.failure import Failure
 
+from hiispider import stats
 
 class ReportedFailure(Failure):
     pass
@@ -124,9 +125,11 @@ class PageGetter:
                     negative_req_cache_item = None
                 if negative_req_cache_item and negative_req_cache_item['timeout'] > time.time():
                     logger.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
+                    stats.stats.increment('pg.negreqcache.hit')
                     negative_req_cache_item['error'].raiseException()
                 else:
                     logger.error('Removing request hash %s from the negative request cache' % request_hash)
+                    stats.stats.increment('pg.negreqcache.flush')
                     self.redis_client.delete(negative_req_cache_key)
         d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
@@ -146,9 +149,11 @@ class PageGetter:
                     negative_cache_host = None
                 if negative_cache_host and negative_cache_host['timeout'] > time.time():
                     logger.error('Found in negative cache, raising last known exception')
+                    stats.stats.increment('pg.negcache.hit')
                     negative_cache_host['error'].raiseException()
                 else:
                     logger.error('Removing host %s from the negative cache' % request_hash)
+                    stats.stats.increment('pg.negcache.flush')
                     self.redis_client.delete(negative_cache_host_key)
         d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
@@ -330,8 +335,10 @@ class PageGetter:
                 if expires > now:
                     if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                         logger.debug("Raising StaleContentException (1) on %s" % request_hash)
+                        stats.stats.increment('pg.stalecontent')
                         raise StaleContentException()
                     logger.debug("Cached data %s for URL %s is not stale. Getting from redis." % (request_hash, url))
+                    stats.stats.increment('pg.redis.hit')
                     d = self.getCachedData(request_hash)
                     d.addCallback(self._returnCachedData, request_hash)
                     d.addErrback(
@@ -343,6 +350,7 @@ class PageGetter:
                         http_history=http_history,
                         host=host)
                     return d
+            stats.stats.increment('pg.redis.miss')
             modified_request_kwargs = copy.deepcopy(request_kwargs)
             # At this point, cached data may or may not be stale.
             # If cached data has an etag header, include it in the request.
