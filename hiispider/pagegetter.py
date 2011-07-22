@@ -350,7 +350,6 @@ class PageGetter:
                         http_history=http_history,
                         host=host)
                     return d
-            stats.stats.increment('pg.redis.miss')
             modified_request_kwargs = copy.deepcopy(request_kwargs)
             # At this point, cached data may or may not be stale.
             # If cached data has an etag header, include it in the request.
@@ -416,6 +415,7 @@ class PageGetter:
         except Exception:
             pass
         # No header stored in the cache. Make the request.
+        stats.stats.increment('pg.redis.miss')
         logger.debug("Unable to find header for request %s on redis, fetching from %s." % (request_hash, url))
         d = self.rq.getPage(url, **request_kwargs)
         d.addCallback(
