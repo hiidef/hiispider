@@ -1,6 +1,6 @@
 import inspect
 import types
-from .delta import autogenerate
+from .delta import Autogenerator
 
 __all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
 EXPOSED_FUNCTIONS = {}
@@ -17,9 +17,12 @@ def aliases(*args):
     return decorator
 
 
-def autodelta(func):
-    DELTA_FUNCTIONS[id(func)] = autogenerate
-    return func
+def autodelta(paths=None, includes=None, ignores=None):
+    def decorator(f):
+        DELTA_FUNCTIONS[id(f)] = Autogenerator(paths=paths, includes=includes, ignores=ignores)
+        return f
+    return decorator
+
 
 def delta(handler):
     def decorator(f):
@@ -30,20 +33,22 @@ def delta(handler):
 
 def expose(func=None, interval=0, category=None, name=None, memoize=False):
     if func is not None:
-        EXPOSED_FUNCTIONS[id(func)] = {"interval":interval, "name":name, 'category':category}
+        EXPOSED_FUNCTIONS[id(func)] = {"interval": interval, "name": name, 'category': category}
         return func
+
     def decorator(f):
-        EXPOSED_FUNCTIONS[id(f)] = {"interval":interval, "name":name, 'category':category}
+        EXPOSED_FUNCTIONS[id(f)] = {"interval": interval, "name": name, 'category': category}
         return f
     return decorator
 
 
 def make_callable(func=None, interval=0, category=None, name=None, memoize=False):
     if func is not None:
-        CALLABLE_FUNCTIONS[id(func)] = {"interval":interval, "name":name, 'category':category}
+        CALLABLE_FUNCTIONS[id(func)] = {"interval": interval, "name": name, 'category': category}
         return func
+
     def decorator(f):
-        CALLABLE_FUNCTIONS[id(f)] = {"interval":interval, "name":name, 'category':category}
+        CALLABLE_FUNCTIONS[id(f)] = {"interval": interval, "name": name, 'category': category}
         return f
     return decorator
 
@@ -52,7 +57,7 @@ class HiiSpiderPlugin(object):
 
     def __init__(self, spider):
         self.spider = spider
-        check_method = lambda x:isinstance(x[1], types.MethodType)
+        check_method = lambda x: isinstance(x[1], types.MethodType)
         instance_methods = filter(check_method, inspect.getmembers(self))
         for instance_method in instance_methods:
             instance_id = id(instance_method[1].__func__)
@@ -90,4 +95,3 @@ class HiiSpiderPlugin(object):
 
     def getPage(self, *args, **kwargs):
         return self.spider.getPage(*args, **kwargs)
-
