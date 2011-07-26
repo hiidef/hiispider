@@ -1,7 +1,5 @@
 import marshal
 import cPickle
-from collections import Hashable, Iterable
-from copy import copy
 from itertools import chain
 
 
