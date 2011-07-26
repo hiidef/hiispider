@@ -20,6 +20,8 @@ from ..requestqueuer import RequestQueuer
 from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
+from hiispider import stats
+
 
 def invert(d):
     """Invert a dictionary."""
@@ -78,6 +80,9 @@ class BaseServer(object):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
+        # configure stats
+        self.stats = config.get('stats', stats.stats)
+        stats.stats = self.stats
         # Request Queuer
         self.rq = RequestQueuer(
             max_simultaneous_requests=config["max_simultaneous_requests"],
@@ -89,6 +94,7 @@ class BaseServer(object):
             self.pg = PageGetter(rq=self.rq)
         else:
             self.pg = pg
+
 
     def start(self):
         start_deferred = Deferred()
@@ -127,6 +133,10 @@ class BaseServer(object):
 
     @inlineCallbacks
     def executeJob(self, job):
+        dotted_function = '.'.join(job.function_name.split('/'))
+        timer = 'job.%s.duration' % (dotted_function)
+        self.stats.timer.start(timer)
+        self.stats.timer.start('job.time')
         if not job.mapped:
             job = self.mapJob(job)
         f = self.functions[job.function_name]
@@ -141,10 +151,18 @@ class BaseServer(object):
         except Exception, e:
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
+            logger.debug("Received exception %s" % e)
+            self.stats.increment('job.%s.failure' % dotted_function)
+            self.stats.timer.stop(timer)
+            self.stats.timer.stop('job.time')
             raise
         # If the data is None, there's nothing to store.
         if job.uuid in self.active_jobs:
             del self.active_jobs[job.uuid]
+        # stats collection
+        self.stats.increment('job.%s.success' % dotted_function)
+        self.stats.timer.stop(timer)
+        self.stats.timer.stop('job.time')
         returnValue(data)
 
     @inlineCallbacks
