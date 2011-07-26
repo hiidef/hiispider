@@ -1,12 +1,14 @@
 import marshal
 import cPickle
-from collections import Hashable, Iterable
-from copy import copy
 from itertools import chain
 
 
 class AutogenerateException(Exception):
     pass
+
+
+def _all_list(a):
+    return all([isinstance(x, list) for x in a])
 
 
 def _included(includes):
@@ -21,25 +23,29 @@ def _shift(a):
     return [x[1:] for x in a]
 
 
+def _simplesort(a):
+    if type(a) is dict:
+        return [(x, _simplesort(a[x])) for x in sorted(a)]
+    elif type(a) is list:
+        return sorted([_simplesort(x) for x in a])
+    return a
+
+
 def _sort(a, ignores, includes):
-    if isinstance(a, basestring):
-        # Don't try to sort strings.
-        return a
-    elif isinstance(a, dict):
+    if not ignores and not includes:
+        return _simplesort(a)
+    if type(a) is dict:
         # If there are include paths, iterate through keys in these paths.
         included_keys = _included(includes)
         if included_keys:
-            keys = set(a.keys()).intersection(included_keys)
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
+                for x in sorted(included_keys) if x in a]
         else:
             # Disregard keys at the top level of the ignore paths.
             ignored_keys = _ignored(ignores)
-            keys = set(a.keys()).difference(ignored_keys)
-        # Return a sorted list of (key, value) tuples with the included
-        # or ignored keys.
-        return sorted(
-            [(x, _sort(a[x], _shift(ignores), _shift(includes))) for x in keys], 
-            key=lambda x: x[0])
-    elif isinstance(a, Iterable):
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
+                for x in sorted(a) if x not in ignored_keys]
+    elif type(a) is list:
         try:
             return sorted([_sort(x, ignores, includes) for x in a])
         except ValueError:
@@ -49,8 +55,10 @@ def _sort(a, ignores, includes):
 
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
-    if isinstance(a, Hashable):
+    try:
         return hash(a)
+    except:
+        pass
     # As dictionaries and other types of iterables don't have order,
     # marshalling then hashing identical dictionaries won't provide
     # the same hash. To remedy this we convert dictionaries and other
@@ -64,47 +72,13 @@ def _hash(a, ignores, includes):
         return hash(cPickle.dumps(a))
 
 
-def _convert_to_hashed_dict(a, ignores, includes):
-    """
-    Convert a list into a dictionary suitable for comparison of structured
-    data types.
-    """
-    return dict([(_hash(x, ignores, includes), x) for x in a])
-
-
-def _narrow_list(a, path):
-    """
-    Recursively remove keys not in path from dictonaries that are ancestors
-    of list 'a'
-    """
-    # If the path is empty, no need to narrow any further.
-    if not path:
-        return a
-    # Recurse through elements in the list, keeping the same path level.
-    elif isinstance(a, list):
-        return [_narrow_list(x, path) for x in a if x]
-    # If path exists in the dictionary, return a new dictionary of
-    # that key and a recursively narrowed value, moving one path level.
-    elif isinstance(a, dict):
-        key = path[0]
-        if key in a:
-            return {key: _narrow_list(a[key], path[1:])}
-    # If a path is specified and a is not a list or a dict, return an empty
-    # list. As this function is only initially called on lists, this should
-    # not cause problems.
-    return []
-
-
-def _compare_lists(a, b, ignores, includes, path=None):
+def _compare_lists(a, b, ignores, includes):
     """
     Compare two lists composed of objects.
 
     Returns a list of objects in 'a' not contained in 'b' or in the event
     there are no common elements, an empty list.
     """
-    if path:
-        a = _narrow_list(a, path)
-        b = _narrow_list(b, path)
     try:
         # We don't need to worry about includes/ignores here
         # as dicts aren't hashable.
@@ -112,66 +86,58 @@ def _compare_lists(a, b, ignores, includes, path=None):
     except TypeError:
         # A and b are not hashable.
         pass
-    hashed_a = _convert_to_hashed_dict(a, ignores, includes)
-    hashed_b = _convert_to_hashed_dict(b, ignores, includes)
+    hashed_a = dict([(_hash(x, ignores, includes), x) for x in a])
+    hashed_b = dict([(_hash(x, ignores, includes), x) for x in b])
     # Compare the hashes to get a list of items in a that are not in b.
-    return [hashed_a[x] for x in set(hashed_a.keys()) - set(hashed_b.keys())]
+    return [hashed_a[x] for x in set(hashed_a) - set(hashed_b)]
 
 
-def _compare_dicts(a, b, ignores, includes):
+def _narrow(a, b, path):
     """
-    Compare two dictonaries composed of objects.
-
-    Returns a list of (key, value) pairs in 'a' not contained in 'b' or in the
-    event there are no common elements, an empty list.
-    """ 
-    # If there are include paths, iterate through keys in these paths.
-    included_keys = _included(includes)
-    if included_keys:
-        keys = set(a.keys()).intersection(included_keys)
-    else:
-        # Disregard keys at the top level of the ignore paths.
-        ignored_keys = _ignored(ignores)
-        keys = set(a.keys()).difference(ignored_keys)
-    values = []
-    for key in keys:
-        if key not in b:
-            values.append({key:a[key]})
-            continue
-        x, y = a[key], b[key]
-        if x == y:
-            pass
-        elif isinstance(x, Hashable) and isinstance(y, Hashable):
-            # Values are hashable, but not equal.
-            values.append({key:x})
-        # Moving beyond the built-in comparisons.
-        elif x.__class__ != y.__class__:
-            # Values are different types.
-            values.append({key:x})
-        elif isinstance(x, list):
-            # Return new items in lists at key.
-            deltas = _compare_lists(x, y, _shift(ignores), _shift(includes))
-            if len(deltas) > 0:
-                values.append({key:deltas})
-        elif isinstance(x, dict):
-            # Return new items in dicts at key.
-            deltas = _compare_dicts(x, y, _shift(ignores), _shift(includes))
-            if len(deltas) > 0:
-                delta = {}
-                for z in deltas:
-                    delta.update(z)
-                values.append({key:delta})
-        elif _hash(x, ignores, includes) != _hash(y, ignores, includes):
-            values.append({key:x})
-    return values
+    Recursively remove keys not in path. Combine lists of lists if 
+    indicated by the path.
+    """
+    # If the path is empty, no need to narrow any further.
+    # If there is nothing to narrow, no need to narrow further.
+    if not path or (not a and not b):
+        return a, b
+    elif a.__class__ != b.__class__:
+        raise TypeError("Cannot generate delta from %s to %s." % (
+            a.__class__,
+            b.__class__))
+    key = path[0]
+    if type(a) is list:
+        a_dicts = [x[key] for x in a if type(x) is dict and key in x]
+        b_dicts = [x[key] for x in b if type(x) is dict and key in x]
+        if a_dicts or b_dicts:
+            a, b = a_dicts, b_dicts
+            if _all_list(a) and _all_list(b):
+                a = list(chain(*a))
+                b = list(chain(*b))
+            return _narrow(a, b, path[1:])
+        a = list(chain(*[x for x in a if type(x) is list]))
+        b = list(chain(*[x for x in b if type(x) is list]))
+        return _narrow(a, b, path)
+    # If path exists in the dictionary, return a new dictionary of
+    # that key and a recursively narrowed value, moving one path level.
+    elif type(a) is dict:
+        a = a.get(key) or []
+        b = b.get(key) or []
+        return _narrow(a, b, path[1:])
+    # If a path is specified and a is not a list or a dict, return an empty
+    # list. As this function is only initially called on lists, this should
+    # not cause problems.
+    return [], []
 
 
 class Autogenerator(object):
-    def __init__(self, paths=None, ignores=None, includes=None):
+    def __init__(self, paths=None, ignores=None, includes=None, return_new_keys=False):
         paths = self._parse_paths(paths)
         includes = self._parse_paths(includes)
         ignores = self._parse_paths(ignores)
+        self.return_new_keys = return_new_keys
         if len(paths) == 0:
+            # Make sure the ignores don't supersede the includes.
             for ignore in ignores:
                 for include in includes:
                     if include[0:len(ignore)] == ignore:
@@ -183,26 +149,24 @@ class Autogenerator(object):
                 "ignores":ignores}]
         else:
             self.paths = []
+            # Trim the include and ignores to remove items on eacb path.
             for path in paths:
-                path_parameters = {
-                    "path": path,
-                    "includes": [],
-                    "ignores": []}
-                for include in includes:
-                    if include[0:len(path)] == path:
-                        path_parameters["includes"].append(include)
-                for ignore in ignores:
-                    if ignore[0:len(path)] == path:
-                        path_parameters["ignores"].append(ignore)
-                    if path[0:len(ignore)] == ignore:
-                        raise AutogenerateException("%s ignore supersedes"
-                            " %s path." % (ignore, path))
-                    for include in includes:
+                path_parameters = {"path": path}
+                _includes = includes
+                _ignores = ignores
+                for key in path:
+                    _includes = [x[1:] for x in _includes if x and x[0] == key]
+                    _ignores = [x[1:] for x in _ignores if x and x[0] == key]
+                # Make sure the ignores don't supersede the includes.
+                for ignore in _ignores:
+                    for include in _includes:
                         if include[0:len(ignore)] == ignore:
                             raise AutogenerateException("%s ignore supersedes"
                                 " %s include." % (ignore, include))
+                path_parameters["includes"] = _includes
+                path_parameters["ignores"] = _ignores
                 self.paths.append(path_parameters)
-
+    
     def __call__(self, a, b):
         """
         Compare dictionaries or lists of objects. Returns a list.
@@ -215,20 +179,7 @@ class Autogenerator(object):
         path = pathdata["path"]
         ignores = pathdata["ignores"]
         includes = pathdata["includes"]
-        while len(path) > 0:
-            key = path[0]
-            if isinstance(a, dict) and isinstance(b, dict):
-                if key in a and key in b:
-                    a, b = a[key], b[key]
-                    path = path[1:]
-                    ignores, includes = _shift(ignores), _shift(includes)
-                    continue
-                else:
-                    # If the specified path doesn't exist in both objects,
-                    # don't try to make a comparison.
-                    return []
-            else:
-                break
+        a, b = _narrow(a, b, path)
         # Native Python comparison. Should be well optimized across VMs.
         if a == b:
             return []
@@ -238,16 +189,17 @@ class Autogenerator(object):
             raise TypeError("Cannot generate delta from %s to %s." % (
                 a.__class__,
                 b.__class__))
-        # Ignore strings at this depth, otherwise we're generating a
-        # string diff.
-        elif isinstance(a, basestring):
-            raise TypeError("Cannot generate delta from strings.")
-        elif isinstance(a, list):
-            return _compare_lists(a, b, ignores, includes, path)
-        elif isinstance(a, dict):
-            return _compare_dicts(a, b, ignores, includes)
+        elif type(a) is list:
+            return _compare_lists(a, b, ignores, includes)
+        elif type(a) is dict:
+            if self.return_new_keys:
+                return [{x:a[x]} for x in set(a) - set(b)]
+            elif _hash(a, ignores, includes) != _hash(b, ignores, includes):
+                return [a]
+            else:
+                return []
         else:
-            raise TypeError("Cannot generate delta from %s." % a.__class__)
+            return [a]
 
     def _parse_paths(self, paths):
         if paths is None:
