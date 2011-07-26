@@ -220,7 +220,13 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue({'success':True})
         
     @inlineCallbacks
-    def regenerate_delta(self, delta_id, paths=None, includes=None, ignores=None):
+    def regenerate_delta(
+            self, 
+            delta_id, 
+            paths=None, 
+            includes=None, 
+            ignores=None, 
+            return_new_keys=False):
         # Get the delta data, the old data, the new data, and the subservice.
         data = yield self.cassandra_client.get_slice(
             key=delta_id,
@@ -236,7 +242,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 includes = includes.split(",")
             if ignores:
                 ignores = ignores.split(",")
-            delta_func = Autogenerator(paths, ignores, includes)
+            delta_func = Autogenerator(
+                paths, 
+                ignores, 
+                includes, 
+                bool(int(return_new_keys)))
             logger.debug("Using custom Autogenerator.")
         else:
             delta_func = self.functions[row["subservice"]]["delta"]
