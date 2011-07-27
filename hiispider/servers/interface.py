@@ -40,6 +40,7 @@ class InterfaceServer(CassandraServer):
         self.scheduler_server_port = config["scheduler_server_port"]
         if self.delta_debug:
             self.expose(self.regenerate_delta)
+            self.expose(self.regenerate_deltas)
             
     def start(self):
         start_deferred = super(InterfaceServer, self).start()

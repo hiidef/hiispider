@@ -1,6 +1,23 @@
 import marshal
+import time
 import cPickle
 from itertools import chain
+from .uuidhelpers import convert_time_to_uuid
+
+
+class Delta(object):
+    def __init__(self, path, data, delta_id=None, created=None):
+        self.path = path
+        self.data = data
+        if delta_id and created:
+            raise TypeError("delta_id and created parameters interfere"
+                " with each other. Please choose one.")
+        if delta_id:
+            self.id = delta_id
+        elif created:
+            self.id = convert_time_to_uuid(created)
+        else:
+            self.id = convert_time_to_uuid(time.time())
 
 
 class AutogenerateException(Exception):
@@ -177,6 +194,7 @@ class Autogenerator(object):
 
     def _call(self, a, b, pathdata):
         path = pathdata["path"]
+        pathstring = "/".join(path)
         ignores = pathdata["ignores"]
         includes = pathdata["includes"]
         a, b = _narrow(a, b, path)
@@ -190,16 +208,17 @@ class Autogenerator(object):
                 a.__class__,
                 b.__class__))
         elif type(a) is list:
-            return _compare_lists(a, b, ignores, includes)
+            values = _compare_lists(a, b, ignores, includes)
+            return [Delta(pathstring, x) for x in values]
         elif type(a) is dict:
             if self.return_new_keys:
-                return [{x:a[x]} for x in set(a) - set(b)]
+                return [Delta(pathstring, {x:a[x]}) for x in set(a) - set(b)]
             elif _hash(a, ignores, includes) != _hash(b, ignores, includes):
-                return [a]
+                return [Delta(pathstring, a)]
             else:
                 return []
         else:
-            return [a]
+            return [Delta(pathstring, a)]
 
     def _parse_paths(self, paths):
         if paths is None:
