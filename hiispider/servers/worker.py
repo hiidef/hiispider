@@ -115,6 +115,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             yield self.deleteReservation(job.uuid)
         except Exception:
             logger.error("Error during executeJob:\n%s" % format_exc())
+            self.stats.increment('job.exceptions')
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
         yield self.clearPageCache(job)
