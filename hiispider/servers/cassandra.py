@@ -54,6 +54,7 @@ def recursive_sort(x):
 
 class CassandraServer(BaseServer, JobGetterMixin):
 
+    regenerating = False
     redis_client = None
 
     def __init__(self, config):
@@ -200,6 +201,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue({'success':True})
 
     def regenerate_deltas(self, start='', finish=''):
+        if self.regenerating:
+            return {"success":False, "message":"Already regenerating. Come back later."}
+        self.regenerating = True
         if start:
             start = convert_time_to_uuid(float(start))
         if finish:
@@ -225,8 +229,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 0, 
                 self._regenerate_deltas, 
                 start=range_slice.pop().key + chr(0x00), # The next largest value.
-                finish=finish,
-                subservice=subservice)
+                finish=finish)
+        else:
+            self.regenerating = False
 
     @inlineCallbacks
     def delete_delta(self, delta_id, user_id=None):
