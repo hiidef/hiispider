@@ -213,20 +213,20 @@ class CassandraServer(BaseServer, JobGetterMixin):
     
     @inlineCallbacks
     def _regenerate_deltas(self, start='', finish=''):
-        keyslice = yield self.cassandra_client.get_range_slices(
+        range_slice = yield self.cassandra_client.get_range_slices(
             column_family=self.cassandra_cf_delta, 
             column_count=0,
             count=100,
             start=start,
             finish=finish)
-        keys = [x.key for x in keyslice]
-        yield DeferredList([self.regenerate_delta(key) for key in keys])
-        if keys:
+        yield DeferredList([self.regenerate_delta(x.key) for x in range_slice])
+        if range_slice:
             reactor.callLater(
                 0, 
                 self._regenerate_deltas, 
-                start=keys.pop() + chr(0x00), # The next largest value.
-                finish=finish)
+                start=range_slice.pop().key + chr(0x00), # The next largest value.
+                finish=finish,
+                subservice=subservice)
 
     @inlineCallbacks
     def delete_delta(self, delta_id, user_id=None):
