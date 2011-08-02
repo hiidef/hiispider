@@ -97,10 +97,10 @@ class HiiSpiderPlugin(object):
         return self.spider.getPage(*args, **kwargs)
     
     @make_callable
-    def getID(self):
+    def _getIdentity(self, *args, **kwargs):
         raise NotImplementedError()
         
     @make_callable
-    def getConnections(self):
+    def _getConnections(self, *args, **kwargs):
         raise NotImplementedError()
     
