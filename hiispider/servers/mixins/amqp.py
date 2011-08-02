@@ -154,7 +154,8 @@ class AMQPMixin(object):
         if not self.amqp_pagecache_vhost:
             return
         if self.amqp_pagecache_queue_size > 100000:
-            logger.error('Pagecache Queue Size has exceeded 100,000 items')
+            # FIXME: What does this event mean?  Should we count it?
+            logger.debug('Pagecache Queue Size has exceeded 100,000 items')
             return
         pagecache_msg = {}
         if "host" in job.user_account and job.user_account['host']:
