@@ -116,7 +116,7 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
         except Exception:
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
-            plugl.error("Error executing job:\n%r\n%s" % (job,format_exc()))
+            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
             plugl.error(msg)
             self.stats.increment('job.exceptions')
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
