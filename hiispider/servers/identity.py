@@ -63,10 +63,33 @@ class IdentityServer(BaseServer, MySQLMixin):
     def _identityStart(self, started=False):
         return
 
-    @inlineCallbacks
+    def updateUser(self, user_id):
+        reactor.callLater(0, self._updateUser, user_id)
+        return {"success":True, "message":"User update started."}
+
+    def _updateUser(self, user_id):
+        sql = """SELECT type FROM content_account WHERE user_id=%%s"""
+        data = yield self.mysql.runQuery(sql, int(user_id)
+        deferreds = [self._updateIdentity(self, user_id, x["type"] for x in data)]
+        results = yield DeferredList(deferreds, consumeErrors=True)
+        for result in results:
+            if not result[0]:
+                raise result[1]
+        deferreds = [self._updateConnections(self, user_id, x["type"] for x in data)]
+        results = yield DeferredList(deferreds, consumeErrors=True)        
+        for result in results:
+            if not result[0]:
+                raise result[1]
+
     def updateAllIdentities(self, service_name):
         if self.updating_identities.get(service_name, False):
-            returnValue({"success":False, "message":"Already updating %s" % service_name})
+            return {"success":False, "message":"Already updating %s" % service_name}
+        else:
+            reactor.callLater(0, self._updateAllIdentities, service_name)
+            return {"success":True, "message":"Update all identities started."}
+             
+    @inlineCallbacks
+    def _updateAllIdentities(self, service_name):
         self.updating_identities[service_name] = True
         sql = """SELECT user_id 
         FROM content_%(service_name)saccount 
@@ -78,7 +101,7 @@ class IdentityServer(BaseServer, MySQLMixin):
         step = 100
         data = yield self.mysql.runQuery(sql, (start, step))
         while data:
-            d = [self.updateIdentity(str(x["user_id"]), service_name) for x in data]
+            d = [self._updateIdentity(str(x["user_id"]), service_name) for x in data]
             results = yield DeferredList(d, consumeErrors=True)
             for result in results:
                 if not result[0]:
@@ -86,12 +109,16 @@ class IdentityServer(BaseServer, MySQLMixin):
             start += step
             data = yield self.mysql.runQuery(sql, (start, step))
         self.updating_connections[service_name] = False
-        returnValue({"success":True})
-
-    @inlineCallbacks
+    
     def updateAllConnections(self, service_name):
         if self.updating_connections.get(service_name, False):
-            returnValue({"success":False, "message":"Already updating %s" % service_name})
+            return {"success":False, "message":"Already updating %s" % service_name}
+        else:
+            reactor.callLater(0, self._updateAllConnections, service_name)
+            return {"success":True, "message":"Update all connections started."}
+
+    @inlineCallbacks
+    def _updateAllConnections(self, service_name):
         self.updating_connections[service_name] = True
         sql = """SELECT user_id 
         FROM content_%(service_name)saccount 
@@ -103,7 +130,7 @@ class IdentityServer(BaseServer, MySQLMixin):
         step = 40
         data = yield self.mysql.runQuery(sql, (start, step))
         while data:
-            d = [self.updateConnections(str(x["user_id"]), service_name) for x in data]
+            d = [self._updateConnections(str(x["user_id"]), service_name) for x in data]
             results = yield DeferredList(d, consumeErrors=True)
             for result in results:
                 if not result[0]:
@@ -140,8 +167,12 @@ class IdentityServer(BaseServer, MySQLMixin):
                     kwargs[key] = kwargs.pop(value)
         returnValue(data)        
 
-    @inlineCallbacks
     def updateIdentity(self, user_id, service_name):
+        reactor.callLater(0, self._updateIdentity, user_id, service_name)
+        return {"success":True, "message":"Update identity started."}
+    
+    @inlineCallbacks
+    def _updateIdentity(self, user_id, service_name):
         data = yield self._accountData(user_id, service_name)
         for kwargs in data:
             function_key = "%s/_getidentity" % service_name
@@ -152,8 +183,12 @@ class IdentityServer(BaseServer, MySQLMixin):
                 user_id, 
                 column="user_id")
 
-    @inlineCallbacks
     def updateConnections(self, user_id, service_name):
+        reactor.callLater(0, self._updateConnections, user_id, service_name)
+        return {"success":True, "message":"Update identity started."}        
+
+    @inlineCallbacks
+    def _updateConnections(self, user_id, service_name):
         data = yield self._accountData(user_id, service_name)
         ids = []
         for kwargs in data:
