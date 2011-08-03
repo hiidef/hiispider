@@ -51,7 +51,7 @@ class JobGetterMixin(MySQLMixin):
             logger.debug("Could not find user %s" % uuid)
             raise e
         if len(data) == 0: # No results?
-            message = "Could not find user %s: %s" % uuid
+            message = "Could not find user %s" % (uuid)
             logger.error(message)
             raise Exception(message)
         returnValue(data[0])

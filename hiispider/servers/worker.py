@@ -115,7 +115,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         except DeleteReservationException:
             yield self.deleteReservation(job.uuid)
         except Exception:
-            logger.error("Error during executeJob:\n%s" % format_exc())
+            plugin = job.function_name.split('/')[0]
+            plugl = logging.getLogger(plugin)
+            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
+            plugl.error(msg)
             self.stats.increment('job.exceptions')
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
