@@ -350,6 +350,10 @@ class BaseServer(object):
             job.kwargs = kwargs
         job.mapped = True
         return job
+    
+    def executeExposedFunction(self, *args, **kwargs):
+        return self.executeFunction(*args, **kwargs)
+
 
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):
