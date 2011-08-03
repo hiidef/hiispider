@@ -90,6 +90,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
+        self.stats.change_by('unscheduled.size', len(self.unscheduled_items))
         if self.amqp_queue_size < 100000:
             logger.debug("%s:%s" % (self.heap[0][0], now))
             while self.heap[0][0] < now and queued_items < 1000:
@@ -100,6 +101,7 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
                     self.chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
+                    self.stats.increment('chan.enqueue.success')
                     heappush(self.heap, (now + job[1][1], job[1]))
                 else:
                     self.unscheduled_items.remove(uuid.hex)
@@ -109,9 +111,15 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
 
     def enqueueUUID(self, uuid):
         logger.debug('enqueueUUID: uuid=%s' % uuid)
-        self.chan.basic_publish(
-            exchange=self.amqp_exchange,
-            content=Content(UUID(uuid).bytes))
+        try:
+            self.chan.basic_publish(
+                exchange=self.amqp_exchange,
+                content=Content(UUID(uuid).bytes))
+            self.stats.increment('chan.enqueue.success')
+        except ValueError, e:
+            logger.error("enqueueUUID failed for uuid \"%s\": %s" % (uuid, e))
+            self.stats.increment('chan.enqueue.failure')
+            return
         return uuid
 
     def remoteAddToHeap(self, uuid=None, type=None):
