@@ -151,7 +151,6 @@ class BaseServer(object):
         except Exception, e:
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
-            logger.debug("Received exception %s" % e)
             self.stats.increment('job.%s.failure' % dotted_function)
             self.stats.timer.stop(timer)
             self.stats.timer.stop('job.time')
@@ -351,6 +350,10 @@ class BaseServer(object):
             job.kwargs = kwargs
         job.mapped = True
         return job
+    
+    def executeExposedFunction(self, *args, **kwargs):
+        return self.executeFunction(*args, **kwargs)
+
 
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):

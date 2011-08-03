@@ -80,19 +80,10 @@ class InterfaceServer(CassandraServer):
         returnValue(None)
 
     @inlineCallbacks
-    def executeReservation(self, function_name, **kwargs):
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
-        function = self.functions[function_name]
+    def executeExposedFunction(self, function_name, **kwargs):
+        data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
         uuid = uuid4().hex if function["interval"] > 0 else None
         user_id = kwargs.get('site_user_id', None)
-        data = yield self.executeFunction(function_name, **kwargs)
-
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
             encoded_data = zlib.compress(simplejson.dumps(data))
