@@ -140,8 +140,8 @@ class SchedulerServer(BaseServer, AMQPMixin, MySQLMixin):
         # then rewrite type to the proper resource
         if not uuid in self.unscheduled_items:
             if self.service_mapping and type in self.service_mapping:
-                logger.info('Remapping resource %s to %s'
-                    % (type, self.service_mapping[type]))
+                #logger.debug('Remapping resource %s to %s'
+                #    % (type, self.service_mapping[type]))
                 type = self.service_mapping[type]
             try:
                 # Make sure the uuid is in bytes
