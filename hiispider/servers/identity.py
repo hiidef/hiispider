@@ -3,11 +3,11 @@ from pprint import pformat
 from telephus.protocol import ManagedCassandraClientFactory
 from telephus.client import CassandraClient
 from twisted.web.resource import Resource
-from twisted.internet import reactor
+from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 import logging
-from .mixins import MySQLMixin
+from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
 from telephus.cassandra.c08.ttypes import NotFoundException
 
@@ -22,15 +22,23 @@ def chunks(l, n):
     for i in xrange(0, len(l), n):
         yield l[i:i+n]
 
-class IdentityServer(BaseServer, MySQLMixin):
+class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
 
     name = "HiiSpider Identity Server UUID: %s" % str(uuid4())
-    mapping = {}
+    simultaneous_jobs = 50
+    active_jobs = 0
     updating_connections = {}
     updating_identities = {}
+    connections_queue = []
+    connectionsloop = None
+    dequeueloop = None
+    queue_requests = 0
 
     def __init__(self, config, port=None):
         super(IdentityServer, self).__init__(config)
+        self.plugin_mapping = config["plugin_mapping"]
+        self.setupMySQL(config)
+        self.setupIdentityQueue(config)
         self.cassandra_cf_identity = config["cassandra_cf_identity"]
         self.cassandra_cf_connections = config["cassandra_cf_connections"]
         self.cassandra_cf_recommendations = config["cassandra_cf_recommendations"]
@@ -47,7 +55,6 @@ class IdentityServer(BaseServer, MySQLMixin):
         if port is None:
             port = config["identity_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        self.setupMySQL(config)
         self.expose(self.updateIdentity)
         self.expose(self.updateConnections)
         self.expose(self.updateAllConnections)
@@ -60,22 +67,35 @@ class IdentityServer(BaseServer, MySQLMixin):
         start_deferred.addCallback(self._identityStart)
         return start_deferred
 
+    @inlineCallbacks
     def _identityStart(self, started=False):
-        return
+        yield self.startIdentityQueue()
+        self.connectionsloop = task.LoopingCall(self.findConnections)
+        self.connectionsloop.start(0.2)
+        self.dequeueloop = task.LoopingCall(self.dequeue)
+        self.dequeueloop.start(1)
+
+    @inlineCallbacks
+    def shutdown(self):
+        self.connectionsloop.stop()
+        self.dequeueloop.stop()
+        yield self.stopIdentityQueue()
+        yield super(IdentityServer, self).shutdown()
 
     def updateUser(self, user_id):
         reactor.callLater(0, self._updateUser, user_id)
         return {"success":True, "message":"User update started."}
-
+    
+    @inlineCallbacks
     def _updateUser(self, user_id):
-        sql = """SELECT type FROM content_account WHERE user_id=%%s"""
-        data = yield self.mysql.runQuery(sql, int(user_id)
-        deferreds = [self._updateIdentity(self, user_id, x["type"] for x in data)]
+        sql = """SELECT type FROM content_account WHERE user_id=%s"""
+        data = yield self.mysql.runQuery(sql, int(user_id))
+        deferreds = [self._updateIdentity(str(user_id), x["type"]) for x in data if "custom" not in x["type"]]
         results = yield DeferredList(deferreds, consumeErrors=True)
         for result in results:
             if not result[0]:
                 raise result[1]
-        deferreds = [self._updateConnections(self, user_id, x["type"] for x in data)]
+        deferreds = [self._updateConnections(str(user_id), x["type"]) for x in data if "custom" not in x["type"]]
         results = yield DeferredList(deferreds, consumeErrors=True)        
         for result in results:
             if not result[0]:
@@ -160,11 +180,12 @@ class IdentityServer(BaseServer, MySQLMixin):
             message = "Could not find service %s:%s" % (service_name, user_id)
             logger.error(message)
             raise Exception(message)
-        mapping = self.inverted_args_mapping[service_name]
-        for kwargs in data:
-            for key, value in mapping.iteritems():
-                if value in kwargs:
-                    kwargs[key] = kwargs.pop(value)
+        if service_name in self.inverted_args_mapping:
+            mapping = self.inverted_args_mapping[service_name]
+            for kwargs in data:
+                for key, value in mapping.iteritems():
+                    if value in kwargs:
+                        kwargs[key] = kwargs.pop(value)
         returnValue(data)        
 
     def updateIdentity(self, user_id, service_name):
@@ -175,8 +196,12 @@ class IdentityServer(BaseServer, MySQLMixin):
     def _updateIdentity(self, user_id, service_name):
         data = yield self._accountData(user_id, service_name)
         for kwargs in data:
-            function_key = "%s/_getidentity" % service_name
-            service_id = yield self.executeFunction(function_key, **kwargs)
+            function_key = "%s/_getidentity" % self.plugin_mapping.get(service_name, service_name)
+            try:
+                service_id = yield self.executeFunction(function_key, **kwargs)
+            except NotImplementedError:
+                logger.info("%s not implemented." % function_key)
+                return 
             yield self.cassandra_client.insert(
                 "%s|%s" % (service_name, service_id), 
                 self.cassandra_cf_identity,
@@ -189,12 +214,16 @@ class IdentityServer(BaseServer, MySQLMixin):
 
     @inlineCallbacks
     def _updateConnections(self, user_id, service_name):
+        logger.debug("Updating %s for user %s." % (service_name, user_id))
         data = yield self._accountData(user_id, service_name)
         ids = []
         for kwargs in data:
-            function_key = "%s/_getconnections" % service_name
+            function_key = "%s/_getconnections" % self.plugin_mapping.get(service_name, service_name)
             try:
                 account_ids = yield self.executeFunction(function_key, **kwargs)
+            except NotImplementedError:
+                logger.info("%s not implemented." % function_key)
+                return                
             except Exception, e:
                 logger.error(e.message)
                 return
@@ -275,7 +304,8 @@ class IdentityServer(BaseServer, MySQLMixin):
             column_family=self.cassandra_cf_recommendations)
         returnValue(sorted(
             [(int(x.counter_column.name), int(x.counter_column.value)) for x in data], 
-            key=lambda x:x[1]))
+            key=lambda x:x[1],
+            reverse=True))
 
     @inlineCallbacks
     def getReverseRecommendations(self, user_id):
@@ -286,4 +316,37 @@ class IdentityServer(BaseServer, MySQLMixin):
             [(int(x.counter_column.name), int(x.counter_column.value)) for x in data], 
             key=lambda x:x[1], 
             reverse=True))
+    
+    def dequeue(self):
+        while len(self.connections_queue) + self.queue_requests <= self.amqp_prefetch_count:
+            self.queue_requests += 1
+            logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
+            self.dequeue_item()
 
+    @inlineCallbacks
+    def dequeue_item(self):
+        try:
+            user_id = yield self.getIdentityUserID()
+            logger.debug('Got user_id: %s' % user_id)
+        except Exception, e:
+            # if we've started shutting down, ignore this error
+            if self.shutdown_trigger_id is None:
+                return
+            logger.error('Dequeue Error: %s' % e)
+            return
+        self.queue_requests -= 1
+        self.connections_queue.append(user_id)
+
+    def findConnections(self):
+        while len(self.connections_queue) > 0 and self.active_jobs < self.simultaneous_jobs:
+            self.active_jobs += 1
+            d = self._updateUser(self.connections_queue.pop(0))
+            d.addCallback(self._findConnectionsCallback)
+            d.addErrback(self._findConnectionsErrback)
+
+    def _findConnectionsCallback(self, data):
+        self.active_jobs -= 1
+    
+    def _findConnectionsErrback(self, error):
+        self.active_jobs -= 1
+        logger.error(str(error))
