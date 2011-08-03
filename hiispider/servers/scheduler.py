@@ -111,6 +111,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
+        self.stats.change_by('unscheduled.size', len(self.removed_job_uuids))
         if self.amqp_jobs_queue_size < 100000:
             logger.debug("Jobs: %s:%s" % (self.jobs_heap[0][0], now))
             while self.jobs_heap[0][0] < now and queued_items < 1000:
@@ -121,6 +122,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.jobs_chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
+                    self.stats.increment('chan.enqueue.success')
                     heappush(self.jobs_heap, (now + job[1][1], job[1]))
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
