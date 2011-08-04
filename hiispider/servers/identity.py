@@ -9,7 +9,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 import logging
 from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
-from telephus.cassandra.ttypes import NotFoundException
+from telephus.cassandra.c08.ttypes import NotFoundException
 
 
 logger = logging.getLogger(__name__)
