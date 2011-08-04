@@ -103,5 +103,6 @@ def convert_uuid_to_time(uuid_arg):
     :rtype: timestamp
 
     """
-    ts = uuid_arg.get_time()
+    real_uuid = uuid.UUID(uuid_arg)
+    ts = real_uuid.get_time()
     return (ts - 0x01b21dd213814000L)/1e7

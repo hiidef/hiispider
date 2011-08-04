@@ -11,16 +11,9 @@ from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
 from telephus.cassandra.c08.ttypes import NotFoundException
 
+
 logger = logging.getLogger(__name__)
 
-# From the aptly named:
-# http://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks-in-python
-
-def chunks(l, n):
-    """ Yield successive n-sized chunks from l.
-    """
-    for i in xrange(0, len(l), n):
-        yield l[i:i+n]
 
 class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
 
@@ -55,13 +48,13 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         if port is None:
             port = config["identity_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        self.expose(self.updateIdentity)
         self.expose(self.updateConnections)
         self.expose(self.updateAllConnections)
         self.expose(self.updateAllIdentities)
         self.expose(self.getRecommendations)
         self.expose(self.getReverseRecommendations)
-
+        self.expose(self.updateIdentity)
+        
     def start(self):
         start_deferred = super(IdentityServer, self).start()
         start_deferred.addCallback(self._identityStart)
@@ -186,8 +179,8 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
                 for key, value in mapping.iteritems():
                     if value in kwargs:
                         kwargs[key] = kwargs.pop(value)
-        returnValue(data)        
-
+        returnValue(data)  
+              
     def updateIdentity(self, user_id, service_name):
         reactor.callLater(0, self._updateIdentity, user_id, service_name)
         return {"success":True, "message":"Update identity started."}
@@ -259,7 +252,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             except Exception, e:
                 logger.error(e.message)
         mapped_new_ids = {}
-        for chunk in list(chunks(list(new_ids), 50)):
+        for chunk in list(self.chunks(list(new_ids), 50)):
             data = yield self.cassandra_client.multiget(
                 keys = ["%s|%s" % (service_name, x) for x in chunk],
                 column_family=self.cassandra_cf_identity,
@@ -275,7 +268,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             column_family=self.cassandra_cf_connections,
             mapping=mapped_new_ids)
         folowee_ids = mapped_new_ids.values()
-        for chunk in list(chunks(folowee_ids, 10)):
+        for chunk in list(self.chunks(folowee_ids, 10)):
             deferreds = []
             for followee_id in chunk:
                 logger.info("Incrementing %s:%s" % (user_id, followee_id))
