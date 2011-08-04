@@ -174,8 +174,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         # then rewrite type to the proper resource
         if not uuid in self.removed_job_uuids:
             if self.service_mapping and type in self.service_mapping:
-                logger.info('Remapping resource %s to %s'
-                    % (type, self.service_mapping[type]))
+                #logger.debug('Remapping resource %s to %s'
+                #    % (type, self.service_mapping[type]))
                 type = self.service_mapping[type]
             try:
                 # Make sure the uuid is in bytes
