@@ -9,7 +9,8 @@ from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
 import pprint
 from traceback import format_exc
-from ..exceptions import DeleteReservationException
+
+from hiispider.exceptions import DeleteReservationException, StaleContentException
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -113,6 +114,8 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
             self.jobs_complete += 1
         except DeleteReservationException:
             yield self.deleteReservation(job.uuid)
+        except StaleContentException:
+            pass
         except Exception:
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
