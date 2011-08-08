@@ -217,7 +217,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             range_slice = yield self.cassandra_client.get_indexed_slices(
                 column_family=self.cassandra_cf_delta,
                 expressions=expressions,
-                column_count=0,
+                column_count=1,
                 start_key=start,
                 count=300)
         else:
