@@ -203,11 +203,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
     def regenerate_deltas(self, service_type=None):
         if self.regenerating:
             return {"success":False, "message":"Already regenerating. Come back later."}
-        self.regenerating = True     
+        self.regenerating = True
         reactor.callLater(
             0, 
             self._regenerate_deltas,
-            service_type)
+            service_type=service_type)
         return {"success":True, "message":"Queuing deltas to be regenerated."}
     
     @inlineCallbacks
@@ -218,7 +218,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 column_family=self.cassandra_cf_delta,
                 expressions=expressions,
                 column_count=0,
-                start=start,
+                start_key=start,
                 count=300)
         else:
             range_slice = yield self.cassandra_client.get_range_slices(
@@ -228,6 +228,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 count=300)
         deferreds = []
         for x in range_slice:
+            # FIXME: Debug Set Trace
+            import ipdb
+            ipdb.set_trace()
             d = self.regenerate_delta(x.key)
             d.addErrback(self._regenerateErrback)
             deferreds.append(d)
