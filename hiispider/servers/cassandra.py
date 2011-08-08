@@ -23,7 +23,7 @@ from ..delta import Autogenerator, Delta
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 from ..uuidhelpers import convert_time_to_uuid
-
+from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator
 
 PP = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -200,22 +200,32 @@ class CassandraServer(BaseServer, JobGetterMixin):
             self.cassandra_cf_content)
         returnValue({'success':True})
 
-    def regenerate_deltas(self):
+    def regenerate_deltas(self, service_type=None):
         if self.regenerating:
             return {"success":False, "message":"Already regenerating. Come back later."}
         self.regenerating = True     
         reactor.callLater(
             0, 
-            self._regenerate_deltas)
+            self._regenerate_deltas,
+            service_type)
         return {"success":True, "message":"Queuing deltas to be regenerated."}
     
     @inlineCallbacks
-    def _regenerate_deltas(self, start='', count=0):
-        range_slice = yield self.cassandra_client.get_range_slices(
-            column_family=self.cassandra_cf_delta, 
-            column_count=0,
-            start=start,
-            count=300)
+    def _regenerate_deltas(self, start='', count=0, service_type=None):
+        if service:
+            expressions = [IndexExpression('subservice', IndexOperator.EQ, service_type)]
+            range_slice = yield self.cassandra_client.get_indexed_slices(
+                column_family=self.cassandra_cf_delta,
+                expressions=expressions,
+                column_count=0,
+                start=start,
+                count=300)
+        else:
+            range_slice = yield self.cassandra_client.get_range_slices(
+                column_family=self.cassandra_cf_delta, 
+                column_count=0,
+                start=start,
+                count=300)
         deferreds = []
         for x in range_slice:
             d = self.regenerate_delta(x.key)
