@@ -228,9 +228,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 count=300)
         deferreds = []
         for x in range_slice:
-            # FIXME: Debug Set Trace
-            import ipdb
-            ipdb.set_trace()
             d = self.regenerate_delta(x.key)
             d.addErrback(self._regenerateErrback)
             deferreds.append(d)
