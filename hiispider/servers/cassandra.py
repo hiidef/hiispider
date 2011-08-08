@@ -212,7 +212,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
     
     @inlineCallbacks
     def _regenerate_deltas(self, start='', count=0, service_type=None):
-        if service:
+        if service_type:
             expressions = [IndexExpression('subservice', IndexOperator.EQ, service_type)]
             range_slice = yield self.cassandra_client.get_indexed_slices(
                 column_family=self.cassandra_cf_delta,
