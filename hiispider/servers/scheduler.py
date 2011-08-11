@@ -45,6 +45,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         if port is None:
             port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
+        self.identity_enabled = config["scheduler_server_port"]
         # Logging, etc
         self.expose(self.removeFromJobsHeap)
         self.expose(self.addToJobsHeap)
@@ -79,6 +80,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
             data = yield self.mysql.runQuery(sql)
             for row in data:
                 self.addToJobsHeap(row["uuid"], row["type"])
+        if not self.identity_enabled:
+            return
         data = []
         start = 0
         # Get user_ids
@@ -129,6 +132,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         else:
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_jobs_queue_size)
+        if not self.identity_enabled:
+            return
         # Enqueue identity
         queued_items = 0
         if self.amqp_identity_queue_size < 100000:

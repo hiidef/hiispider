@@ -73,13 +73,9 @@ class CassandraServer(BaseServer, JobGetterMixin):
         # Redis
         self.redis_hosts = config["redis_hosts"]
         # deltas
-        self.delta_log_enabled = config.get('delta_log_enabled', False)
-        self.delta_log_path = config.get('delta_log_path', '/tmp/deltas/')
         self.delta_enabled = config.get('delta_enabled', False)
         self.delta_debug = config.get('delta_debug', False)
         # create the log path if required & enabled
-        if self.delta_enabled and self.delta_log_enabled and not os.path.exists(self.delta_log_path):
-            os.makedirs(self.delta_log_path)
         self.cassandra_cf_delta = config.get('cassandra_cf_delta', None)
         self.cassandra_cf_delta_user = config.get('cassandra_cf_delta_user', None)
         # sanity check config;  if cfs aren't set, turn deltas off
@@ -178,8 +174,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
     @inlineCallbacks
     def deleteReservation(self, uuid):
         """Delete a reservation by uuid."""
-        # FIXME: this function is unnecessarily coupled to the job object;
-        # only a uuid is needed to delete a reservation
         logger.info('Deleting UUID from spider_service table: %s' % uuid)
         yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
         url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
