@@ -38,9 +38,11 @@ class InterfaceServer(CassandraServer):
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
+        self.cassandra_cf_identity = config["cassandra_cf_identity"]
         if self.delta_debug:
             self.expose(self.regenerate_delta)
             self.expose(self.regenerate_deltas)
+            self.expose(self.updateIdentity)
             
     def start(self):
         start_deferred = super(InterfaceServer, self).start()
@@ -57,7 +59,7 @@ class InterfaceServer(CassandraServer):
         yield super(InterfaceServer, self).shutdown()
 
     def enqueueUUID(self, uuid):
-        url = 'http://%s:%s/function/schedulerserver/enqueueuuid?%s' % (
+        url = 'http://%s:%s/function/schedulerserver/enqueuejobuuid?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
@@ -80,19 +82,11 @@ class InterfaceServer(CassandraServer):
         returnValue(None)
 
     @inlineCallbacks
-    def executeReservation(self, function_name, **kwargs):
-        if not isinstance(function_name, str):
-            for key in self.functions:
-                if self.functions[key]["function"] == function_name:
-                    function_name = key
-                    break
-        if function_name not in self.functions:
-            raise Exception("Function %s does not exist." % function_name)
+    def executeExposedFunction(self, function_name, **kwargs):
         function = self.functions[function_name]
+        data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
         uuid = uuid4().hex if function["interval"] > 0 else None
         user_id = kwargs.get('site_user_id', None)
-        data = yield self.executeFunction(function_name, **kwargs)
-
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
             encoded_data = zlib.compress(simplejson.dumps(data))
@@ -101,4 +95,24 @@ class InterfaceServer(CassandraServer):
             returnValue(data)
         else:
             returnValue({uuid: data})
+    
+    def updateIdentity(self, user_id, service_name):
+        reactor.callLater(0, self._updateIdentity, user_id, service_name)
+        return {"success":True, "message":"Update identity started."}
+    
+    @inlineCallbacks
+    def _updateIdentity(self, user_id, service_name):
+        data = yield self._accountData(user_id, service_name)
+        for kwargs in data:
+            function_key = "%s/_getidentity" % self.plugin_mapping.get(service_name, service_name)
+            try:
+                service_id = yield self.executeFunction(function_key, **kwargs)
+            except NotImplementedError:
+                logger.info("%s not implemented." % function_key)
+                return 
+            yield self.cassandra_client.insert(
+                "%s|%s" % (service_name, service_id), 
+                self.cassandra_cf_identity,
+                user_id, 
+                column="user_id")
 

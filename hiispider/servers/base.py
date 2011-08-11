@@ -350,6 +350,15 @@ class BaseServer(object):
             job.kwargs = kwargs
         job.mapped = True
         return job
+    
+    def executeExposedFunction(self, *args, **kwargs):
+        return self.executeFunction(*args, **kwargs)
+    
+    # From the aptly named:
+    # http://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks-in-python
+    def chunks(self, l, n):
+        for i in xrange(0, len(l), n):
+            yield l[i:i+n]
 
 class SmartConnectionPool(adbapi.ConnectionPool):
     def _runInteraction(self, *args, **kwargs):

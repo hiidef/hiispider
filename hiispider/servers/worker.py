@@ -3,7 +3,7 @@ import logging
 
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
-from .mixins import AMQPMixin, JobGetterMixin
+from .mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -17,7 +17,7 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
 
-class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
+class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGetterMixin):
 
     public_ip = None
     local_ip = None
@@ -31,7 +31,8 @@ class WorkerServer(CassandraServer, AMQPMixin, JobGetterMixin):
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
-        self.setupAMQP(config)
+        self.setupJobQueue(config)
+        self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
         # HTTP interface
         resource = WorkerResource(self)

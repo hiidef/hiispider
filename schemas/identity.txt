@@ -1,0 +1,17 @@
+#identity:
+#    service + "|" + service_id:
+#        "user_id":follower_id
+#
+#connections: 
+#    follower_id:
+#        service + "|" + service_id:followee_id
+#
+#recommendations:
+#    follower_id:
+#        followee_id:COUNTER
+
+create column family identity;
+create column family connections;
+create column family recommendations with default_validation_class=CounterColumnType;
+create column family reverse_recommendations with default_validation_class=CounterColumnType;
+

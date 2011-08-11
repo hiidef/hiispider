@@ -17,7 +17,7 @@ class ExposedResource(BaseResource):
         kwargs = {}
         for key in request.args:
             kwargs[key.replace('.', '_')] = request.args[key][0]
-        d = maybeDeferred(self.primary_server.executeReservation, self.function_name, **kwargs)
+        d = maybeDeferred(self.primary_server.executeExposedFunction, self.function_name, **kwargs)
         d.addCallback(self._successResponse)
         d.addErrback(self._errorResponse)
         d.addCallback(self._immediateResponse, request)
