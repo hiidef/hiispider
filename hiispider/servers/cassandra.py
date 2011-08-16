@@ -176,7 +176,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         """Delete a reservation by uuid."""
         logger.info('Deleting UUID from spider_service table: %s' % uuid)
         yield self.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
-        url = 'http://%s:%s/function/schedulerserver/remoteremovefromheap?%s' % (
+        url = 'http://%s:%s/function/schedulerserver/removefromjobsheap?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
