@@ -45,7 +45,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         if port is None:
             port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        self.identity_enabled = config["scheduler_server_port"]
+        self.identity_enabled = config.get("identity_enabled", False)
         # Logging, etc
         self.expose(self.removeFromJobsHeap)
         self.expose(self.addToJobsHeap)
@@ -125,7 +125,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.jobs_chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
-                    self.stats.increment('chan.enqueue.success')
+                    self.stats.increment('chan.enqueue.success', sample_rate=0.05)
                     heappush(self.jobs_heap, (now + job[1][1], job[1]))
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
