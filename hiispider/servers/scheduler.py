@@ -125,7 +125,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.jobs_chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
-                    self.stats.increment('chan.enqueue.success')
+                    self.stats.increment('chan.enqueue.success', sample_rate=0.05)
                     heappush(self.jobs_heap, (now + job[1][1], job[1]))
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
