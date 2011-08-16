@@ -114,9 +114,9 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
-        self.stats.set('jobs.removedsize', len(self.removed_job_uuids))
+        self.stats.set('jobs.heap.removedsize', len(self.removed_job_uuids))
         # heapq's are just python lists, so len(hq) is O(n)
-        self.stats.set('jobs.heapsize', len(self.jobs_heap))
+        self.stats.set('jobs.heap.size', len(self.jobs_heap))
         if self.amqp_jobs_queue_size < 100000:
             logger.debug("Jobs: %s:%s" % (self.jobs_heap[0][0], now))
             while self.jobs_heap[0][0] < now and queued_items < 1000:
