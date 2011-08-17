@@ -3,7 +3,7 @@ import logging
 
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
-from .mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin
+from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -17,7 +17,7 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
 
-class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGetterMixin):
+class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin):
 
     public_ip = None
     local_ip = None
@@ -34,6 +34,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
+        self.setupJobHistory(config)
         # HTTP interface
         resource = WorkerResource(self)
         if port is None:
@@ -41,6 +42,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
+        self.config = config
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -52,6 +54,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         logger.debug("Starting worker components.")
         yield self.startJobQueue()
         yield self.startPageCacheQueue()
+        yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
@@ -112,6 +115,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         prev_complete = self.jobs_complete
         try:
             yield super(WorkerServer, self).executeJob(job)
+            self.saveJobHistory(job, True)
             self.jobs_complete += 1
         except DeleteReservationException:
             yield self.deleteReservation(job.uuid)
@@ -121,8 +125,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-            plugl.error(msg)
             self.stats.increment('job.exceptions')
+            self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
         yield self.clearPageCache(job)
