@@ -49,7 +49,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         manhole.username = config["manhole_username"]
         manhole.password = config["manhole_password"]
         manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_port"], manhole)
+        reactor.listenTCP(config["manhole_worker_port"], manhole)
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()

@@ -60,7 +60,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         manhole.username = config["manhole_username"]
         manhole.password = config["manhole_password"]
         manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_port"], manhole)
+        reactor.listenTCP(config["manhole_identity_port"], manhole)
 
     def start(self):
         start_deferred = super(IdentityServer, self).start()

@@ -45,7 +45,7 @@ class InterfaceServer(CassandraServer):
         manhole.username = config["manhole_username"]
         manhole.password = config["manhole_password"]
         manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_port"], manhole)
+        reactor.listenTCP(config["manhole_interface_port"], manhole)
         # delta debugging
         if self.delta_debug:
             self.expose(self.regenerate_delta)
