@@ -51,6 +51,9 @@ class Job(object):
         self.uuid = uuid
         self.user_account = user_account
 
+    def __repr__(self):
+        return '<job: %s(%s)>' % (self.function_name, self.uuid)
+
     def __str__(self):
         return 'Job %s: \n%s' % (self.uuid, pprint.pformat(self.__dict__))
 

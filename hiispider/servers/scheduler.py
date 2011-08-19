@@ -45,7 +45,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         if port is None:
             port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        self.identity_enabled = config["scheduler_server_port"]
+        self.identity_enabled = config.get("identity_enabled", False)
         # Logging, etc
         self.expose(self.removeFromJobsHeap)
         self.expose(self.addToJobsHeap)
@@ -114,7 +114,9 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
-        self.stats.change_by('unscheduled.size', len(self.removed_job_uuids))
+        self.stats.set('jobs.heap.removedsize', len(self.removed_job_uuids))
+        # heapq's are just python lists, so len(hq) is O(n)
+        self.stats.set('jobs.heap.size', len(self.jobs_heap))
         if self.amqp_jobs_queue_size < 100000:
             logger.debug("Jobs: %s:%s" % (self.jobs_heap[0][0], now))
             while self.jobs_heap[0][0] < now and queued_items < 1000:
@@ -125,7 +127,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.jobs_chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
-                    self.stats.increment('chan.enqueue.success')
+                    self.stats.increment('chan.enqueue.success', sample_rate=0.05)
                     heappush(self.jobs_heap, (now + job[1][1], job[1]))
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
