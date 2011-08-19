@@ -9,6 +9,7 @@ from uuid import uuid4
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web.resource import Resource
 from twisted.internet import reactor
+import twisted.manhole.telnet
 from twisted.web import server
 from .mixins import JobGetterMixin
 from .cassandra import CassandraServer
@@ -39,6 +40,13 @@ class InterfaceServer(CassandraServer):
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
         self.cassandra_cf_identity = config["cassandra_cf_identity"]
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
+        reactor.listenTCP(config["manhole_port"], manhole)
+        # delta debugging
         if self.delta_debug:
             self.expose(self.regenerate_delta)
             self.expose(self.regenerate_deltas)

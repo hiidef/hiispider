@@ -17,6 +17,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from txamqp.content import Content
 from .base import BaseServer
 from .mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
+import twisted.manhole.telnet
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,12 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         self.expose(self.addToIdentityHeap)
         self.expose(self.removeFromIdentityHeap)
         self.expose(self.enqueueJobUUID)
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
+        reactor.listenTCP(config["manhole_port"], manhole)
 
     def start(self):
         start_deferred = super(SchedulerServer, self).start()

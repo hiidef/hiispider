@@ -1,22 +1,15 @@
-from uuid import UUID, uuid4
-import time
-import random
+from uuid import uuid4
 import logging
-import random
-
-from twisted.internet import reactor, task
+from twisted.internet import reactor
 from twisted.web import server
 from twisted.enterprise import adbapi
 from MySQLdb.cursors import DictCursor
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredList
-from twisted.internet import task
-from twisted.internet.threads import deferToThread
-from txamqp.content import Content
+from twisted.internet.defer import inlineCallbacks
 from .base import BaseServer
-
 from twisted.web.resource import Resource
 
 logger = logging.getLogger(__name__)
+
 
 class TestingServer(BaseServer):
 
@@ -115,7 +108,7 @@ class TestingServer(BaseServer):
         function_name = spider_info[0]['type']
         job = {}
         job['type'] = function_name.split('/')[1]
-        if self.service_mapping and self.service_mapping.has_key(function_name):
+        if self.service_mapping and function_name in self.service_mapping:
             logger.debug('Remapping resource %s to %s' % (function_name, self.service_mapping[function_name]))
             function_name = self.service_mapping[function_name]
         job['exposed_function'] = self.functions[function_name]
@@ -151,4 +144,3 @@ class TestingServer(BaseServer):
                 kwargs[str(arg)] = job['account'][arg]
         logger.debug('Function: %s\nKWARGS: %s' % (job['function_name'], repr(kwargs)))
         return kwargs
-
