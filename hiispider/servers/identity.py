@@ -10,6 +10,7 @@ import logging
 from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
 from telephus.cassandra.c08.ttypes import NotFoundException
+import twisted.manhole.telnet
 
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,12 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         self.expose(self.getRecommendations)
         self.expose(self.getReverseRecommendations)
         self.expose(self.updateIdentity)
-        
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
+
     def start(self):
         start_deferred = super(IdentityServer, self).start()
         start_deferred.addCallback(self._identityStart)

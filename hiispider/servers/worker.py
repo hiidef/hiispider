@@ -7,6 +7,7 @@ from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGett
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
+import twisted.manhole.telnet
 import pprint
 from traceback import format_exc
 
@@ -43,6 +44,11 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
