@@ -138,8 +138,8 @@ class BaseServer(object):
     def executeJob(self, job):
         dotted_function = '.'.join(job.function_name.split('/'))
         timer = 'job.%s.duration' % (dotted_function)
-        self.stats.timer.start(timer)
-        self.stats.timer.start('job.time')
+        self.stats.timer.start(timer, 0.5)
+        self.stats.timer.start('job.time', 0.2)
         if not job.mapped:
             job = self.mapJob(job)
         f = self.functions[job.function_name]
