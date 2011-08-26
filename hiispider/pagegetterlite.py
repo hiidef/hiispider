@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 class PageGetter:
 
-    negitive_cache = {}
+    negative_cache = {}
 
     def __init__(self, rq=None):
         """
@@ -122,16 +122,16 @@ class PageGetter:
             url = convertToUTF8(url)
         if hash_url is not None and not isinstance(hash_url, str):
             hash_url = convertToUTF8(hash_url)
-        # check negitive cache
+        # check negative cache
         host = _parse(url)[1]
         # if check_only_tld is true then parse the url down to the top level domain
         if check_only_tld:
             host_split = host.split('.', host.count('.')-1)
             host = host_split[len(host_split)-1]
-        if host in self.negitive_cache:
-            if not self.negitive_cache[host]['timeout'] < time.time():
-                logger.error('Found %s in negitive cache, raising last known exception' % host)
-                return self.negitive_cache[host]['error'].raiseException()
+        if host in self.negative_cache and not self.disable_negative_cache:
+            if not self.negative_cache[host]['timeout'] < time.time():
+                logger.error('Found %s in negative cache, raising last known exception' % host)
+                return self.negative_cache[host]['error'].raiseException()
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
@@ -149,9 +149,9 @@ class PageGetter:
         return d
 
     def _checkForStaleContent(self, data, content_sha1, request_hash, host):
-        if host in self.negitive_cache:
-            logger.error('Removing %s from negitive cache' % host)
-            del self.negitive_cache[host]
+        if host in self.negative_cache and not self.disable_negative_cache:
+            logger.error('Removing %s from negative cache' % host)
+            del self.negative_cache[host]
         if "content-sha1" not in data:
             data["content-sha1"] = hashlib.sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
@@ -166,20 +166,20 @@ class PageGetter:
         except:
             status = 500
         if status >= 500:
-            if not host in self.negitive_cache:
-                logger.error('Adding %s to negitive cache' % host)
-                self.negitive_cache[host] = {
+            if not host in self.negative_cache:
+                logger.error('Adding %s to negative cache' % host)
+                self.negative_cache[host] = {
                     'timeout': time.time() + 300,
                     'retries': 1,
                     'error': error
                 }
             else:
-                if self.negitive_cache[host]['retries'] <= 5:
-                    self.negitive_cache[host]['timeout'] = time.time() + 600
-                    self.negitive_cache[host]['retries'] += 1
+                if self.negative_cache[host]['retries'] <= 5:
+                    self.negative_cache[host]['timeout'] = time.time() + 600
+                    self.negative_cache[host]['retries'] += 1
                 else:
-                    self.negitive_cache[host]['timeout'] = time.time() + 3600
-                    self.negitive_cache[host]['retries'] += 1
-                self.negitive_cache[host]['error'] = error
-                logger.error('Updating negitive cache for host %s which has failed %d times' % (host, self.negitive_cache[host]['retries']))
+                    self.negative_cache[host]['timeout'] = time.time() + 3600
+                    self.negative_cache[host]['retries'] += 1
+                self.negative_cache[host]['error'] = error
+                logger.error('Updating negative cache for host %s which has failed %d times' % (host, self.negative_cache[host]['retries']))
         error.raiseException()

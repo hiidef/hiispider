@@ -1,6 +1,6 @@
 import urllib
 import logging
-
+from sys import exc_info
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
 from .mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin
@@ -8,7 +8,7 @@ from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
 import pprint
-from traceback import format_exc
+from traceback import format_exc, format_tb
 
 from hiispider.exceptions import DeleteReservationException, StaleContentException
 
@@ -118,10 +118,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         except StaleContentException:
             pass
         except Exception:
+            exception_type, exception_value, exception_traceback = exc_info()
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
-            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-            plugl.error(msg)
+            plugl.error("Error executing job:\n%s\n%s" % (job, format_tb(exception_traceback)))
             self.stats.increment('job.exceptions')
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()

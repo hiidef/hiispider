@@ -63,10 +63,10 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
     @inlineCallbacks
     def _identityStart(self, started=False):
         yield self.startIdentityQueue()
-        self.connectionsloop = task.LoopingCall(self.findConnections)
-        self.connectionsloop.start(0.2)
-        self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(1)
+        #self.connectionsloop = task.LoopingCall(self.findConnections)
+        #self.connectionsloop.start(0.2)
+        #self.dequeueloop = task.LoopingCall(self.dequeue)
+        #self.dequeueloop.start(1)
 
     @inlineCallbacks
     def shutdown(self):
@@ -187,13 +187,15 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
     
     @inlineCallbacks
     def _updateIdentity(self, user_id, service_name):
+        logger.debug("Updating.")
         data = yield self._accountData(user_id, service_name)
         for kwargs in data:
             function_key = "%s/_getidentity" % self.plugin_mapping.get(service_name, service_name)
             try:
                 service_id = yield self.executeFunction(function_key, **kwargs)
+                logger.debug("Got id %s for %s." % (service_id, function_key))
             except NotImplementedError:
-                logger.info("%s not implemented." % function_key)
+                logger.debug("%s not implemented." % function_key)
                 return 
             yield self.cassandra_client.insert(
                 "%s|%s" % (service_name, service_id), 
@@ -214,6 +216,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             function_key = "%s/_getconnections" % self.plugin_mapping.get(service_name, service_name)
             try:
                 account_ids = yield self.executeFunction(function_key, **kwargs)
+                logger.debug("Got ids: %s" % (account_ids))
             except NotImplementedError:
                 logger.info("%s not implemented." % function_key)
                 return                
