@@ -168,7 +168,7 @@ class PageGetter:
                     )
                 else:
                     logger.error('Removing host %s from the negative cache' % request_hash)
-                    stats.stats.increment('pg.negcache.hostflush')
+                    stats.stats.increment('pg.negcache.flush')
                     self.redis_client.delete(negative_cache_host_key)
         d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
