@@ -136,10 +136,15 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
                 self.stats.increment('job.%s.negcache' % dotted_function)
-        except Exception:
-            plugl = logging.getLogger(plugin)
-            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-            self.stats.increment('job.exceptions', 0.1)
+        except Exception, e:
+            if isinstance(e, NegativeReqCacheException):
+                self.stats.increment('job.%s.negreqcache' % dotted_function)
+            elif isinstance(e, NegativeHostCacheException):
+                self.stats.increment('job.%s.negcache' % dotted_function)
+            else:
+                plugl = logging.getLogger(plugin)
+                plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
+                self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
