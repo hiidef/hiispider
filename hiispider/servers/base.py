@@ -21,6 +21,7 @@ from ..pagegetterlite import PageGetter
 from ..resources import ExposedResource
 
 from hiispider import stats
+from hiispider.exceptions import NegativeCacheException
 
 
 def invert(d):
@@ -139,7 +140,7 @@ class BaseServer(object):
         dotted_function = '.'.join(job.function_name.split('/'))
         timer = 'job.%s.duration' % (dotted_function)
         self.stats.timer.start(timer, 0.5)
-        self.stats.timer.start('job.time', 0.2)
+        self.stats.timer.start('job.time', 0.1)
         if not job.mapped:
             job = self.mapJob(job)
         f = self.functions[job.function_name]
@@ -151,16 +152,17 @@ class BaseServer(object):
             job.kwargs["fast_cache"] = job.fast_cache
         try:
             data = yield self.executeFunction(job.function_name, **job.kwargs)
+        except NegativeCacheException:
+            raise
         except Exception, e:
-            if job.uuid in self.active_jobs:
-                del self.active_jobs[job.uuid]
             self.stats.increment('job.%s.failure' % dotted_function)
             self.stats.timer.stop(timer)
             self.stats.timer.stop('job.time')
             raise
+        finally:
+            if job.uuid in self.active_jobs:
+                del self.active_jobs[job.uuid]
         # If the data is None, there's nothing to store.
-        if job.uuid in self.active_jobs:
-            del self.active_jobs[job.uuid]
         # stats collection
         self.stats.increment('job.%s.success' % dotted_function)
         self.stats.timer.stop(timer)

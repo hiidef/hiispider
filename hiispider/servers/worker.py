@@ -11,7 +11,8 @@ import twisted.manhole.telnet
 import pprint
 from traceback import format_exc
 
-from hiispider.exceptions import DeleteReservationException, StaleContentException
+from hiispider.exceptions import DeleteReservationException, StaleContentException,\
+        NegativeCacheException
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -120,6 +121,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     @inlineCallbacks
     def executeJob(self, job):
         prev_complete = self.jobs_complete
+        plugin = job.function_name.split('/')[0]
+        dotted_function = '.'.join(job.function_name.split('/'))
         try:
             yield super(WorkerServer, self).executeJob(job)
             self.saveJobHistory(job, True)
@@ -128,11 +131,15 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
             pass
+        except NegativeCacheException, e:
+            if isinstance(e, NegativeReqCacheException):
+                self.stats.increment('job.%s.negreqcache' % dotted_function)
+            else:
+                self.stats.increment('job.%s.negcache' % dotted_function)
         except Exception:
-            plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-            self.stats.increment('job.exceptions')
+            self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
