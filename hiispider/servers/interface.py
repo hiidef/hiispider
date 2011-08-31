@@ -10,6 +10,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
+from traceback import format_exc
 from .mixins import JobGetterMixin
 from .cassandra import CassandraServer
 from .base import Job
@@ -20,14 +21,14 @@ PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
 
-class InterfaceServer(CassandraServer):
+class InterfaceServer(CassandraServer, JobGetterMixin):
 
     disable_negative_cache = True
     name = "HiiSpider Interface Server UUID: %s" % str(uuid4())
 
     def __init__(self, config, port=None):
         super(InterfaceServer, self).__init__(config)
-        self.setupMySQL(config)
+        self.setupJobGetter(config)
         resource = Resource()
         interface_resource = InterfaceResource(self)
         resource.putChild("interface", interface_resource)
@@ -80,6 +81,18 @@ class InterfaceServer(CassandraServer):
             logger.error("Error putting result for uuid %s on Cassandra:\n%s\n" % (uuid, e))
             raise
         returnValue(None)
+
+    @inlineCallbacks
+    def executeJobByUUID(self, uuid):    
+        logger.error("Getting job:\n%s" % uuid)
+        try:
+            job = yield self.getJob(uuid)
+        except Exception, e:
+            logger.error('Job Error: %s\n%s' % (e, format_exc()))
+            return
+        data = yield self.executeJob(job)
+        print data
+        returnValue(data)
 
     @inlineCallbacks
     def executeExposedFunction(self, function_name, **kwargs):
