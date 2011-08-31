@@ -15,8 +15,6 @@ from uuid import uuid4
 from difflib import SequenceMatcher, unified_diff
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 from twisted.internet import reactor
-from telephus.protocol import ManagedCassandraClientFactory
-from telephus.client import CassandraClient
 from .base import BaseServer
 from ..pagegetter import PageGetter
 from ..delta import Autogenerator, Delta
@@ -24,6 +22,7 @@ from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 from ..uuidhelpers import convert_time_to_uuid
 from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator
+from telephus.pool import CassandraClusterPool
 
 PP = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -62,12 +61,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
         self.cassandra_cf_content = config["cassandra_cf_content"]
         self.cassandra_cf_temp_content = config["cassandra_cf_temp_content"]
         # Cassandra Clients & Factorys
-        factory = ManagedCassandraClientFactory(config["cassandra_keyspace"])
-        self.cassandra_client = CassandraClient(factory)
-        reactor.connectTCP(
-            config["cassandra_server"],
-            config.get("cassandra_port", 9160),
-            factory)
+        self.cassandra_client = CassandraClusterPool(
+            config["cassandra_servers"],
+            keyspace=config["cassandra_keyspace"],
+            pool_size=len(config["cassandra_servers"]) * 2)
+        self.cassandra_client.startService()
         # Negative Cache
         self.disable_negative_cache = config.get("disable_negative_cache", False)
         # Redis
