@@ -545,6 +545,8 @@ class PageGetter:
             else:
                 status = 500
         if 'tumblr.com' in url and status == 400:
+            logger.error("Tumblr.com error 400, adding to negative cache:\nerror: %s\nargs: %s: url: %s" % (
+                error, request_kwargs, url))
             status = 500
         elif 'twitter.com' in url and status == 502:
             # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly
