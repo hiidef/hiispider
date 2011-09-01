@@ -165,10 +165,11 @@ class PageGetter:
                 if negative_cache_host and negative_cache_host['timeout'] > time.time():
                     # we get quite a lot of these, ~500/sec on occasions
                     stats.stats.increment('pg.negcache.hit', 0.1)
-                    negative_cache_hit(
-                        negative_cache_host['error'],
-                        NegativeHostCacheException
-                    )
+                    raise NegativeHostCacheException(str(negative_cache_host['error']))
+                    #negative_cache_hit(
+                    #    negative_cache_host['error'],
+                    #    NegativeHostCacheException
+                    #)
                 else:
                     logger.error('Removing host %s from the negative cache' % request_hash)
                     stats.stats.increment('pg.negcache.flush')
