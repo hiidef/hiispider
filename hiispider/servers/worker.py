@@ -11,9 +11,7 @@ import twisted.manhole.telnet
 import pprint
 from traceback import format_exc
 
-from hiispider.exceptions import DeleteReservationException, StaleContentException,\
-        NegativeCacheException
-
+from hiispider.exceptions import *
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
