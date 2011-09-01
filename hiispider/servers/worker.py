@@ -3,21 +3,23 @@ import logging
 from sys import exc_info
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
-from .mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin
+from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
+import twisted.manhole.telnet
 import pprint
 from traceback import format_exc, format_tb
 
-from hiispider.exceptions import DeleteReservationException, StaleContentException
+from hiispider.exceptions import DeleteReservationException, StaleContentException,\
+        NegativeCacheException
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
 
-class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGetterMixin):
+class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin):
 
     public_ip = None
     local_ip = None
@@ -34,6 +36,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
+        self.setupJobHistory(config)
         # HTTP interface
         resource = WorkerResource(self)
         if port is None:
@@ -41,6 +44,13 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
+        self.config = config
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
+        reactor.listenTCP(config["manhole_worker_port"], manhole)
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -52,6 +62,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         logger.debug("Starting worker components.")
         yield self.startJobQueue()
         yield self.startPageCacheQueue()
+        yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
@@ -110,19 +121,32 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     @inlineCallbacks
     def executeJob(self, job):
         prev_complete = self.jobs_complete
+        plugin = job.function_name.split('/')[0]
+        dotted_function = '.'.join(job.function_name.split('/'))
         try:
             yield super(WorkerServer, self).executeJob(job)
+            self.saveJobHistory(job, True)
             self.jobs_complete += 1
         except DeleteReservationException:
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
             pass
-        except Exception:
-            exception_type, exception_value, exception_traceback = exc_info()
-            plugin = job.function_name.split('/')[0]
-            plugl = logging.getLogger(plugin)
-            plugl.error("Error executing job:\n%s\n%s" % (job, format_tb(exception_traceback)))
-            self.stats.increment('job.exceptions')
+        except NegativeCacheException, e:
+            if isinstance(e, NegativeReqCacheException):
+                self.stats.increment('job.%s.negreqcache' % dotted_function)
+            else:
+                self.stats.increment('job.%s.negcache' % dotted_function)
+        except Exception, e:
+            if isinstance(e, NegativeReqCacheException):
+                self.stats.increment('job.%s.negreqcache' % dotted_function)
+            elif isinstance(e, NegativeHostCacheException):
+                self.stats.increment('job.%s.negcache' % dotted_function)
+            else:
+                exception_type, exception_value, exception_traceback = exc_info()
+                plugl = logging.getLogger(plugin)
+                plugl.error("Error executing job:\n%s\n%s" % (job, format_tb(exception_traceback)))
+                self.stats.increment('job.exceptions', 0.1)
+            self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
         yield self.clearPageCache(job)

@@ -1,3 +1,5 @@
+
+import sys
 import simplejson
 import cPickle as pickle
 import datetime
@@ -10,11 +12,22 @@ from zlib import compress, decompress
 from twisted.internet.defer import maybeDeferred, DeferredList
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8
-from .exceptions import StaleContentException
+
 from twisted.web.client import _parse
 from twisted.python.failure import Failure
 
+from hiispider.exceptions import StaleContentException, NegativeHostCacheException,\
+    NegativeReqCacheException
 from hiispider import stats
+
+def negative_cache_hit(error, cls):
+    """Given some error with a 'raiseException' attribute, raise a custom error
+    class with the same traceback and value."""
+    try:
+        error.raiseException()
+    except Exception, e:
+        trace = sys.exc_info()[2]
+        raise cls(str(e)), None, trace
 
 class ReportedFailure(Failure):
     pass
@@ -124,12 +137,13 @@ class PageGetter:
                     logger.critical(e)
                     negative_req_cache_item = None
                 if negative_req_cache_item and negative_req_cache_item['timeout'] > time.time():
-                    logger.error('Found request hash %s in negative request cache, raising last known exception' % request_hash)
                     stats.stats.increment('pg.negreqcache.hit')
-                    negative_req_cache_item['error'].raiseException()
+                    negative_cache_hit(
+                        negative_req_cache_item['error'],
+                        NegativeReqCacheException
+                    )
                 else:
-                    logger.error('Removing request hash %s from the negative request cache' % request_hash)
-                    stats.stats.increment('pg.negreqcache.flush')
+                    stats.stats.increment('pg.negreqcache.flush', 0.5)
                     self.redis_client.delete(negative_req_cache_key)
         d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
         return d
@@ -148,9 +162,12 @@ class PageGetter:
                     logger.critical(e)
                     negative_cache_host = None
                 if negative_cache_host and negative_cache_host['timeout'] > time.time():
-                    logger.error('Found in negative cache, raising last known exception')
-                    stats.stats.increment('pg.negcache.hit')
-                    negative_cache_host['error'].raiseException()
+                    # we get quite a lot of these, ~500/sec on occasions
+                    stats.stats.increment('pg.negcache.hit', 0.1)
+                    negative_cache_hit(
+                        negative_cache_host['error'],
+                        NegativeHostCacheException
+                    )
                 else:
                     logger.error('Removing host %s from the negative cache' % request_hash)
                     stats.stats.increment('pg.negcache.flush')
@@ -415,7 +432,7 @@ class PageGetter:
         except Exception:
             pass
         # No header stored in the cache. Make the request.
-        stats.stats.increment('pg.redis.miss')
+        stats.stats.increment('pg.redis.miss', 0.1)
         logger.debug("Unable to find header for request %s on redis, fetching from %s." % (request_hash, url))
         d = self.rq.getPage(url, **request_kwargs)
         d.addCallback(

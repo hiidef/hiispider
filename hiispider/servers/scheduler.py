@@ -17,6 +17,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from txamqp.content import Content
 from .base import BaseServer
 from .mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
+import twisted.manhole.telnet
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
 
     jobs_heap = []
     identity_heap = []
-    # TODO: make this a set()
-    removed_job_uuids = []
-    removed_identity_ids = []
+    removed_job_uuids = set()
+    removed_identity_ids = set()
     enqueueJobCallLater = None
     enqueueloop = None
 
@@ -45,13 +45,19 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         if port is None:
             port = config["scheduler_server_port"]
         self.site_port = reactor.listenTCP(port, server.Site(resource))
-        self.identity_enabled = config["scheduler_server_port"]
+        self.identity_enabled = config.get("identity_enabled", False)
         # Logging, etc
         self.expose(self.removeFromJobsHeap)
         self.expose(self.addToJobsHeap)
         self.expose(self.addToIdentityHeap)
         self.expose(self.removeFromIdentityHeap)
         self.expose(self.enqueueJobUUID)
+        # setup manhole
+        manhole = twisted.manhole.telnet.ShellFactory()
+        manhole.username = config["manhole_username"]
+        manhole.password = config["manhole_password"]
+        manhole.namespace['server'] = self
+        reactor.listenTCP(config["manhole_scheduler_port"], manhole)
 
     def start(self):
         start_deferred = super(SchedulerServer, self).start()
@@ -114,7 +120,6 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         queued_items = 0
-        self.stats.change_by('unscheduled.size', len(self.removed_job_uuids))
         if self.amqp_jobs_queue_size < 100000:
             logger.debug("Jobs: %s:%s" % (self.jobs_heap[0][0], now))
             while self.jobs_heap[0][0] < now and queued_items < 1000:
@@ -125,13 +130,15 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.jobs_chan.basic_publish(
                         exchange=self.amqp_exchange,
                         content=Content(job[1][0]))
-                    self.stats.increment('chan.enqueue.success')
+                    self.stats.increment('chan.enqueue.success', sample_rate=0.05)
                     heappush(self.jobs_heap, (now + job[1][1], job[1]))
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
         else:
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_jobs_queue_size)
+        self.stats.set('chan.queued_items', queued_items)
+
         if not self.identity_enabled:
             return
         # Enqueue identity
@@ -172,7 +179,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
 
     def removeFromIdentityHeap(self, user_id):
         logger.info('Removing %s from identity heap' % user_id)
-        self.removed_identity_ids.append(user_id)
+        self.removed_identity_ids.add(user_id)
 
     def addToJobsHeap(self, uuid, type):
         # lookup if type is in the service_mapping, if it is
@@ -208,7 +215,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
 
     def removeFromJobsHeap(self, uuid):
         logger.info('Removing %s from heap' % uuid)
-        self.removed_job_uuids.append(uuid)
+        self.removed_job_uuids.add(uuid)
 
 
 
