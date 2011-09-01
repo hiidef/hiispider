@@ -1,7 +1,5 @@
 from uuid import uuid4
 from pprint import pformat
-from telephus.protocol import ManagedCassandraClientFactory
-from telephus.client import CassandraClient
 from twisted.web.resource import Resource
 from twisted.internet import reactor, task
 from twisted.web import server
@@ -9,8 +7,8 @@ from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 import logging
 from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
-from telephus.cassandra.c08.ttypes import NotFoundException
 import twisted.manhole.telnet
+from telephus.pool import CassandraClusterPool
 
 
 logger = logging.getLogger(__name__)
@@ -37,12 +35,11 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         self.cassandra_cf_connections = config["cassandra_cf_connections"]
         self.cassandra_cf_recommendations = config["cassandra_cf_recommendations"]
         self.cassandra_cf_reverse_recommendations = config["cassandra_cf_reverse_recommendations"]
-        factory = ManagedCassandraClientFactory(config["cassandra_keyspace"])
-        self.cassandra_client = CassandraClient(factory)
-        reactor.connectTCP(
-            config["cassandra_server"],
-            config.get("cassandra_port", 9160),
-            factory)
+        self.cassandra_client = CassandraClusterPool(
+            config["cassandra_servers"],
+            keyspace=config["cassandra_keyspace"],
+            pool_size=len(config["cassandra_servers"]) * 2)
+        self.cassandra_client.startService()
         resource = Resource()
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
