@@ -530,11 +530,8 @@ class PageGetter:
             request_kwargs,
             http_history=None,
             host=None):
-        logger.error(error.value.__dict__)
-        logger.error("Unable to get request %s for URL %s.\n%s" % (
-            request_hash,
-            url,
-            error))
+        logger.error("Unable to get request %s for url %s.\nerror.value: %s\nerror: %s" % (
+            request_hash, url, error.value.__dict__, error.__dict__))
         try:
             status = int(error.value.status)
         except:
@@ -543,7 +540,10 @@ class PageGetter:
             # profiles
             if 'twitter' in url:
                 return error
-            status = 500
+            elif 'tumblr.com' in url and not error.value.__dict__:
+                status = 404
+            else:
+                status = 500
         if 'tumblr.com' in url and status == 400:
             status = 500
         elif 'twitter.com' in url and status == 502:
