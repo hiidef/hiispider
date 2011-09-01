@@ -10,6 +10,7 @@ import time
 import copy
 from zlib import compress, decompress
 from twisted.internet.defer import maybeDeferred, DeferredList
+from twisted.internet.error import ConnectionDone
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8
 
@@ -530,8 +531,18 @@ class PageGetter:
             request_kwargs,
             http_history=None,
             host=None):
+
+        # FIXME:  This is nearly impossible to follow;  it's pretty old code,
+        # with many cooks, and it's become a clusterf*ck of special cases and
+        # callback spaghetti;  badly needs some love
+
         logger.error("Unable to get request %s for url %s.\nerror.value: %s\nerror: %s" % (
             request_hash, url, error.value.__dict__, error.__dict__))
+
+        if 'tumblr.com' in url and isinstance(error.value, ConnectionDone):
+            logger.error("Tumblr ConnectionDone() detected.  Skipping negative cache.")
+            return error
+
         try:
             status = int(error.value.status)
         except:
