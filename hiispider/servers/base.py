@@ -175,6 +175,8 @@ class BaseServer(object):
         logger.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
         try:
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
+        except NegativeCacheException:
+            raise
         except Exception, e:
             logger.error("Error with %s.\n%s" % (function_key, e))
             raise
