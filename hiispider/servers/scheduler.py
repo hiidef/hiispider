@@ -7,17 +7,14 @@ from uuid import UUID
 
 import time
 import random
-import traceback
 import logging
-
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks
 from txamqp.content import Content
 from .base import BaseServer
 from .mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
-import twisted.manhole.telnet
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +85,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         start = 0
         # Get user_ids
         while len(data) >= 100000 or start == 0:
-            sql = """SELECT DISTINCT user_id 
+            sql = """SELECT DISTINCT user_id
                      FROM content_account
                      ORDER BY user_id LIMIT %s, 100000
                   """ % start
@@ -161,7 +158,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
             exchange=self.amqp_exchange,
             content=Content(UUID(uuid).bytes))
         return uuid
-    
+
     def addToIdentityHeap(self, user_id):
         if not user_id in self.removed_identity_ids:
             interval = 24 * 60 * 60 * 7
@@ -212,6 +209,3 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
     def removeFromJobsHeap(self, uuid):
         logger.info('Removing %s from heap' % uuid)
         self.removed_job_uuids.add(uuid)
-
-
-
