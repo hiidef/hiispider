@@ -3,6 +3,7 @@ import time
 import cPickle
 from itertools import chain
 from .uuidhelpers import convert_time_to_uuid
+from hiiguid import HiiGUID
 
 
 class Delta(object):
@@ -15,9 +16,9 @@ class Delta(object):
         if delta_id:
             self.id = delta_id
         elif created:
-            self.id = convert_time_to_uuid(created)
+            self.id = HiiGUID(created).packed
         else:
-            self.id = convert_time_to_uuid(time.time())
+            self.id = HiiGUID(time.time()).packed
 
 
 class AutogenerateException(Exception):
