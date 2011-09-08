@@ -7,7 +7,6 @@ from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 import logging
 from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
-import twisted.manhole.telnet
 from telephus.pool import CassandraClusterPool
 
 
@@ -53,11 +52,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         self.expose(self.getReverseRecommendations)
         self.expose(self.updateIdentity)
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_identity_port"], manhole)
+        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(IdentityServer, self).start()

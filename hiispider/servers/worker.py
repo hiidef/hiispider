@@ -44,11 +44,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_worker_port"], manhole)
+        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()

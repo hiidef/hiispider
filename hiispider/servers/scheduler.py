@@ -53,11 +53,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         self.expose(self.removeFromIdentityHeap)
         self.expose(self.enqueueJobUUID)
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_scheduler_port"], manhole)
+        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(SchedulerServer, self).start()
