@@ -8,7 +8,7 @@ setup(
     packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
     version = version,
 
-    install_requires = ['twisted>=8.1', 'genshi>=0.5.1', 'python-dateutil>=1.5.0,<2.0.0', 'simplejson>=2.1.3', 'boto'],
+    install_requires = ['twisted>=8.1', 'genshi>=0.5.1', 'python-dateutil>=1.5.0,<2.0.0', 'simplejson>=2.1.3', 'boto', 'pyasn1'],
     include_package_data = True,
 
     # metadata for upload to PyPI
