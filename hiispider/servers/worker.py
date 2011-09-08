@@ -22,7 +22,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 300
+    simultaneous_jobs = 400
     jobs_complete = 0
     job_queue = []
     jobsloop = None
