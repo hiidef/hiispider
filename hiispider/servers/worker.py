@@ -4,6 +4,7 @@ import time
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
 from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
+from hiispider.requestqueuer import QueueTimeoutException
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -125,20 +126,19 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
             pass
+        except QueueTimeoutException, e:
+            self.stats.increment('job.%s.queuetimeout' % dotted_function)
+            self.saveJobHistory(job, False)
         except NegativeCacheException, e:
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
                 self.stats.increment('job.%s.negcache' % dotted_function)
+            self.saveJobHistory(job, False)
         except Exception, e:
-            if isinstance(e, NegativeReqCacheException):
-                self.stats.increment('job.%s.negreqcache' % dotted_function)
-            elif isinstance(e, NegativeHostCacheException):
-                self.stats.increment('job.%s.negcache' % dotted_function)
-            else:
-                plugl = logging.getLogger(plugin)
-                plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-                self.stats.increment('job.exceptions', 0.1)
+            plugl = logging.getLogger(plugin)
+            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
+            self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
