@@ -19,7 +19,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 350
+    simultaneous_reqs = 50
     jobs_complete = 0
     job_queue = []
     jobsloop = None
@@ -105,9 +105,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             return
 
     def executeJobs(self):
-        while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
-            job = self.job_queue.pop(0)
-            self.executeJob(job)
+        for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
+            if not len(self.job_queue):
+                return
+            self.executeJob(self.job_queue.pop(0))
 
     @inlineCallbacks
     def executeJob(self, job):
