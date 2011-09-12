@@ -1,4 +1,5 @@
 import logging
+import time
 
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
@@ -28,6 +29,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
+        self.t0 = time.time()
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
@@ -166,3 +168,4 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         logger.debug('Completed Jobs: %d' % self.jobs_complete)
         logger.debug('Queued Jobs: %d' % len(self.job_queue))
         logger.debug('Active Jobs: %d' % len(self.active_jobs))
+
