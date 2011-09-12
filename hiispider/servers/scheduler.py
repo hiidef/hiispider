@@ -7,17 +7,14 @@ from uuid import UUID
 
 import time
 import random
-import traceback
 import logging
-
 from heapq import heappush, heappop
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks
 from txamqp.content import Content
 from .base import BaseServer
 from .mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
-import twisted.manhole.telnet
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +50,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         self.expose(self.removeFromIdentityHeap)
         self.expose(self.enqueueJobUUID)
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_scheduler_port"], manhole)
+        reactor.listenTCP(config["manhole_scheduler_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(SchedulerServer, self).start()
@@ -92,7 +85,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         start = 0
         # Get user_ids
         while len(data) >= 100000 or start == 0:
-            sql = """SELECT DISTINCT user_id 
+            sql = """SELECT DISTINCT user_id
                      FROM content_account
                      ORDER BY user_id LIMIT %s, 100000
                   """ % start
@@ -154,7 +147,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                         content=Content(str(job[1][0])))
                     heappush(self.identity_heap, (now + job[1][1], job[1]))
                 else:
-                    self.removed_identity_ids.remove(user_id)
+                    self.removed_identity_ids.remove(job[1][0])
         else:
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_identity_queue_size)
@@ -165,7 +158,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
             exchange=self.amqp_exchange,
             content=Content(UUID(uuid).bytes))
         return uuid
-    
+
     def addToIdentityHeap(self, user_id):
         if not user_id in self.removed_identity_ids:
             interval = 24 * 60 * 60 * 7
@@ -216,6 +209,3 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
     def removeFromJobsHeap(self, uuid):
         logger.info('Removing %s from heap' % uuid)
         self.removed_job_uuids.add(uuid)
-
-
-

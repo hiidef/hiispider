@@ -1,4 +1,3 @@
-import urllib
 import logging
 
 from .cassandra import CassandraServer
@@ -7,10 +6,8 @@ from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGett
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
-import twisted.manhole.telnet
 import pprint
 from traceback import format_exc
-
 from hiispider.exceptions import *
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -44,11 +41,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_worker_port"], manhole)
+        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -98,7 +91,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         except Exception, e:
             logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
-        # getJob can return None if it encounters an error that is not 
+        # getJob can return None if it encounters an error that is not
         # exceptional, like seeing custom_* jobs in the scheduler
         if job is None:
             return

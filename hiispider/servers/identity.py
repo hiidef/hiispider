@@ -7,7 +7,6 @@ from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 import logging
 from .mixins import MySQLMixin, IdentityQueueMixin
 from .base import BaseServer
-import twisted.manhole.telnet
 from telephus.pool import CassandraClusterPool
 
 
@@ -53,11 +52,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         self.expose(self.getReverseRecommendations)
         self.expose(self.updateIdentity)
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_identity_port"], manhole)
+        reactor.listenTCP(config["manhole_identity_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(IdentityServer, self).start()
@@ -76,44 +71,46 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
     def shutdown(self):
         self.connectionsloop.stop()
         self.dequeueloop.stop()
+        logger.debug("%s stopping on main HTTP interface." % self.name)
+        yield self.site_port.stopListening()
         yield self.stopIdentityQueue()
         yield super(IdentityServer, self).shutdown()
 
     def updateUser(self, user_id):
         reactor.callLater(0, self._updateUser, user_id)
-        return {"success":True, "message":"User update started."}
-    
+        return {"success": True, "message": "User update started."}
+
     @inlineCallbacks
     def _updateUser(self, user_id):
         sql = """SELECT type FROM content_account WHERE user_id=%s"""
         data = yield self.mysql.runQuery(sql, int(user_id))
-        deferreds = [self._updateIdentity(str(user_id), x["type"]) for x in data if "custom" not in x["type"]]
+        deferreds = [self._updateIdentity(str(user_id), x["type"]) for x in data if "custom_" not in x["type"]]
         results = yield DeferredList(deferreds, consumeErrors=True)
         for result in results:
             if not result[0]:
                 raise result[1]
-        deferreds = [self._updateConnections(str(user_id), x["type"]) for x in data if "custom" not in x["type"]]
-        results = yield DeferredList(deferreds, consumeErrors=True)        
+        deferreds = [self._updateConnections(str(user_id), x["type"]) for x in data if "custom_" not in x["type"]]
+        results = yield DeferredList(deferreds, consumeErrors=True)
         for result in results:
             if not result[0]:
                 raise result[1]
 
     def updateAllIdentities(self, service_name):
         if self.updating_identities.get(service_name, False):
-            return {"success":False, "message":"Already updating %s" % service_name}
+            return {"success": False, "message": "Already updating %s" % service_name}
         else:
             reactor.callLater(0, self._updateAllIdentities, service_name)
-            return {"success":True, "message":"Update all identities started."}
-             
+            return {"success": True, "message": "Update all identities started."}
+
     @inlineCallbacks
     def _updateAllIdentities(self, service_name):
         self.updating_identities[service_name] = True
-        sql = """SELECT user_id 
-        FROM content_%(service_name)saccount 
-        INNER JOIN content_account 
+        sql = """SELECT user_id
+        FROM content_%(service_name)saccount
+        INNER JOIN content_account
             ON content_%(service_name)saccount.account_id = content_account.id
         LIMIT %%s, %%s
-        """ % {"service_name":service_name}
+        """ % {"service_name": service_name}
         start = 0
         step = 100
         data = yield self.mysql.runQuery(sql, (start, step))
@@ -126,23 +123,23 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             start += step
             data = yield self.mysql.runQuery(sql, (start, step))
         self.updating_connections[service_name] = False
-    
+
     def updateAllConnections(self, service_name):
         if self.updating_connections.get(service_name, False):
-            return {"success":False, "message":"Already updating %s" % service_name}
+            return {"success": False, "message": "Already updating %s" % service_name}
         else:
             reactor.callLater(0, self._updateAllConnections, service_name)
-            return {"success":True, "message":"Update all connections started."}
+            return {"success": True, "message": "Update all connections started."}
 
     @inlineCallbacks
     def _updateAllConnections(self, service_name):
         self.updating_connections[service_name] = True
-        sql = """SELECT user_id 
-        FROM content_%(service_name)saccount 
-        INNER JOIN content_account 
+        sql = """SELECT user_id
+        FROM content_%(service_name)saccount
+        INNER JOIN content_account
             ON content_%(service_name)saccount.account_id = content_account.id
         LIMIT %%s, %%s
-        """ % {"service_name":service_name}
+        """ % {"service_name": service_name}
         start = 0
         step = 40
         data = yield self.mysql.runQuery(sql, (start, step))
@@ -155,25 +152,25 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             start += step
             data = yield self.mysql.runQuery(sql, (start, step))
         self.updating_connections[service_name] = False
-        returnValue({"success":True})
+        returnValue({"success": True})
 
     @inlineCallbacks
     def _accountData(self, user_id, service_name):
-        sql = """SELECT content_%(service_name)saccount.* 
-        FROM content_%(service_name)saccount 
-        INNER JOIN content_account 
+        sql = """SELECT content_%(service_name)saccount.*
+        FROM content_%(service_name)saccount
+        INNER JOIN content_account
             ON content_%(service_name)saccount.account_id = content_account.id
-        WHERE content_account.user_id = %%s""" % {"service_name":service_name}
+        WHERE content_account.user_id = %%s""" % {"service_name": service_name}
         try:
             data = yield self.mysql.runQuery(sql, user_id)
-        except Exception, e:
+        except Exception:
             message = "Could not find service %s:%s, %s" % (
-                service_name, 
-                user_id, 
+                service_name,
+                user_id,
                 sql)
             logger.error(message)
             raise
-        if len(data) == 0: # No results?
+        if len(data) == 0:  # No results?
             message = "Could not find service %s:%s" % (service_name, user_id)
             logger.error(message)
             raise Exception(message)
@@ -183,12 +180,12 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
                 for key, value in mapping.iteritems():
                     if value in kwargs:
                         kwargs[key] = kwargs.pop(value)
-        returnValue(data)  
-              
+        returnValue(data)
+
     def updateIdentity(self, user_id, service_name):
         reactor.callLater(0, self._updateIdentity, user_id, service_name)
-        return {"success":True, "message":"Update identity started."}
-    
+        return {"success": True, "message": "Update identity started."}
+
     @inlineCallbacks
     def _updateIdentity(self, user_id, service_name):
         data = yield self._accountData(user_id, service_name)
@@ -198,16 +195,16 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
                 service_id = yield self.executeFunction(function_key, **kwargs)
             except NotImplementedError:
                 logger.info("%s not implemented." % function_key)
-                return 
+                return
             yield self.cassandra_client.insert(
-                "%s|%s" % (service_name, service_id), 
+                "%s|%s" % (service_name, service_id),
                 self.cassandra_cf_identity,
-                user_id, 
+                user_id,
                 column="user_id")
 
     def updateConnections(self, user_id, service_name):
         reactor.callLater(0, self._updateConnections, user_id, service_name)
-        return {"success":True, "message":"Update identity started."}        
+        return {"success": True, "message": "Update identity started."}
 
     @inlineCallbacks
     def _updateConnections(self, user_id, service_name):
@@ -220,13 +217,13 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
                 account_ids = yield self.executeFunction(function_key, **kwargs)
             except NotImplementedError:
                 logger.info("%s not implemented." % function_key)
-                return                
+                return
             except Exception, e:
                 logger.error(e.message)
                 return
             ids.extend(account_ids)
         data = yield self.cassandra_client.get_slice(
-            key = user_id,
+            key=user_id,
             column_family=self.cassandra_cf_connections,
             start=service_name,
             finish=service_name + chr(0xff))
@@ -244,21 +241,21 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
                 logger.debug("Decrementing %s:%s." % (user_id, old_ids[service_id]))
                 yield DeferredList([
                     self.client.add(
-                        key=user_id, 
+                        key=user_id,
                         column_family=self.cassandra_cf_recommendations,
-                        value=-1, 
+                        value=-1,
                         column=old_ids[service_id]),
                     self.client.add(
-                        key=old_ids[service_id], 
+                        key=old_ids[service_id],
                         column_family=self.cassandra_cf_reverse_recommendations,
-                        value=-1, 
+                        value=-1,
                         column=user_id)])
             except Exception, e:
                 logger.error(e.message)
         mapped_new_ids = {}
         for chunk in list(self.chunks(list(new_ids), 50)):
             data = yield self.cassandra_client.multiget(
-                keys = ["%s|%s" % (service_name, x) for x in chunk],
+                keys=["%s|%s" % (service_name, x) for x in chunk],
                 column_family=self.cassandra_cf_identity,
                 column="user_id")
             for key in data:
@@ -277,43 +274,37 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
             for followee_id in chunk:
                 logger.info("Incrementing %s:%s" % (user_id, followee_id))
                 deferreds.append(self.cassandra_client.add(
-                    key=user_id, 
+                    key=user_id,
                     column_family=self.cassandra_cf_recommendations,
-                    value=1, 
+                    value=1,
                     column=followee_id))
                 deferreds.append(self.cassandra_client.add(
-                    key=followee_id, 
+                    key=followee_id,
                     column_family=self.cassandra_cf_reverse_recommendations,
-                    value=1, 
+                    value=1,
                     column=user_id))
             yield DeferredList(deferreds)
 
     @inlineCallbacks
-    def shutdown(self):
-        logger.debug("%s stopping on main HTTP interface." % self.name)
-        yield self.site_port.stopListening()
-        yield super(IdentityServer, self).shutdown()
-
-    @inlineCallbacks
     def getRecommendations(self, user_id):
         data = yield self.cassandra_client.get_slice(
-            key=user_id, 
+            key=user_id,
             column_family=self.cassandra_cf_recommendations)
         returnValue(sorted(
-            [(int(x.counter_column.name), int(x.counter_column.value)) for x in data], 
-            key=lambda x:x[1],
+            [(int(x.counter_column.name), int(x.counter_column.value)) for x in data],
+            key=lambda x: x[1],
             reverse=True))
 
     @inlineCallbacks
     def getReverseRecommendations(self, user_id):
         data = yield self.cassandra_client.get_slice(
-            key=user_id, 
+            key=user_id,
             column_family=self.cassandra_cf_reverse_recommendations)
         returnValue(sorted(
-            [(int(x.counter_column.name), int(x.counter_column.value)) for x in data], 
-            key=lambda x:x[1], 
+            [(int(x.counter_column.name), int(x.counter_column.value)) for x in data],
+            key=lambda x: x[1],
             reverse=True))
-    
+
     def dequeue(self):
         while len(self.connections_queue) + self.queue_requests <= self.amqp_prefetch_count:
             self.queue_requests += 1
@@ -343,7 +334,7 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
 
     def _findConnectionsCallback(self, data):
         self.active_jobs -= 1
-    
+
     def _findConnectionsErrback(self, error):
         self.active_jobs -= 1
         logger.error(str(error))
