@@ -21,7 +21,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 100
+    simultaneous_reqs = 50
     jobs_complete = 0
     job_queue = []
     jobsloop = None
@@ -58,7 +58,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
+        self.jobsloop.start(0.1)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(1)
 
@@ -86,6 +86,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             if self.shutdown_trigger_id is None:
                 return
             logger.error('Dequeue Error: %s' % e)
+            self.queue_requests -= 1
             return
         self.queue_requests -= 1
         logger.debug('Got job %s' % uuid)
