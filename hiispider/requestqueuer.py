@@ -238,7 +238,7 @@ class RequestQueuer(object):
             "deferred":Deferred()}
         host = _parse(req["url"])[1]
         req["host"] = host
-        req["queue_timeout"] = reactor.callLater(self._timeout, queue_timeout, req)
+        req["queue_timeout"] = reactor.callLater(queue_timeout, self._timeout, req)
         if host not in self.pending_reqs:
             self.pending_reqs[host] = []
         if prioritize:

@@ -99,6 +99,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             raise Exception("Could not connect to Redis.")
         if self.disable_negative_cache:
             logger.warning("Disabling negative cache.")
+        logger.debug("Started RedisShardingConnection")
         self.pg = PageGetter(
             self.cassandra_client,
             redis_client=self.redis_client,
