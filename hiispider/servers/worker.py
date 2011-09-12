@@ -128,6 +128,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             pass
         except QueueTimeoutException, e:
             self.stats.increment('job.%s.queuetimeout' % dotted_function)
+            self.stats.increment('pg.queuetimeout.hit', 0.05)
             self.saveJobHistory(job, False)
         except NegativeCacheException, e:
             if isinstance(e, NegativeReqCacheException):
