@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class QueueTimeout(Exception):
+class QueueTimeoutException(Exception):
     pass
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):
@@ -250,7 +250,7 @@ class RequestQueuer(object):
 
     def _timeout(self, req):
         self.pending_reqs[req["host"]].remove(req)
-        req["deferred"].errback(QueueTimeout("Timeout: %s" % req["host"]))
+        req["deferred"].errback(QueueTimeoutException("Timeout: %s" % req["host"]))
 
     def _hostRequestCheck(self, host):
         if host not in self.pending_reqs:
