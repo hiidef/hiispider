@@ -62,7 +62,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.setupJobHistory(self.config)
         self.worker_running = True
         self.dequeue()
-        
 
     @inlineCallbacks
     def shutdown(self):
@@ -149,9 +148,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def getFastCache(self, uuid):
         try:
             data = yield self.redis_client.get("fastcache:%s" % uuid)
+            returnValue(data)
         except:
             logger.debug("Could not get Fast Cache for %s" % uuid)
-        returnValue(data)
 
     @inlineCallbacks
     def setFastCache(self, uuid, data):
