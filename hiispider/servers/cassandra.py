@@ -108,7 +108,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue(True)
 
     def shutdown(self):
-        # Shutdown things here.
+        self.cassandra_client.stopService()
         return super(CassandraServer, self).shutdown()
 
 

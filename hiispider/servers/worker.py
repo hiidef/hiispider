@@ -24,7 +24,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobs_complete = 0
     request_chunk_size = 10
     job_queue_size = 1000
-    jobs_semaphore = DeferredSemaphore(20)
     worker_running = False
 
     def __init__(self, config, port=None):
@@ -33,6 +32,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
+        self.jobs_semaphore = DeferredSemaphore(config.get("amqp_prefetch_count", 10))
         # HTTP interface
         resource = WorkerResource(self)
         if port is None:
@@ -62,7 +62,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.setupJobHistory(self.config)
         self.worker_running = True
         self.dequeue()
-        
 
     @inlineCallbacks
     def shutdown(self):
@@ -109,7 +108,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             deferreds = []
             for i in range(0, self.request_chunk_size):
                 deferreds.append(self.dequeue_item())
-            yield DeferredList(deferreds)
+            yield DeferredList(deferreds, consumeErrors=True)
         reactor.callLater(1, self.dequeue)
 
     @inlineCallbacks
@@ -149,9 +148,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def getFastCache(self, uuid):
         try:
             data = yield self.redis_client.get("fastcache:%s" % uuid)
+            returnValue(data)
         except:
             logger.debug("Could not get Fast Cache for %s" % uuid)
-        returnValue(data)
 
     @inlineCallbacks
     def setFastCache(self, uuid, data):

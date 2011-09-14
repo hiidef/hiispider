@@ -252,6 +252,7 @@ class RequestQueuer(object):
 
     def _timeout(self, req):
         self.pending_reqs[req["host"]].remove(req)
+        self.total_pending_reqs -= 1
         req["deferred"].errback(QueueTimeoutException("Timeout: %s" % req["host"]))
 
     def _hostRequestCheck(self, host):
