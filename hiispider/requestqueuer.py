@@ -30,6 +30,7 @@ class RequestQueuer(object):
 
     # Dictionary of lists of pending requests, by host
     pending_reqs = {}
+    total_pending_reqs = 0
     # Dictonary of timestamps - via time() - of last requests, by host
     last_req = {}
     # Dictonary of integer counts of active requests, by host
@@ -86,7 +87,7 @@ class RequestQueuer(object):
         """
         Return the number of pending requests.
         """
-        return sum([len(x) for x in self.pending_reqs.values()])
+        return self.total_pending_reqs
 
     def getActive(self):
         """
@@ -245,6 +246,7 @@ class RequestQueuer(object):
             self.pending_reqs[host].insert(0, req)
         else:
             self.pending_reqs[host].append(req)
+        self.total_pending_reqs += 1
         self._checkActive()
         return req["deferred"]
 
@@ -283,6 +285,7 @@ class RequestQueuer(object):
                 elif self._hostRequestCheck(host):
                     dispatched_requests = True
                     req = self.pending_reqs[host].pop(0)
+                    self.total_pending_reqs -= 1
                     if req["queue_timeout"].active():
                         req["queue_timeout"].cancel()
                     d = self._getPage(req)
