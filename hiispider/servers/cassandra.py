@@ -125,7 +125,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 old_data = yield self.getData(user_id, job.uuid)
                 # TODO: make sure we check that old_data exists
                 deltas = delta_func(new_data, old_data)
-                logger.debug("Got deltas: %s ..." % str(deltas)[:1000])
+                logger.debug("Got %s deltas" % len(deltas))
                 for delta in deltas:
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
