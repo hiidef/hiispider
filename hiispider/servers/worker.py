@@ -24,7 +24,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobs_complete = 0
     job_queue_size = 1000
     worker_running = False
-    jobs_semaphore = DeferredSemaphore(50)
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
@@ -33,6 +32,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
         self.request_chunk_size = config.get("amqp_prefetch_count", 10)
+        self.jobs_semaphore = DeferredSemaphore(self.request_chunk_size)
         # HTTP interface
         resource = WorkerResource(self)
         if port is None:
