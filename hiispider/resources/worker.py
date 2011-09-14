@@ -17,7 +17,7 @@ class WorkerResource(BaseResource):
     def render(self, request):
         request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
         data = {'completed': self.workerserver.jobs_complete,
-                'queued': len(self.workerserver.jobs_semaphore.waiting),
+                'queued': len(self.workerserver.job_queue),
                 'active': len(self.workerserver.active_jobs),
                 'age': (time.time() - self.workerserver.t0),
                }
