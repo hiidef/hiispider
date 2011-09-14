@@ -4,6 +4,7 @@ from twisted.internet import reactor
 from txamqp.client import TwistedDelegate
 from txamqp.protocol import AMQClient
 import txamqp.spec
+import sys
 
 
 def createClient(amqp_host, amqp_vhost, amqp_port=5672):
@@ -14,5 +15,5 @@ def createClient(amqp_host, amqp_vhost, amqp_port=5672):
         delegate=amqp_delegate,
         vhost=amqp_vhost,
         spec=amqp_spec,
-        heartbeat=10).connectTCP(amqp_host, amqp_port, timeout=0)
+        heartbeat=10).connectTCP(amqp_host, amqp_port, timeout=sys.maxint)
     return client
