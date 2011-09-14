@@ -21,7 +21,7 @@ from ..delta import Autogenerator, Delta
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 from ..uuidhelpers import convert_time_to_uuid
-from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator
+from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator, NotFoundException
 from telephus.pool import CassandraClusterPool
 
 PP = pprint.PrettyPrinter(indent=4)
@@ -125,12 +125,11 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 old_data = yield self.getData(user_id, job.uuid)
                 # TODO: make sure we check that old_data exists
                 deltas = delta_func(new_data, old_data)
-                logger.debug("Got deltas: %s ..." % str(deltas)[:1000])
+                logger.debug("Got %s deltas" % len(deltas))
                 for delta in deltas:
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
                     user_column = '%s:%s:%s' % (delta.id, category, job.subservice)
-                    logger.info("Inserting delta id %s to user_column: %s" % (str(delta.id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(delta.data)),
                         'user_id': str(user_id),
@@ -164,11 +163,14 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def getData(self, user_id, uuid):
-        data = yield self.cassandra_client.get(
-            key=str(user_id),
-            column_family=self.cassandra_cf_content,
-            column=uuid)
-        returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+        try:
+            data = yield self.cassandra_client.get(
+                key=str(user_id),
+                column_family=self.cassandra_cf_content,
+                column=uuid)
+            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+        except NotFoundException:
+            returnValue([])
 
     @inlineCallbacks
     def deleteReservation(self, uuid):

@@ -52,7 +52,11 @@ class IdentityServer(BaseServer, MySQLMixin, IdentityQueueMixin):
         self.expose(self.getReverseRecommendations)
         self.expose(self.updateIdentity)
         # setup manhole
-        reactor.listenTCP(config["manhole_identity_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_identity_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(IdentityServer, self).start()

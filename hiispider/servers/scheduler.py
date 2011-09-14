@@ -50,7 +50,11 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         self.expose(self.removeFromIdentityHeap)
         self.expose(self.enqueueJobUUID)
         # setup manhole
-        reactor.listenTCP(config["manhole_scheduler_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_scheduler_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(SchedulerServer, self).start()
