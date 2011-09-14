@@ -21,7 +21,7 @@ from ..delta import Autogenerator, Delta
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
 from ..uuidhelpers import convert_time_to_uuid
-from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator
+from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator, NotFoundException
 from telephus.pool import CassandraClusterPool
 
 PP = pprint.PrettyPrinter(indent=4)
@@ -164,11 +164,14 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def getData(self, user_id, uuid):
-        data = yield self.cassandra_client.get(
-            key=str(user_id),
-            column_family=self.cassandra_cf_content,
-            column=uuid)
-        returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+        try:
+            data = yield self.cassandra_client.get(
+                key=str(user_id),
+                column_family=self.cassandra_cf_content,
+                column=uuid)
+            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+        except NotFoundException:
+            returnValue([])
 
     @inlineCallbacks
     def deleteReservation(self, uuid):
