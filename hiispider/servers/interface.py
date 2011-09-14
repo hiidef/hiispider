@@ -40,7 +40,11 @@ class InterfaceServer(CassandraServer):
         self.scheduler_server_port = config["scheduler_server_port"]
         self.cassandra_cf_identity = config["cassandra_cf_identity"]
         # setup manhole
-        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(globals(), admin=config["manhole_password"]))
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
         # delta debugging
         if self.delta_debug:
             self.expose(self.regenerate_delta)
