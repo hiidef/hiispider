@@ -130,7 +130,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
                     user_column = '%s:%s:%s' % (delta.id, category, job.subservice)
-                    logger.info("Inserting delta id %s to user_column: %s" % (str(delta.id), user_column))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(delta.data)),
                         'user_id': str(user_id),
