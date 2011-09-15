@@ -8,7 +8,7 @@ of writing results to both MySQL and Cassandra and features a """
 __all__ = ['SchedulerServer', 'InterfaceServer', 'WorkerServer',
            'HiiSpiderPlugin', 'VERSION']
 
-VERSION = (0, 10, 2, 5)
+VERSION = (0, 10, 2, 6)
 
 from .servers import SchedulerServer
 from .servers import InterfaceServer
