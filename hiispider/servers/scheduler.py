@@ -132,6 +132,9 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                 else:
                     self.removed_job_uuids.remove(uuid.hex)
         else:
+            job = heappop(self.jobs_heap)
+            self.stats.increment('chan.enqueue.failure', sample_rate=0.05)
+            heappush(self.jobs_heap, now + job[1][1] + random.randint(-1*job[1][1]/2, job[1][1]/2), job[1])
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_jobs_queue_size)
         self.stats.set('chan.queued_items', queued_items)
@@ -153,6 +156,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                 else:
                     self.removed_identity_ids.remove(job[1][0])
         else:
+            job = heappop(self.identity_heap)
+            heappush(self.identity_heap, (now + job[1][1] + random.randint(-1*job[1][1]/2, job[1][1]/2), job[1]))
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_identity_queue_size)
 
