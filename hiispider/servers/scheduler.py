@@ -157,7 +157,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
                     self.removed_identity_ids.remove(job[1][0])
         else:
             job = heappop(self.identity_heap)
-            heappush(self.jobs_heap, (now + job[1][1] + random.randint(-1*job[1][1]/2, job[1][1]/2), job[1]))
+            heappush(self.identity_heap, (now + job[1][1] + random.randint(-1*job[1][1]/2, job[1][1]/2), job[1]))
             logger.critical('AMQP jobs queue is at or beyond max limit (%d/100000)'
                 % self.amqp_identity_queue_size)
 
