@@ -124,7 +124,7 @@ class BaseServer(object):
             ))
             shutdown_deferred = Deferred()
             # Call the Deferred after a second to continue the loop.
-            reactor.callLater(1, shutdown_deferred.callback, None)
+            reactor.callLater(1, shutdown_deferred.callback)
             yield shutdown_deferred
         self.shutdown_trigger_id = None
         logger.critical("Server shut down.")

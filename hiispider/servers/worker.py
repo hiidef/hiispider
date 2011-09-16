@@ -7,7 +7,7 @@ from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGett
 from hiispider.requestqueuer import QueueTimeoutException
 from twisted.internet import reactor, task
 from twisted.web import server
-from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
+from twisted.internet.defer import inlineCallbacks, returnValue
 import pprint
 from traceback import format_exc
 from hiispider.exceptions import *
@@ -21,12 +21,12 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
+    simultaneous_reqs = 50
     jobs_complete = 0
     job_queue = []
-    job_queue_size = 1000
-    simultaneous_jobs = 100
-    worker_running = False
-    pending_execution = False
+    jobsloop = None
+    dequeueloop = None
+    queue_requests = 0
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
@@ -34,7 +34,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
-        self.request_chunk_size = config.get("amqp_prefetch_count", 10) * 4
+        self.setupJobHistory(config)
         # HTTP interface
         resource = WorkerResource(self)
         if port is None:
@@ -57,20 +57,29 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
 
     @inlineCallbacks
     def _workerStart(self, started=None):
-        self.running = True
         logger.debug("Starting worker components.")
         yield self.startJobQueue()
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
-        self.worker_running = True
-        self.dequeue()
+        self.jobsloop = task.LoopingCall(self.executeJobs)
+        self.jobsloop.start(0.2)
+        self.dequeueloop = task.LoopingCall(self.dequeue)
+        self.dequeueloop.start(1)
 
     @inlineCallbacks
     def shutdown(self):
-        self.worker_running = False
+        self.jobsloop.stop()
+        self.dequeueloop.stop()
         yield self.stopJobQueue()
         yield self.stopPageCacheQueue()
         yield super(WorkerServer, self).shutdown()
+
+    def dequeue(self):
+        # self.logStatus()
+        while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
+            self.queue_requests += 1
+            logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
+            self.dequeue_item()
 
     @inlineCallbacks
     def dequeue_item(self):
@@ -81,7 +90,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             if self.shutdown_trigger_id is None:
                 return
             logger.error('Dequeue Error: %s' % e)
+            self.queue_requests -= 1
             return
+        self.queue_requests -= 1
         logger.debug('Got job %s' % uuid)
         try:
             job = yield self.getJob(uuid)
@@ -96,36 +107,16 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             logger.debug('Successfully pulled job off of AMQP queue')
             if self.functions[job.function_name]["check_fast_cache"]:
                 job.fast_cache = yield self.getFastCache(job.uuid)
-            if len(self.active_jobs) < self.simultaneous_jobs:
-                self.executeJob(job)
-            else:
-                self.job_queue.append(job)
-                if not self.pending_execution:
-                    self.pending_execution = True
-                    reactor.callLater(.1, self.executeJobs)
+            self.job_queue.append(job)
         else:
             logger.error("Could not find function %s." % job.function_name)
             return
 
     def executeJobs(self):
-        for i in range(0, self.simultaneous_jobs - len(self.active_jobs)):
-            if self.job_queue:
-                self.execute_job(self.job_queue.pop())
-            else:
-                self.pending_execution = False
+        for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
+            if not len(self.job_queue):
                 return
-        reactor.callLater(.1, self.executeJobs)
-
-    @inlineCallbacks
-    def dequeue(self):
-        while len(self.job_queue) < self.job_queue_size:
-            if not self.worker_running:
-                return
-            deferreds = []
-            for i in range(0, self.request_chunk_size):
-                deferreds.append(self.dequeue_item())
-            yield DeferredList(deferreds, consumeErrors=True)
-        reactor.callLater(1, self.dequeue)
+            self.executeJob(self.job_queue.pop(0))
 
     @inlineCallbacks
     def executeJob(self, job):
@@ -163,9 +154,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def getFastCache(self, uuid):
         try:
             data = yield self.redis_client.get("fastcache:%s" % uuid)
-            returnValue(data)
         except:
             logger.debug("Could not get Fast Cache for %s" % uuid)
+        returnValue(data)
 
     @inlineCallbacks
     def setFastCache(self, uuid, data):

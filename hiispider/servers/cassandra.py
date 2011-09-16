@@ -108,7 +108,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue(True)
 
     def shutdown(self):
-        self.cassandra_client.stopService()
+        # Shutdown things here.
         return super(CassandraServer, self).shutdown()
 
 
@@ -170,7 +170,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 column=uuid)
             returnValue(simplejson.loads(zlib.decompress(data.column.value)))
         except NotFoundException:
-            returnValue(None)
+            returnValue([])
 
     @inlineCallbacks
     def deleteReservation(self, uuid):

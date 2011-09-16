@@ -2,6 +2,7 @@ import marshal
 import time
 import cPickle
 from itertools import chain
+from .uuidhelpers import convert_time_to_uuid
 from hiiguid import HiiGUID
 
 
@@ -55,12 +56,12 @@ def _sort(a, ignores, includes):
         # If there are include paths, iterate through keys in these paths.
         included_keys = _included(includes)
         if included_keys:
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
                 for x in sorted(included_keys) if x in a]
         else:
             # Disregard keys at the top level of the ignore paths.
             ignored_keys = _ignored(ignores)
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
                 for x in sorted(a) if x not in ignored_keys]
     elif type(a) is list:
         try:
@@ -111,7 +112,7 @@ def _compare_lists(a, b, ignores, includes):
 
 def _narrow(a, b, path):
     """
-    Recursively remove keys not in path. Combine lists of lists if
+    Recursively remove keys not in path. Combine lists of lists if 
     indicated by the path.
     """
     # If the path is empty, no need to narrow any further.
@@ -183,7 +184,7 @@ class Autogenerator(object):
                 path_parameters["includes"] = _includes
                 path_parameters["ignores"] = _ignores
                 self.paths.append(path_parameters)
-
+    
     def __call__(self, a, b):
         """
         Compare dictionaries or lists of objects. Returns a list.
@@ -193,11 +194,6 @@ class Autogenerator(object):
         return list(chain(*[self._call(a, b, p) for p in self.paths]))
 
     def _call(self, a, b, pathdata):
-        if not b:
-            if isinstance(a, dict):
-                b = {}
-            else:
-                b = []
         path = pathdata["path"]
         pathstring = "/".join(path)
         ignores = pathdata["ignores"]
