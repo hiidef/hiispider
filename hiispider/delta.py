@@ -194,6 +194,11 @@ class Autogenerator(object):
         return list(chain(*[self._call(a, b, p) for p in self.paths]))
 
     def _call(self, a, b, pathdata):
+        if b:
+            if isinstance(a, dict):
+                b = {}
+            else:
+                b = []
         path = pathdata["path"]
         pathstring = "/".join(path)
         ignores = pathdata["ignores"]

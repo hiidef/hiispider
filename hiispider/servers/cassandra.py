@@ -170,7 +170,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 column=uuid)
             returnValue(simplejson.loads(zlib.decompress(data.column.value)))
         except NotFoundException:
-            returnValue([])
+            returnValue(None)
 
     @inlineCallbacks
     def deleteReservation(self, uuid):
