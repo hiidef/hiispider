@@ -114,6 +114,11 @@ def _narrow(a, b, path):
     Recursively remove keys not in path. Combine lists of lists if
     indicated by the path.
     """
+    if not b:
+        if isinstance(a, dict):
+            b = {}
+        elif isinstance(a, list):
+            b = []
     # If the path is empty, no need to narrow any further.
     # If there is nothing to narrow, no need to narrow further.
     if not path or (not a and not b):
@@ -193,11 +198,6 @@ class Autogenerator(object):
         return list(chain(*[self._call(a, b, p) for p in self.paths]))
 
     def _call(self, a, b, pathdata):
-        if not b:
-            if isinstance(a, dict):
-                b = {}
-            else:
-                b = []
         path = pathdata["path"]
         pathstring = "/".join(path)
         ignores = pathdata["ignores"]

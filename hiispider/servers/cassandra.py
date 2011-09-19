@@ -23,6 +23,7 @@ from mixins.jobgetter import JobGetterMixin
 from ..uuidhelpers import convert_time_to_uuid
 from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator, NotFoundException
 from telephus.pool import CassandraClusterPool
+from hiispider.exceptions import *
 
 PP = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -111,7 +112,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
         self.cassandra_client.stopService()
         return super(CassandraServer, self).shutdown()
 
-
     @inlineCallbacks
     def executeJob(self, job):
         user_id = job.user_account["user_id"]
@@ -127,9 +127,12 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 deltas = delta_func(new_data, old_data)
                 logger.debug("Got %s deltas" % len(deltas))
                 for delta in deltas:
-                    category = self.functions[job.function_name]['category']
+                    # FIXME why is category not always set?
+                    category = 'unkown'
+                    if self.functions[job.function_name]['category']:
+                        category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = '%s:%s:%s' % (delta.id, category, job.subservice)
+                    user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(delta.data)),
                         'user_id': str(user_id),
@@ -184,7 +187,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         logger.info('Sending UUID to scheduler to be dequeued: %s' % url)
         try:
             yield self.rq.getPage(url=url)
-        except Exception, e:
+        except Exception:
             tb = traceback.format_exc()
             logger.error("failed to deque job %s on scheduler"
                 " (url was: %s):\n%s" % (uuid, url, tb))
@@ -193,18 +196,18 @@ class CassandraServer(BaseServer, JobGetterMixin):
         yield self.cassandra_client.remove(
             uuid,
             self.cassandra_cf_content)
-        returnValue({'success':True})
+        returnValue({'success': True})
 
     def regenerate_deltas(self, service_type=None):
         if self.regenerating:
-            return {"success":False, "message":"Already regenerating. Come back later."}
+            return {"success": False, "message": "Already regenerating. Come back later."}
         self.regenerating = True
         reactor.callLater(
-            0, 
+            0,
             self._regenerate_deltas,
             service_type=service_type)
-        return {"success":True, "message":"Queuing deltas to be regenerated."}
-    
+        return {"success": True, "message": "Queuing deltas to be regenerated."}
+
     @inlineCallbacks
     def _regenerate_deltas(self, start='', count=0, service_type=None):
         if service_type:
@@ -217,7 +220,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 count=300)
         else:
             range_slice = yield self.cassandra_client.get_range_slices(
-                column_family=self.cassandra_cf_delta, 
+                column_family=self.cassandra_cf_delta,
                 column_count=0,
                 start=start,
                 count=300)
@@ -228,7 +231,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             deferreds.append(d)
             if len(deferreds) >= 100:
                 count += 100
-                logger.info("Regenerated %s deltas." % count) 
+                logger.info("Regenerated %s deltas." % count)
                 yield DeferredList(deferreds, consumeErrors=True)
                 deferreds = []
         if range_slice:
@@ -249,15 +252,15 @@ class CassandraServer(BaseServer, JobGetterMixin):
             yield self.cassandra_client.remove(
                 key=user_id,
                 column_family=self.cassandra_cf_delta_user,
-                column=delta_id) 
+                column=delta_id)
 
     @inlineCallbacks
     def regenerate_delta(
-            self, 
-            delta_id, 
-            paths=None, 
-            includes=None, 
-            ignores=None, 
+            self,
+            delta_id,
+            paths=None,
+            includes=None,
+            ignores=None,
             return_new_keys=False):
         # Get the delta data, the old data, the new data, and the subservice.
         data = yield self.cassandra_client.get_slice(
@@ -285,16 +288,16 @@ class CassandraServer(BaseServer, JobGetterMixin):
             if ignores:
                 ignores = ignores.split(",")
             delta_func = Autogenerator(
-                paths, 
-                ignores, 
-                includes, 
+                paths,
+                ignores,
+                includes,
                 bool(int(return_new_keys)))
             logger.debug("Using custom Autogenerator.")
         else:
             delta_func = self.functions[row["subservice"]]["delta"]
             # In the event of a stock Autogenerator, remove on empty.
             if isinstance(delta_func, Autogenerator):
-                if len(delta_func.paths) == 1:     
+                if len(delta_func.paths) == 1:
                     if not delta_func.paths[0]["path"] and not \
                             delta_func.paths[0]["includes"] and not \
                             delta_func.paths[0]["ignores"]:
@@ -305,18 +308,18 @@ class CassandraServer(BaseServer, JobGetterMixin):
         if len(deltas) == 0:
             if delete_on_empty:
                 replacement_delta = None
-                yield self.delete_delta(delta_id, user_id)              
+                yield self.delete_delta(delta_id, user_id)
             else:
                 replacement_delta = None
                 yield self.cassandra_client.batch_insert(
                     key=delta_id,
                     column_family=self.cassandra_cf_delta,
                     mapping={
-                        "data":zlib.compress(simplejson.dumps("")),
-                        "updated":str(time.time()),
-                        "service":row["service"],
-                        "category":row["category"],
-                        "subservice":row["subservice"],
+                        "data": zlib.compress(simplejson.dumps("")),
+                        "updated": str(time.time()),
+                        "service": row["service"],
+                        "category": row["category"],
+                        "subservice": row["subservice"],
                     })
                 logger.debug("DELTA %s\nEmpty delta." % delta_id)
         # If one delta exists, replace the old data with the new delta.
@@ -326,15 +329,15 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data":zlib.compress(simplejson.dumps(replacement_delta)),
-                    "updated":str(time.time()),
-                    "service":row["service"],
-                    "category":row["category"],
-                    "subservice":row["subservice"],
+                    "data": zlib.compress(simplejson.dumps(replacement_delta)),
+                    "updated": str(time.time()),
+                    "service": row["service"],
+                    "category": row["category"],
+                    "subservice": row["subservice"],
 
                 })
             logger.debug("DELTA %s\nOne result:\n%s" % (
-                delta_id, 
+                delta_id,
                 PP.pformat(replacement_delta)))
         # If multiple deltas exists, replace them with the closest match.
         else:
@@ -347,17 +350,17 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 s.set_seq2(value)
                 delta_options.append((s.ratio(), value, delta.data))
             # Sort to find the most similar option.
-            delta_options = sorted(delta_options, key=lambda x:x[0])
+            delta_options = sorted(delta_options, key=lambda x: x[0])
             replacement_delta = delta_options[-1][2]
             yield self.cassandra_client.batch_insert(
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data":zlib.compress(simplejson.dumps(replacement_delta)),
-                    "updated":str(time.time()),
-                    "service":row["service"],
-                    "category":row["category"],
-                    "subservice":row["subservice"],})
+                    "data": zlib.compress(simplejson.dumps(replacement_delta)),
+                    "updated": str(time.time()),
+                    "service": row["service"],
+                    "category": row["category"],
+                    "subservice": row["subservice"]})
             logger.debug("DELTA %s\nMultiple results:\n%s" % (
                 delta_id,
                 PP.pformat([x[2] for x in delta_options])))
@@ -365,5 +368,5 @@ class CassandraServer(BaseServer, JobGetterMixin):
             PP.pformat(recursive_sort(old_data)).split("\n"),
             PP.pformat(recursive_sort(new_data)).split("\n")))))
         returnValue({
-            'replacement_delta':replacement_delta,
-            'deltas':[x.data for x in deltas]})
+            'replacement_delta': replacement_delta,
+            'deltas': [x.data for x in deltas]})
