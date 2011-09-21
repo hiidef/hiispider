@@ -210,30 +210,34 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def _regenerate_deltas(self, start='', count=0, service_type=None):
-        if service_type:
-            expressions = [IndexExpression('subservice', IndexOperator.EQ, service_type)]
-            range_slice = yield self.cassandra_client.get_indexed_slices(
-                column_family=self.cassandra_cf_delta,
-                expressions=expressions,
-                column_count=1,
-                start_key=start,
-                count=300)
-        else:
-            range_slice = yield self.cassandra_client.get_range_slices(
-                column_family=self.cassandra_cf_delta,
-                column_count=0,
-                start=start,
-                count=300)
-        deferreds = []
-        for x in range_slice:
-            d = self.regenerate_delta(x.key)
-            d.addErrback(self._regenerateErrback)
-            deferreds.append(d)
-            if len(deferreds) >= 100:
-                count += 100
-                logger.info("Regenerated %s deltas." % count)
-                yield DeferredList(deferreds, consumeErrors=True)
-                deferreds = []
+        try:
+            if service_type:
+                expressions = [IndexExpression('subservice', IndexOperator.EQ, service_type)]
+                range_slice = yield self.cassandra_client.get_indexed_slices(
+                    column_family=self.cassandra_cf_delta,
+                    expressions=expressions,
+                    column_count=1,
+                    start_key=start,
+                    count=300)
+            else:
+                range_slice = yield self.cassandra_client.get_range_slices(
+                    column_family=self.cassandra_cf_delta,
+                    column_count=0,
+                    start=start,
+                    count=300)
+            deferreds = []
+            for x in range_slice:
+                d = self.regenerate_delta(x.key)
+                d.addErrback(self._regenerateErrback)
+                deferreds.append(d)
+                if len(deferreds) >= 100:
+                    count += 100
+                    logger.info("Regenerated %s deltas." % count)
+                    yield DeferredList(deferreds, consumeErrors=True)
+                    deferreds = []
+        except Exception, e:
+            logger.info("Regenerating deltas failed: %s" % e)
+            self.regenerateing = False
         if range_slice:
             reactor.callLater(0, self._regenerate_deltas, start=range_slice.pop().key + chr(0x00), count=count)
         else:
