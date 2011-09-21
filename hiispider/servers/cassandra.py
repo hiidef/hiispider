@@ -239,7 +239,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             logger.error("Regenerating deltas failed: %s" % e)
             self.regenerateing = False
         if range_slice:
-            reactor.callLater(0, self._regenerate_deltas, start=range_slice.pop().key + chr(0x00), count=count)
+            reactor.callLater(0, self._regenerate_deltas, start=range_slice.pop().key + chr(0x00), count=count, service_type=service_type)
         else:
             logging.info("Regenerating deltas complete")
             self.regenerating = False
