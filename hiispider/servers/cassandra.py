@@ -236,7 +236,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     yield DeferredList(deferreds, consumeErrors=True)
                     deferreds = []
         except Exception, e:
-            logger.info("Regenerating deltas failed: %s" % e)
+            logger.error("Regenerating deltas failed: %s" % e)
             self.regenerateing = False
         if range_slice:
             reactor.callLater(0, self._regenerate_deltas, start=range_slice.pop().key + chr(0x00), count=count)
