@@ -307,6 +307,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                             delta_func.paths[0]["ignores"]:
                         delete_on_empty = True
         # Generate deltas.
+        logger.debug('Regenerating deltas using delta_func: %s' % type(delta_func))
         deltas = delta_func(new_data, old_data)
         # If no delta exists, clear the old data out.
         if len(deltas) == 0:
