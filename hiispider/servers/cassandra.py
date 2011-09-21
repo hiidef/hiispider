@@ -105,6 +105,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             redis_client=self.redis_client,
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
+        logger.debug("Initialized pagegetter.")
         returnValue(True)
 
     def shutdown(self):

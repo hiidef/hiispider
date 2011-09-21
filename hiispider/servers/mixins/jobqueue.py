@@ -23,6 +23,7 @@ class JobQueueMixin(AMQPMixin):
 
     @inlineCallbacks
     def startJobQueue(self):
+        logger.debug("Starting Job Queue.")
         self.jobs_conn = yield AMQP.createClient(
             self.amqp_host,
             self.amqp_jobs_vhost,

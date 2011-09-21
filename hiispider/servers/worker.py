@@ -27,6 +27,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobsloop = None
     dequeueloop = None
     queue_requests = 0
+    job_queue_size = 100
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
@@ -75,8 +76,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield super(WorkerServer, self).shutdown()
 
     def dequeue(self):
+        logger.debug('dequeing')
         # self.logStatus()
-        while len(self.job_queue) + self.queue_requests <= self.amqp_prefetch_count:
+        while len(self.job_queue) + self.queue_requests <= self.job_queue_size:
             self.queue_requests += 1
             logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
             self.dequeue_item()
@@ -95,7 +97,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.queue_requests -= 1
         logger.debug('Got job %s' % uuid)
         try:
-            job = yield self.getJob(uuid)
+            job = yield self.batchGetJob(uuid)
         except Exception, e:
             logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
