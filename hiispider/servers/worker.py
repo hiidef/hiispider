@@ -27,7 +27,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobsloop = None
     dequeueloop = None
     queue_requests = 0
-    job_queue_size = 100
+    job_queue_size = 200
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
