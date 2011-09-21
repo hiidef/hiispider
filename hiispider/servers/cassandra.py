@@ -244,7 +244,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
     @inlineCallbacks
     def delete_delta(self, delta_id, user_id=None):
-        logger.debug("Deleting %s" % delta_id)
+        logger.debug("Deleting %s" % delta_id.encode('hex'))
         yield self.cassandra_client.remove(
             key=delta_id,
             column_family=self.cassandra_cf_delta)
@@ -321,7 +321,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         "category": row["category"],
                         "subservice": row["subservice"],
                     })
-                logger.debug("DELTA %s\nEmpty delta." % delta_id)
+                logger.debug("DELTA %s\nEmpty delta." % delta_id.encode('hex'))
         # If one delta exists, replace the old data with the new delta.
         elif len(deltas) == 1:
             replacement_delta = deltas[0].data
