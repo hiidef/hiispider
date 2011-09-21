@@ -337,7 +337,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
 
                 })
             logger.debug("DELTA %s\nOne result:\n%s" % (
-                delta_id,
+                delta_id.encode('hex'),
                 PP.pformat(replacement_delta)))
         # If multiple deltas exists, replace them with the closest match.
         else:
