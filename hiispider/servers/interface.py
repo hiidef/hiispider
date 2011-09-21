@@ -90,22 +90,18 @@ class InterfaceServer(CassandraServer):
 
     @inlineCallbacks
     def executeExposedFunction(self, function_name, **kwargs):
-        try:
-            function = self.functions[function_name]
-            data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
-            uuid = uuid4().hex if function["interval"] > 0 else None
-            user_id = kwargs.get('site_user_id', None)
-            if uuid is not None and self.cassandra_cf_content is not None and data is not None:
-                logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
-                encoded_data = zlib.compress(simplejson.dumps(data))
-                yield self.insertData(encoded_data, uuid, user_id)
-            if not uuid:
-                returnValue(data)
-            else:
-                returnValue({uuid: data})
-        except Exception, e:
-            logger.error('executeExposedFunction %s failed: %s, kwargs: %s' % (e, function_name, kwargs))
-            raise
+        function = self.functions[function_name]
+        data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
+        uuid = uuid4().hex if function["interval"] > 0 else None
+        user_id = kwargs.get('site_user_id', None)
+        if uuid is not None and self.cassandra_cf_content is not None and data is not None:
+            logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
+            encoded_data = zlib.compress(simplejson.dumps(data))
+            yield self.insertData(encoded_data, uuid, user_id)
+        if not uuid:
+            returnValue(data)
+        else:
+            returnValue({uuid: data})
     
     def updateIdentity(self, user_id, service_name):
         reactor.callLater(0, self._updateIdentity, user_id, service_name)
