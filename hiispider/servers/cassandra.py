@@ -362,7 +362,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     "category": row["category"],
                     "subservice": row["subservice"]})
             logger.debug("DELTA %s\nMultiple results:\n%s" % (
-                delta_id,
+                delta_id.encode('hex'),
                 PP.pformat([x[2] for x in delta_options])))
         logger.debug("DIFF: " + "\n".join(list(unified_diff(
             PP.pformat(recursive_sort(old_data)).split("\n"),
