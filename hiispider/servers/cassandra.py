@@ -241,6 +241,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         if range_slice:
             reactor.callLater(0, self._regenerate_deltas, start=range_slice.pop().key + chr(0x00), count=count)
         else:
+            logging.info("Regenerating deltas complete")
             self.regenerating = False
 
     def _regenerateErrback(self, error):
