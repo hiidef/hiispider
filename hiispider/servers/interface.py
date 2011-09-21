@@ -90,7 +90,10 @@ class InterfaceServer(CassandraServer):
 
     @inlineCallbacks
     def executeExposedFunction(self, function_name, **kwargs):
-        function = self.functions[function_name]
+        try:
+            function = self.functions[function_name]
+        except Exception, e:
+            logger.error('setting function %s failed: %s, kwargs: %s' % (e, function_name, kwargs))
         data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
         uuid = uuid4().hex if function["interval"] > 0 else None
         user_id = kwargs.get('site_user_id', None)
@@ -102,7 +105,7 @@ class InterfaceServer(CassandraServer):
             returnValue(data)
         else:
             returnValue({uuid: data})
-    
+
     def updateIdentity(self, user_id, service_name):
         reactor.callLater(0, self._updateIdentity, user_id, service_name)
         return {"success":True, "message":"Update identity started."}
