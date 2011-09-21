@@ -15,7 +15,7 @@ class JobGetterBatchException(Exception):
 class JobGetterMixin(MySQLMixin):
 
     request_queue = {}
-    batch_size = 20
+    batch_size = 100
 
     def setupJobGetter(self, config):
         self.setupMySQL(config)
