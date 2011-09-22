@@ -102,6 +102,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         if len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
             d = self.jobs_rabbit_queue.get()
             d.addCallback(self._dequeue_uuids_callback)
+            d.addCallback(self._dequeue_uuids_errback)
         else:
             self.uuid_dequeueing = False
 
@@ -109,6 +110,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobs_chan.basic_ack(msg.delivery_tag)
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
         self.uuids_dequeued += 1
+        self.dequeue_uuids(dequeueing=True)
+
+    def _dequeue_uuids_errback(self, error):
+        logger.error('Dequeuing error %s:' % str(error))
         self.dequeue_uuids(dequeueing=True)
 
     def check_job_cache(self, uncached_uuid_dequeueing=False):
