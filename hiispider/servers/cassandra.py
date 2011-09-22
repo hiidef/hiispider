@@ -302,7 +302,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         else:
             delta_func = self.functions[row["subservice"]]["delta"]
             if not delta_func:
-                logger.error('No delta_func for delta %s found. Setting delta_func to  Autogenerator' % delta_id.encode('hex'))
+                logger.warn('No delta_func for delta %s found. Setting delta_func to  Autogenerator' % delta_id.encode('hex'))
                 delta_func = Autogenerator(
                     paths,
                     ignores,
