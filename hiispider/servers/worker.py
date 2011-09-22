@@ -113,7 +113,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 self.checkJobCache()
         self.uuid_dequeueing = False
 
-    @inlineCallbacks:
+    @inlineCallbacks
     def checkJobCache(self):
         uuids, self.uuid_queue = self.uuid_queue, []
         data = yield self.redis_client.mget(*uuids)
@@ -126,7 +126,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             else:
                 logger.error('Could not find uuids %s in Redis.' % row[0])
                 self.uncached_uuid_queue.append(row[0])
-                
+
     @inlineCallbacks
     def lookupjobs(self):
         while self.uncached_uuid_queue:
