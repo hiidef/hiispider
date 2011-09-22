@@ -301,6 +301,13 @@ class CassandraServer(BaseServer, JobGetterMixin):
             logger.debug("Using custom Autogenerator.")
         else:
             delta_func = self.functions[row["subservice"]]["delta"]
+            if not delta_func:
+                logger.error('No delta_func for delta %s found. Setting delta_func to  Autogenerator' % delta_id.encode('hex'))
+                delta_func = Autogenerator(
+                    paths,
+                    ignores,
+                    includes,
+                    bool(int(return_new_keys)))
             # In the event of a stock Autogenerator, remove on empty.
             if isinstance(delta_func, Autogenerator):
                 if len(delta_func.paths) == 1:
@@ -310,8 +317,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         delete_on_empty = True
         # Generate deltas.
         logger.debug('Regenerating delta %s using delta_func: %s' % (delta_id.encode('hex'), type(delta_func)))
-        if not delta_func:
-            logger.error('No delta_func for delta %s found. Row data: %s' % (delta_id.encode('hex'), row))
         deltas = delta_func(new_data, old_data)
         # If no delta exists, clear the old data out.
         if len(deltas) == 0:
