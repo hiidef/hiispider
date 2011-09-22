@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 25
+    simultaneous_reqs = 50
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -32,6 +32,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobsloop = None
     dequeueloop = None
     logloop = None
+    pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
     uuid_queue_size = 1000
@@ -94,40 +95,48 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield super(WorkerServer, self).shutdown()
         yield self.stopPageCacheQueue()    
 
-    @inlineCallbacks
-    def dequeue_uuids(self):
-        if self.uuid_dequeueing:
+    def dequeue_uuids(self, dequeueing=False):
+        if self.uuid_dequeueing and not dequeueing:
             return
         self.uuid_dequeueing = True
-        while len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
-            msg = yield self.jobs_rabbit_queue.get()
-            self.jobs_chan.basic_ack(msg.delivery_tag)
-            self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
-            self.uuids_dequeued += 1
-        self.uuid_dequeueing = False
+        if len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
+            d = self.jobs_rabbit_queue.get()
+            d.addCallback(self._dequeue_uuids_callback)
+        else:
+            self.uuid_dequeueing = False
 
-    @inlineCallbacks
-    def check_job_cache(self):
-        if self.uncached_uuid_dequeueing:
+    def _dequeue_uuids_callback(self, msg):
+        self.jobs_chan.basic_ack(msg.delivery_tag)
+        self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+        self.uuids_dequeued += 1
+        self.dequeue_uuids(dequeueing=True)
+
+    def check_job_cache(self, uncached_uuid_dequeueing=False):
+        if self.uncached_uuid_dequeueing and not uncached_uuid_dequeueing:
             return
         self.uncached_uuid_dequeueing = True
-        while self.uuid_queue:
+        if self.uuid_queue:
             uuids, self.uuid_queue = self.uuid_queue[0:100], self.uuid_queue[100:]
-            try:
-                data = yield self.redis_client.mget(*uuids)
-                results = zip(uuids, data)
-                for row in results:
-                    if row[1]:
-                        job = cPickle.loads(decompress(row[1]))
-                        logger.debug('Found uuid in Redis: %s' % row[0])
-                        self.job_queue.append(job)
-                    else:
-                        logger.error('Could not find uuids %s in Redis.' % row[0])
-                        self.uncached_uuid_queue.append(row[0])
-            except Exception, e:
-                logger.error('Could not find uuids %s in Redis: %s' % (uuids ,e))
-                self.uncached_uuid_queue.extend(uuids)
-        self.uncached_uuid_dequeueing = False
+            d = self.redis_client.mget(*uuids)
+            d.addCallback(self.check_job_cache_callback, uuids)
+            d.addErrback(self.check_job_cache_errback, uuids)
+
+    def check_job_cache_callback(self, data, uuids):
+        results = zip(uuids, data)
+        for row in results:
+            if row[1]:
+                job = cPickle.loads(decompress(row[1]))
+                logger.debug('Found uuid in Redis: %s' % row[0])
+                self.job_queue.append(job)
+            else:
+                logger.error('Could not find uuids %s in Redis.' % row[0])
+                self.uncached_uuid_queue.append(row[0])
+        self.check_job_cache(uncached_uuid_dequeueing=True)
+
+    def check_job_cache_errback(self, error, uuids):
+        logger.error('Could not find uuids %s in Redis: %s' % (uuids ,e))
+        self.uncached_uuid_queue.extend(uuids)
+        self.check_job_cache(uncached_uuid_dequeueing=True)
 
     @inlineCallbacks
     def get_user_accounts(self):
