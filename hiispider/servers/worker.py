@@ -109,20 +109,24 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.jobs_chan.basic_ack(msg.delivery_tag)
             self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
             self.uuids_dequeued += 1
-            if len(self.uuid_queue) > 20:
-                uuids, self.uuid_queue = self.uuid_queue, []
-                data = yield self.redis_client.mget(*uuids)
-                results = zip(uuids, data)
-                for row in results:
-                    if row[1]:
-                        job = cPickle.loads(decompress(row[1]))
-                        logger.debug('Found uuid in Redis: %s' % row[0])
-                        self.job_queue.append(job)
-                    else:
-                        logger.error('Could not find uuids %s in Redis.' % row[0])
-                        self.uncached_uuid_queue.append(row[0])
+            if len(self.uuid_queue) > 100:
+                self.checkJobCache()
         self.uuid_dequeueing = False
 
+    @inlineCallbacks:
+    def checkJobCache(self):
+        uuids, self.uuid_queue = self.uuid_queue, []
+        data = yield self.redis_client.mget(*uuids)
+        results = zip(uuids, data)
+        for row in results:
+            if row[1]:
+                job = cPickle.loads(decompress(row[1]))
+                logger.debug('Found uuid in Redis: %s' % row[0])
+                self.job_queue.append(job)
+            else:
+                logger.error('Could not find uuids %s in Redis.' % row[0])
+                self.uncached_uuid_queue.append(row[0])
+                
     @inlineCallbacks
     def lookupjobs(self):
         while self.uncached_uuid_queue:
