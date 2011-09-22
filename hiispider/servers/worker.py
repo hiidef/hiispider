@@ -32,7 +32,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobsloop = None
     dequeueloop = None
     logloop = None
-    uuid_req_size = 20
     pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
@@ -80,7 +79,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(2)
+        self.dequeueloop.start(5)
         self.logloop = task.LoopingCall(self.logStatus)
         self.logloop.start(5)
 
@@ -96,52 +95,25 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield super(WorkerServer, self).shutdown()
         yield self.stopPageCacheQueue()    
 
-    def dequeue_uuids(self):
-        if len(self.uuid_queue) > self.uuid_queue_size or len(self.job_queue) > self.job_queue_size:
-            return
-        for i in range(0, self.uuid_req_size - self.pending_uuid_reqs):
-            self.pending_uuid_reqs += 1
-            d = self.jobs_rabbit_queue.get()
-            d.addCallback(self._dequeue_uuids_callback)
-            d.addErrback(self._dequeue_uuids_errback)
-
-    def _dequeue_uuids_callback(self, msg):
-        self.jobs_chan.basic_ack(msg.delivery_tag)
-        self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
-        self.uuids_dequeued += 1
-        self.pending_uuid_reqs -= 1
-
-    def _dequeue_uuids_errback(self, error):
-        logger.error('Dequeuing error %s:' % str(error))
-        self.pending_uuid_reqs -= 1
-
-    def check_job_cache(self):
+    @inlineCallbacks
+    def dequeue(self):
+        while len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
+            msg = yield self.jobs_rabbit_queue.get()
+            self.jobs_chan.basic_ack(msg.delivery_tag)
+            self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+            self.uuids_dequeued += 1
         while self.uuid_queue:
             uuids, self.uuid_queue = self.uuid_queue[0:100], self.uuid_queue[100:]
-            d = self.redis_client.mget(*uuids)
-            d.addCallback(self.check_job_cache_callback, uuids)
-            d.addErrback(self.check_job_cache_errback, uuids)
-
-    def check_job_cache_callback(self, data, uuids):
-        results = zip(uuids, data)
-        for row in results:
-            if row[1]:
-                job = cPickle.loads(decompress(row[1]))
-                logger.debug('Found uuid in Redis: %s' % row[0])
-                self.job_queue.append(job)
-            else:
-                logger.error('Could not find uuids %s in Redis.' % row[0])
-                self.uncached_uuid_queue.append(row[0])
-
-    def check_job_cache_errback(self, error, uuids):
-        logger.error('Could not find uuids %s in Redis: %s' % (uuids ,e))
-        self.uncached_uuid_queue.extend(uuids)
-
-    @inlineCallbacks
-    def get_user_accounts(self):
-        if self.user_account_dequeueing:
-            return
-        self.user_account_dequeueing = True
+            data = yield self.redis_client.mget(*uuids)
+            results = zip(uuids, data)
+            for row in results:
+                if row[1]:
+                    job = cPickle.loads(decompress(row[1]))
+                    logger.debug('Found uuid in Redis: %s' % row[0])
+                    self.job_queue.append(job)
+                else:
+                    logger.error('Could not find uuids %s in Redis.' % row[0])
+                    self.uncached_uuid_queue.append(row[0])
         while self.uncached_uuid_queue:
             uuids, self.uncached_uuid_queue = self.uncached_uuid_queue[0:100], self.uncached_uuid_queue[100:]
             sql = """SELECT uuid, content_userprofile.user_id as user_id, username, host, account_id, type
@@ -156,13 +128,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 logger.error("Could not find users in '%s'" % "','".join(uuids))
                 continue
             self.user_account_queue.extend(data)
-        self.user_account_dequeueing = False
- 
-    @inlineCallbacks
-    def get_service_credentials(self):
-        if self.service_credential_dequeueing:
-            return
-        self.service_credential_dequeueing = True
         accounts_by_type = defaultdict(list)
         for user_account in self.user_account_queue:
             accounts_by_type[user_account["type"]].append(user_account)
@@ -187,13 +152,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 self.mapJob(job) # Do this now so mapped values are cached.
                 self._setJobCache(job)
                 self.job_queue.append(job)
-        self.service_credential_dequeueing = False
-
-    def dequeue(self):
-        self.dequeue_uuids()
-        self.check_job_cache()
-        #self.get_user_accounts()
-        #self.get_service_credentials()
 
     def executeJobs(self):
         for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
@@ -211,18 +169,19 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.saveJobHistory(job, True)
             self.jobs_complete += 1
         except DeleteReservationException:
-            self.job_failures += 1
+            self.jobs_complete += 1
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
-            self.job_failures += 1
-            pass
+            self.jobs_complete += 1
         except QueueTimeoutException, e:
             self.job_failures += 1
+            logger.error("Queue timeout for %s" % job.subservice)
             self.stats.increment('job.%s.queuetimeout' % dotted_function)
             self.stats.increment('pg.queuetimeout.hit', 0.05)
             self.saveJobHistory(job, False)
         except NegativeCacheException, e:
-            self.job_failures += 1
+            self.jobs_complete += 1
+            logger.error("Negative cache for %s" % job.subservice)
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
