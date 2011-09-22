@@ -12,6 +12,8 @@ import pprint
 from traceback import format_exc
 from hiispider.exceptions import *
 from uuid import UUID
+import cPickle
+from zlib import decompress
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -22,14 +24,18 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 50
+    simultaneous_reqs = 25
+    uuids_dequeued = 0
     jobs_complete = 0
+    job_failures = 0
     job_queue = []
     jobsloop = None
     dequeueloop = None
+    logloop = None
     uuid_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 2000
+    uuid_queue_size = 1000
+    job_queue_size = 1000
     uncached_uuid_queue = []
     uncached_uuid_dequeueing = False
     user_account_queue = []
@@ -73,23 +79,31 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(5)
+        self.logloop = task.LoopingCall(self.logStatus)
+        self.logloop.start(5)
 
     @inlineCallbacks
     def shutdown(self):
+        self.uuid_queue = []
+        self.uncached_uuid_queue = []
+        self.user_account_queue = []
         self.jobsloop.stop()
         self.dequeueloop.stop()
+        self.logloop.stop()
         yield self.stopJobQueue()
-        yield self.stopPageCacheQueue()
         yield super(WorkerServer, self).shutdown()
-    
+        yield self.stopPageCacheQueue()    
+
     @inlineCallbacks
     def dequeue_uuids(self):
         if self.uuid_dequeueing:
             return
         self.uuid_dequeueing = True
-        while len(self.uuid_queue) < self.uuid_queue_size:
+        while len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
             msg = yield self.jobs_rabbit_queue.get()
+            self.jobs_chan.basic_ack(msg.delivery_tag)
             self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+            self.uuids_dequeued += 1
         self.uuid_dequeueing = False
 
     @inlineCallbacks
@@ -98,12 +112,21 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             return
         self.uncached_uuid_dequeueing = True
         while self.uuid_queue:
-            uuid = self.uuid_queue.pop(0)
+            uuids, self.uuid_queue = self.uuid_queue[0:100], self.uuid_queue[100:]
             try:
-                job = yield self._getCachedJob(uuid)
-                self.job_queue.append(job)
-            except:
-                self.uncached_uuid_queue.append(uuid)
+                data = yield self.redis_client.mget(*uuids)
+                results = zip(uuids, data)
+                for row in results:
+                    if row[1]:
+                        job = cPickle.loads(decompress(row[1]))
+                        logger.debug('Found uuid in Redis: %s' % row[0])
+                        self.job_queue.append(job)
+                    else:
+                        logger.error('Could not find uuids %s in Redis.' % row[0])
+                        self.uncached_uuid_queue.append(row[0])
+            except Exception, e:
+                logger.error('Could not find uuids %s in Redis: %s' % (uuids ,e))
+                self.uncached_uuid_queue.extend(uuids)
         self.uncached_uuid_dequeueing = False
 
     @inlineCallbacks
@@ -129,7 +152,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
  
     @inlineCallbacks
     def get_service_credentials(self):
-        if self.service_credential_dequeueing or len(self.user_account_queue) < 1000:
+        if self.service_credential_dequeueing:
             return
         self.service_credential_dequeueing = True
         accounts_by_type = defaultdict(list)
@@ -172,7 +195,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
 
     @inlineCallbacks
     def executeJob(self, job):
-        prev_complete = self.jobs_complete
+
         plugin = job.function_name.split('/')[0]
         dotted_function = '.'.join(job.function_name.split('/'))
         try:
@@ -180,26 +203,29 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.saveJobHistory(job, True)
             self.jobs_complete += 1
         except DeleteReservationException:
+            self.job_failures += 1
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
+            self.job_failures += 1
             pass
         except QueueTimeoutException, e:
+            self.job_failures += 1
             self.stats.increment('job.%s.queuetimeout' % dotted_function)
             self.stats.increment('pg.queuetimeout.hit', 0.05)
             self.saveJobHistory(job, False)
         except NegativeCacheException, e:
+            self.job_failures += 1
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
                 self.stats.increment('job.%s.negcache' % dotted_function)
             self.saveJobHistory(job, False)
         except Exception, e:
+            self.job_failures += 1
             plugl = logging.getLogger(plugin)
             plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
             self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
-        if (prev_complete != self.jobs_complete) or len(self.active_jobs):
-            self.logStatus()
         yield self.clearPageCache(job)
 
     @inlineCallbacks
@@ -223,7 +249,11 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             logger.error("Could not set fast cache: %s" % e)
 
     def logStatus(self):
-        logger.debug('Completed Jobs: %d' % self.jobs_complete)
-        logger.debug('Queued Jobs: %d' % len(self.job_queue))
-        logger.debug('Active Jobs: %d' % len(self.active_jobs))
-
+        logger.critical('UUIDs: %d' % len(self.uuid_queue))
+        logger.critical('Uncached UUIDs: %d' % len(self.uncached_uuid_queue))
+        logger.critical('User accounts: %d' % len(self.user_account_queue))
+        logger.critical('Queued Jobs: %d' % len(self.job_queue))
+        logger.critical('Active Jobs: %d' % len(self.active_jobs))
+        logger.critical('Completed Jobs: %d' % self.jobs_complete)
+        logger.critical('Job failures: %d' % self.job_failures)
+        logger.critical('Lost jobs: %d' % (self.uuids_dequeued - self.jobs_complete - self.job_failures - len(self.uuid_queue) - len(self.uncached_uuid_queue) - len(self.user_account_queue) - len(self.job_queue) - len(self.active_jobs)))

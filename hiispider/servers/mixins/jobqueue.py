@@ -48,7 +48,7 @@ class JobQueueMixin(AMQPMixin):
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
         yield self.jobs_chan.basic_consume(queue=self.amqp_queue,
-            no_ack=True,
+            no_ack=False,
             consumer_tag="hiispider_consumer")
         self.jobs_rabbit_queue = yield self.jobs_conn.queue("hiispider_consumer")
         self.jobstatusloop = task.LoopingCall(self.jobQueueStatusCheck)
