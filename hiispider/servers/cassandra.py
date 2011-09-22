@@ -300,9 +300,15 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 bool(int(return_new_keys)))
             logger.debug("Using custom Autogenerator.")
         else:
-            delta_func = self.functions[row["subservice"]]["delta"]
+            if row["subservice"] in self.service_mapping:
+                logger.debug('remapped service %s to %s for delta %s' % (row["subservice"],
+                    self.service_mapping[row["subservice"]],
+                    delta_id.encode('hex')))
+                delta_func = self.functions[self.service_mapping[row["subservice"]]]["delta"]
+            else:
+                delta_func = self.functions[row["subservice"]]["delta"]
             if not delta_func:
-                logger.warn('No delta_func for delta %s found. Setting delta_func to  Autogenerator' % delta_id.encode('hex'))
+                logger.warn('No delta_func for delta %s found. Setting delta_func to Autogenerator' % delta_id.encode('hex'))
                 delta_func = Autogenerator(
                     paths,
                     ignores,
