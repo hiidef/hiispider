@@ -48,7 +48,7 @@ class JobQueueMixin(AMQPMixin):
             queue=self.amqp_queue,
             exchange=self.amqp_exchange)
         yield self.jobs_chan.basic_consume(queue=self.amqp_queue,
-            no_ack=False,
+            no_ack=True,
             consumer_tag="hiispider_consumer")
         self.jobs_rabbit_queue = yield self.jobs_conn.queue("hiispider_consumer")
         self.jobstatusloop = task.LoopingCall(self.jobQueueStatusCheck)
@@ -76,11 +76,11 @@ class JobQueueMixin(AMQPMixin):
     @inlineCallbacks
     def getJobUUID(self):
         msg = yield self.jobs_rabbit_queue.get()
-        if msg.delivery_tag:
-            try:
-                logger.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
-                yield self.jobs_chan.basic_ack(msg.delivery_tag)
-            except Exception, e:
-                logger.error('basic_ack Error: %s' % e)
+        #if msg.delivery_tag:
+        #    try:
+        #        logger.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
+        #        yield self.jobs_chan.basic_ack(msg.delivery_tag)
+        #    except Exception, e:
+        #        logger.error('basic_ack Error: %s' % e)
         returnValue(UUID(bytes=msg.content.body).hex)
 
