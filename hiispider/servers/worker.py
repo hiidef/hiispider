@@ -106,7 +106,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.uuid_dequeueing = True
         while len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
             msg = yield self.jobs_rabbit_queue.get()
-            #self.jobs_chan.basic_ack(msg.delivery_tag)
+            self.jobs_chan.basic_ack(msg.delivery_tag)
             self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
             self.uuids_dequeued += 1
             if len(self.uuid_queue) > 20:
