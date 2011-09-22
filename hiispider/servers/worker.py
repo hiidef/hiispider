@@ -1,6 +1,6 @@
 import logging
 import time
-
+from collections import defaultdict
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
 from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
@@ -11,6 +11,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 import pprint
 from traceback import format_exc
 from hiispider.exceptions import *
+from uuid import UUID
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -26,8 +27,14 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     job_queue = []
     jobsloop = None
     dequeueloop = None
-    queue_requests = 0
-    job_queue_size = 200
+    uuid_queue = []
+    uuid_dequeueing = False
+    uuid_queue_size = 2000
+    uncached_uuid_queue = []
+    uncached_uuid_dequeueing = False
+    user_account_queue = []
+    user_account_dequeueing = False
+    service_credential_dequeueing = False
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
@@ -65,7 +72,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(1)
+        self.dequeueloop.start(5)
 
     @inlineCallbacks
     def shutdown(self):
@@ -74,45 +81,88 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.stopJobQueue()
         yield self.stopPageCacheQueue()
         yield super(WorkerServer, self).shutdown()
-
-    def dequeue(self):
-        logger.debug("%s queue requests" % self.queue_requests)
-        # self.logStatus()
-        while len(self.job_queue) + self.queue_requests <= self.job_queue_size:
-            self.queue_requests += 1
-            logger.debug('Fetching from queue, %s queue requests.' % self.queue_requests)
-            self.dequeue_item()
+    
+    @inlineCallbacks
+    def dequeue_uuids(self):
+        if self.uuid_dequeueing:
+            return
+        self.uuid_dequeueing = True
+        while len(self.uuid_queue) < self.uuid_queue_size:
+            msg = yield self.jobs_rabbit_queue.get()
+            self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+        self.uuid_dequeueing = False
 
     @inlineCallbacks
-    def dequeue_item(self):
-        try:
-            uuid = yield self.getJobUUID()
-        except Exception, e:
-            # if we've started shutting down, ignore this error
-            if self.shutdown_trigger_id is None:
-                return
-            logger.error('Dequeue Error: %s' % e)
-            self.queue_requests -= 1
+    def check_job_cache(self):
+        if self.uncached_uuid_dequeueing:
             return
-        logger.debug('Got job %s' % uuid)
-        try:
-            job = yield self.batchGetJob(uuid)
-        except Exception, e:
-            logger.error('Job Error: %s\n%s' % (e, format_exc()))
+        self.uncached_uuid_dequeueing = True
+        while self.uuid_queue:
+            uuid = self.uuid_queue.pop(0)
+            try:
+                job = yield self._getCachedJob(uuid)
+                self.job_queue.append(job)
+            except:
+                self.uncached_uuid_queue.append(uuid)
+        self.uncached_uuid_dequeueing = False
+
+    @inlineCallbacks
+    def get_user_accounts(self):
+        if self.user_account_dequeueing:
             return
-        self.queue_requests -= 1
-        # getJob can return None if it encounters an error that is not
-        # exceptional, like seeing custom_* jobs in the scheduler
-        if job is None:
+        self.user_account_dequeueing = True
+        while self.uncached_uuid_queue:
+            uuids, self.uncached_uuid_queue = self.uncached_uuid_queue[0:100], self.uncached_uuid_queue[100:]
+            sql = """SELECT uuid, content_userprofile.user_id as user_id, username, host, account_id, type
+                FROM spider_service, auth_user, content_userprofile
+                WHERE uuid IN ('%s')
+                AND auth_user.id=spider_service.user_id
+                AND auth_user.id=content_userprofile.user_id
+                """ % "','".join(uuids)
+            try:
+                data = yield self.mysql.runQuery(sql)
+            except:
+                logger.error("Could not find users in '%s'" % "','".join(uuids))
+                continue
+            self.user_account_queue.extend(data)
+        self.user_account_dequeueing = False
+ 
+    @inlineCallbacks
+    def get_service_credentials(self):
+        if self.service_credential_dequeueing or len(self.user_account_queue) < 1000:
             return
-        if job.function_name in self.functions:
-            logger.debug('Successfully pulled job off of AMQP queue')
-            if self.functions[job.function_name]["check_fast_cache"]:
-                job.fast_cache = yield self.getFastCache(job.uuid)
-            self.job_queue.append(job)
-        else:
-            logger.error("Could not find function %s." % job.function_name)
-            return
+        self.service_credential_dequeueing = True
+        accounts_by_type = defaultdict(list)
+        for user_account in self.user_account_queue:
+            accounts_by_type[user_account["type"]].append(user_account)
+        self.user_account_queue = []
+        for service_type in accounts_by_type:
+            accounts_by_id = defaultdict(list)
+            for user_accounts in accounts_by_type[service_type]:
+                accounts_by_id[user_accounts["account_id"]].append(user_account)
+            sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (service_type, ",".join(accounts_by_id.keys()))
+            try:
+                data = yield self.mysql.runQuery(sql)
+            except Exception, e:
+                logger.error("Could not find service %s, %s" % (service_type, sql))
+                continue
+            for service_credentials in data:
+                user_account = accounts_by_id[service_credentials["account_id"]]
+                job = Job(
+                    function_name=user_account['type'],
+                    service_credentials=service_credentials,
+                    user_account=user_account,
+                    uuid=user_account['uuid'])
+                self.mapJob(job) # Do this now so mapped values are cached.
+                self._setJobCache(job)
+                self.job_queue.append(job)
+        self.service_credential_dequeueing = False
+
+    def dequeue(self):
+        self.dequeue_uuids()
+        self.check_job_cache()
+        self.get_user_accounts()
+        self.get_service_credentials()
 
     def executeJobs(self):
         for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
