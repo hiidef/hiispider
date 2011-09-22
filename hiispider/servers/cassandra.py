@@ -234,8 +234,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 d.addErrback(self._regenerateErrback)
                 deferreds.append(d)
             yield DeferredList(deferreds, consumeErrors=True)
-            logger.info("Regenerated %s deltas." % count)
             count += items_regenerated
+            logger.info("Regenerated %s deltas." % count)
         except Exception, e:
             logger.error("Regenerating deltas failed: %s" % e)
             self.regenerateing = False
