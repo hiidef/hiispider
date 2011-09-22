@@ -77,9 +77,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
+        self.jobsloop.start(0.1)
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(5)
+        self.dequeueloop.start(10)
         self.logloop = task.LoopingCall(self.logStatus)
         self.logloop.start(5)
 
@@ -109,7 +109,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.jobs_chan.basic_ack(msg.delivery_tag)
             self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
             self.uuids_dequeued += 1
-            if len(self.uuid_queue) > 100:
+            if len(self.uuid_queue) > 20:
                 uuids, self.uuid_queue = self.uuid_queue, []
                 data = yield self.redis_client.mget(*uuids)
                 results = zip(uuids, data)
