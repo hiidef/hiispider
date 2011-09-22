@@ -11,6 +11,8 @@ import urllib
 import traceback
 import logging
 import time
+import random
+
 from uuid import uuid4
 from difflib import SequenceMatcher, unified_diff
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
@@ -74,6 +76,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         # deltas
         self.delta_enabled = config.get('delta_enabled', False)
         self.delta_debug = config.get('delta_debug', False)
+        self.delta_sample_rate = config.get('delta_sample_rate', 1.0)
         # create the log path if required & enabled
         self.cassandra_cf_delta = config.get('cassandra_cf_delta', None)
         self.cassandra_cf_delta_user = config.get('cassandra_cf_delta_user', None)
@@ -112,13 +115,16 @@ class CassandraServer(BaseServer, JobGetterMixin):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
 
+    def deltaSampleRate(self):
+        return random.random() <= self.delta_sample_rate
+
     @inlineCallbacks
     def executeJob(self, job):
         user_id = job.user_account["user_id"]
         new_data = yield super(CassandraServer, self).executeJob(job)
         if new_data is None:
             return
-        if self.delta_enabled:
+        if self.delta_enabled and self.deltaSampleRate():
             delta_func = self.functions[job.function_name]["delta"]
             if delta_func is not None:
                 service = job.subservice.split('/')[0]
