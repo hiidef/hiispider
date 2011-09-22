@@ -226,18 +226,20 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     start=start,
                     count=100)
             deferreds = []
+            items_regenerated = 0
             for x in range_slice:
-                count += 1
+                items_regenerated += 1
                 last_key = x.key
                 d = self.regenerate_delta(x.key)
                 d.addErrback(self._regenerateErrback)
                 deferreds.append(d)
-            logger.info("Regenerated %s deltas." % count)
             yield DeferredList(deferreds, consumeErrors=True)
+            logger.info("Regenerated %s deltas." % count)
+            count += items_regenerated
         except Exception, e:
             logger.error("Regenerating deltas failed: %s" % e)
             self.regenerateing = False
-        if range_slice:
+        if items_regenerated >= 100:
             reactor.callLater(0, self._regenerate_deltas, start=last_key, count=count, service_type=service_type)
         else:
             logging.info("Regenerating deltas complete")
