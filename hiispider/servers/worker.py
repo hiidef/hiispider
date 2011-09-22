@@ -192,8 +192,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def dequeue(self):
         self.dequeue_uuids()
         self.check_job_cache()
-        self.get_user_accounts()
-        self.get_service_credentials()
+        #self.get_user_accounts()
+        #self.get_service_credentials()
 
     def executeJobs(self):
         for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
