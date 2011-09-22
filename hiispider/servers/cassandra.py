@@ -310,6 +310,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
                         delete_on_empty = True
         # Generate deltas.
         logger.debug('Regenerating delta %s using delta_func: %s' % (delta_id.encode('hex'), type(delta_func)))
+        if not delta_func:
+            logger.error('No delta_func for delta %s found. Row data: %s' % row)
         deltas = delta_func(new_data, old_data)
         # If no delta exists, clear the old data out.
         if len(deltas) == 0:
