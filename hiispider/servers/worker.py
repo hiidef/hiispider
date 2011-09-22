@@ -35,8 +35,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 1000
-    job_queue_size = 1000
+    uuid_queue_size = 500
+    job_queue_size = 500
     uncached_uuid_queue = []
     uncached_uuid_dequeueing = False
     user_account_queue = []
@@ -109,7 +109,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.jobs_chan.basic_ack(msg.delivery_tag)
             self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
             self.uuids_dequeued += 1
-            if len(self.uuid_queue) > 20:
+            if len(self.uuid_queue) > 50:
                 uuids, self.uuid_queue = self.uuid_queue, []
                 data = yield self.redis_client.mget(*uuids)
                 results = zip(uuids, data)
