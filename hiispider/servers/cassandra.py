@@ -235,7 +235,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 deferreds.append(d)
             yield DeferredList(deferreds, consumeErrors=True)
             count += items_regenerated
-            logger.info("Regenerated %s deltas." % count)
+            logger.info("Regenerated %s(%s) deltas." % (items_regenerated, count))
         except Exception, e:
             logger.error("Regenerating deltas failed: %s" % e)
             self.regenerateing = False
