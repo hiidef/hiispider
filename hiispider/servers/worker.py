@@ -76,7 +76,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield super(WorkerServer, self).shutdown()
 
     def dequeue(self):
-        logger.debug('dequeing')
+        logger.debug("%s queue requests" % self.queue_requests)
         # self.logStatus()
         while len(self.job_queue) + self.queue_requests <= self.job_queue_size:
             self.queue_requests += 1
@@ -94,13 +94,13 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             logger.error('Dequeue Error: %s' % e)
             self.queue_requests -= 1
             return
-        self.queue_requests -= 1
         logger.debug('Got job %s' % uuid)
         try:
             job = yield self.batchGetJob(uuid)
         except Exception, e:
             logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
+        self.queue_requests -= 1
         # getJob can return None if it encounters an error that is not
         # exceptional, like seeing custom_* jobs in the scheduler
         if job is None:
