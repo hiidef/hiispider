@@ -32,6 +32,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     jobsloop = None
     dequeueloop = None
     logloop = None
+    uuid_req_size = 100
     pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
@@ -79,7 +80,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobsloop = task.LoopingCall(self.executeJobs)
         self.jobsloop.start(0.2)
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(5)
+        self.dequeueloop.start(2)
         self.logloop = task.LoopingCall(self.logStatus)
         self.logloop.start(5)
 
@@ -95,32 +96,27 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield super(WorkerServer, self).shutdown()
         yield self.stopPageCacheQueue()    
 
-    def dequeue_uuids(self, dequeueing=False):
-        if self.uuid_dequeueing and not dequeueing:
+    def dequeue_uuids(self):
+        if len(self.uuid_queue) > self.uuid_queue_size or len(self.job_queue) > self.job_queue_size:
             return
-        self.uuid_dequeueing = True
-        if len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
+        for i in range(0, self.uuid_req_size - self.pending_uuid_reqs):
+            self.pending_uuid_reqs += 1
             d = self.jobs_rabbit_queue.get()
             d.addCallback(self._dequeue_uuids_callback)
-            d.addCallback(self._dequeue_uuids_errback)
-        else:
-            self.uuid_dequeueing = False
+            d.addErrback(self._dequeue_uuids_errback)
 
     def _dequeue_uuids_callback(self, msg):
         self.jobs_chan.basic_ack(msg.delivery_tag)
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
         self.uuids_dequeued += 1
-        self.dequeue_uuids(dequeueing=True)
+        self.pending_uuid_reqs -= 1
 
     def _dequeue_uuids_errback(self, error):
         logger.error('Dequeuing error %s:' % str(error))
-        self.dequeue_uuids(dequeueing=True)
+        self.pending_uuid_reqs -= 1
 
-    def check_job_cache(self, uncached_uuid_dequeueing=False):
-        if self.uncached_uuid_dequeueing and not uncached_uuid_dequeueing:
-            return
-        self.uncached_uuid_dequeueing = True
-        if self.uuid_queue:
+    def check_job_cache(self):
+        while self.uuid_queue:
             uuids, self.uuid_queue = self.uuid_queue[0:100], self.uuid_queue[100:]
             d = self.redis_client.mget(*uuids)
             d.addCallback(self.check_job_cache_callback, uuids)
@@ -136,12 +132,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             else:
                 logger.error('Could not find uuids %s in Redis.' % row[0])
                 self.uncached_uuid_queue.append(row[0])
-        self.check_job_cache(uncached_uuid_dequeueing=True)
 
     def check_job_cache_errback(self, error, uuids):
         logger.error('Could not find uuids %s in Redis: %s' % (uuids ,e))
         self.uncached_uuid_queue.extend(uuids)
-        self.check_job_cache(uncached_uuid_dequeueing=True)
 
     @inlineCallbacks
     def get_user_accounts(self):
