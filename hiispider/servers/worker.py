@@ -196,15 +196,15 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         plugin = job.function_name.split('/')[0]
         dotted_function = '.'.join(job.function_name.split('/'))
         d = super(WorkerServer, self).executeJob(job)
-        d.addCallback(self._executeJobCallback)
-        d.addErrback(self._executeJobErrback)
+        d.addCallback(self._executeJobCallback, job)
+        d.addErrback(self._executeJobErrback, job)
     
-    def _executeJobCallback(self, data):
+    def _executeJobCallback(self, data, job):
         self.saveJobHistory(job, True)
         self.jobs_complete += 1
         self.clearPageCache(job)
 
-    def _executeJobErrback(self, error):
+    def _executeJobErrback(self, error, job):
         try:
             error.raiseException()
         except DeleteReservationException:
