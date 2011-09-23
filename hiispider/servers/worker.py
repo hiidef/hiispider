@@ -97,31 +97,51 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
 
     def dequeue(self):
         self.dequeuejobs()
-        self.lookupjobs()
+        if self.uncached_uuid_queue:
+            self.lookupjobs()
 
-    @inlineCallbacks
     def dequeuejobs(self):
         if self.uuid_dequeueing:
             return
         self.uuid_dequeueing = True
-        while len(self.uuid_queue) < self.uuid_queue_size and len(self.job_queue) < self.job_queue_size:
-            msg = yield self.jobs_rabbit_queue.get()
-            self.jobs_chan.basic_ack(msg.delivery_tag)
-            self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
-            self.uuids_dequeued += 1
-            if len(self.uuid_queue) > 20:
-                uuids, self.uuid_queue = self.uuid_queue, []
-                data = yield self.redis_client.mget(*uuids)
-                results = zip(uuids, data)
-                for row in results:
-                    if row[1]:
-                        job = cPickle.loads(decompress(row[1]))
-                        logger.debug('Found uuid in Redis: %s' % row[0])
-                        self.job_queue.append(job)
-                    else:
-                        logger.debug('Could not find uuids %s in Redis.' % row[0])
-                        self.uncached_uuid_queue.append(row[0])
-        self.uuid_dequeueing = False
+        if len(self.job_queue) > self.job_queue_size or len(self.uuid_queue) > self.uuid_queue_size:
+            return
+        self._dequeuejobs()
+
+    def _dequeuejobs(self):
+        if len(self.uuid_queue) < self.uuid_queue_size * 2:
+            d = self.jobs_rabbit_queue.get()
+            d.addCallback(self._dequeuejobsCallback)
+            d.addErrback(self._dequeuejobsErrback)
+        else:
+            self.uuid_dequeueing = False
+
+    def _dequeuejobsCallback(self, msg):
+        self.jobs_chan.basic_ack(msg.delivery_tag)
+        self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+        self.uuids_dequeued += 1
+        if len(self.uuid_queue) > 100:
+            uuids, self.uuid_queue = self.uuid_queue, []
+            d = self.redis_client.mget(*uuids)
+            d.addCallback(self._dequeuejobsCallback2, uuids)
+            d.addErrback(self._dequeuejobsErrback)
+        else:
+            self._dequeuejobs()
+
+    def _dequeuejobsErrback(self, error):
+        self._dequeuejobs()
+
+    def _dequeuejobsCallback2(self, data, uuids):
+        results = zip(uuids, data)
+        for row in results:
+            if row[1]:
+                job = cPickle.loads(decompress(row[1]))
+                logger.debug('Found uuid in Redis: %s' % row[0])
+                self.job_queue.append(job)
+            else:
+                logger.debug('Could not find uuids %s in Redis.' % row[0])
+                self.uncached_uuid_queue.append(row[0])
+        self._dequeuejobs()
 
     @inlineCallbacks
     def lookupjobs(self):
