@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 15
+    simultaneous_jobs = 30
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -77,7 +77,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.1)
+        self.jobsloop.start(0.5)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(10)
         self.logloop = task.LoopingCall(self.logStatus)
