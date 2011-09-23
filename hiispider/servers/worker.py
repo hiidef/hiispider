@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 50
+    simultaneous_reqs = 20
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -35,8 +35,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 1000
-    job_queue_size = 1000
+    uuid_queue_size = 500
+    job_queue_size = 500
     uncached_uuid_queue = []
     uncached_uuid_dequeueing = False
     user_account_queue = []
@@ -103,9 +103,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def dequeuejobs(self):
         if self.uuid_dequeueing:
             return
-        self.uuid_dequeueing = True
         if len(self.job_queue) > self.job_queue_size or len(self.uuid_queue) > self.uuid_queue_size:
             return
+        self.uuid_dequeueing = True
         self._dequeuejobs()
 
     def _dequeuejobs(self):
