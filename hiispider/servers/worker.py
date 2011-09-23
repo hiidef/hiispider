@@ -195,8 +195,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def executeJob(self, job):
         plugin = job.function_name.split('/')[0]
         dotted_function = '.'.join(job.function_name.split('/'))
-        if job.function_name == "feed/fetch":
-            return
         try:
             yield super(WorkerServer, self).executeJob(job)
             self.saveJobHistory(job, True)

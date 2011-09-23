@@ -90,7 +90,7 @@ class InterfaceServer(CassandraServer):
 
     @inlineCallbacks
     def executeJobByUUID(self, uuid):    
-        logger.error("Getting job:\n%s" % uuid)
+        logger.info("Getting job:\n%s" % uuid)
         try:
             job = yield self.getJob(uuid)
         except Exception, e:
