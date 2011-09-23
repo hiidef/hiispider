@@ -109,7 +109,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self._dequeuejobs()
 
     def _dequeuejobs(self):
-        if len(self.uuid_queue) < self.uuid_queue_size * 2:
+        if len(self.uuid_queue) < self.uuid_queue_size * 2 and len(self.job_queue) < self.job_queue_size:
             d = self.jobs_rabbit_queue.get()
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)

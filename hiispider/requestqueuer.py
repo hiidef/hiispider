@@ -237,8 +237,11 @@ class RequestQueuer(object):
             "follow_redirect":follow_redirect,
             "deferred":Deferred()}
         host = _parse(req["url"])[1]
+        if host in self.max_reqs_per_hosts_per_sec and host in self.pending_reqs:
+            if len(self.pending_reqs[host]) * self.max_reqs_per_hosts_per_sec[host] > queue_timeout:
+                req["deferred"].errback(QueueTimeoutException())
+                return req["deferred"]
         req["host"] = host
-        req["queue_timeout"] = reactor.callLater(queue_timeout, self._timeout, req)
         if host not in self.pending_reqs:
             self.pending_reqs[host] = []
         if prioritize:
@@ -283,8 +286,6 @@ class RequestQueuer(object):
                 elif self._hostRequestCheck(host):
                     dispatched_requests = True
                     req = self.pending_reqs[host].pop(0)
-                    if req["queue_timeout"].active():
-                        req["queue_timeout"].cancel()
                     d = self._getPage(req)
                     d.addCallback(self._requestComplete, req["deferred"], host)
                     d.addErrback(self._requestError, req["deferred"], host)
