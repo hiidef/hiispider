@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 30
+    simultaneous_jobs = 22
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -77,7 +77,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.1)
+        self.jobsloop.start(0.3)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(10)
         self.logloop = task.LoopingCall(self.logStatus)
@@ -188,17 +188,12 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         for i in range(0, self.simultaneous_jobs - len(self.active_jobs)):
             try:
                 self.executeJob(self.job_queue.pop(0))
+                d = super(WorkerServer, self).executeJob(job)
+                d.addCallback(self._executeJobCallback, job)
+                d.addErrback(self._executeJobErrback, job)
             except:
                 return
 
-
-    def executeJob(self, job):
-        plugin = job.function_name.split('/')[0]
-        dotted_function = '.'.join(job.function_name.split('/'))
-        d = super(WorkerServer, self).executeJob(job)
-        d.addCallback(self._executeJobCallback, job)
-        d.addErrback(self._executeJobErrback, job)
-    
     def _executeJobCallback(self, data, job):
         self.saveJobHistory(job, True)
         self.jobs_complete += 1
@@ -215,12 +210,14 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         except QueueTimeoutException, e:
             self.job_failures += 1
             logger.error("Queue timeout for %s" % job.subservice)
+            dotted_function = '.'.join(job.function_name.split('/'))
             self.stats.increment('job.%s.queuetimeout' % dotted_function)
             self.stats.increment('pg.queuetimeout.hit', 0.05)
             self.saveJobHistory(job, False)
         except NegativeCacheException, e:
             self.jobs_complete += 1
             logger.error("Negative cache for %s" % job.subservice)
+            dotted_function = '.'.join(job.function_name.split('/'))
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
@@ -228,6 +225,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.saveJobHistory(job, False)
         except Exception, e:
             self.job_failures += 1
+            plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
             self.stats.increment('job.exceptions', 0.1)
