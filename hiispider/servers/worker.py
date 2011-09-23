@@ -35,8 +35,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     pending_uuid_reqs = 0
     uuid_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 200
-    job_queue_size = 200
+    uuid_queue_size = 500
+    job_queue_size = 500
     uncached_uuid_queue = []
     uncached_uuid_dequeueing = False
     user_account_queue = []
@@ -77,9 +77,9 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
+        self.jobsloop.start(0.3)
         self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(4)
+        self.dequeueloop.start(10)
         self.logloop = task.LoopingCall(self.logStatus)
         self.logloop.start(5)
 
