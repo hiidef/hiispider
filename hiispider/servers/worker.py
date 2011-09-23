@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 20
+    simultaneous_reqs = 30
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -185,7 +185,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 self.job_queue.append(job)
 
     def executeJobs(self):
-        for i in range(0, self.simultaneous_jobs - len(self.active_jobs)):
+        for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
             try:
                 self.executeJob(self.job_queue.pop(0))
             except:
