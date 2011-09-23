@@ -77,7 +77,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.3)
+        self.jobsloop.start(0.1)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(10)
         self.logloop = task.LoopingCall(self.logStatus)
