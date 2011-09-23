@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 20
+    simultaneous_jobs = 30
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -77,7 +77,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.startPageCacheQueue()
         yield self.setupJobHistory(self.config)
         self.jobsloop = task.LoopingCall(self.executeJobs)
-        self.jobsloop.start(0.2)
+        self.jobsloop.start(0.1)
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(5)
         self.logloop = task.LoopingCall(self.logStatus)
@@ -185,14 +185,14 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
                 self.job_queue.append(job)
 
     def executeJobs(self):
-        for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
-            if not len(self.job_queue):
+        for i in range(0, self.simultaneous_jobs - len(self.active_jobs)):
+            try:
+                self.executeJob(self.job_queue.pop(0))
+            except:
                 return
-            self.executeJob(self.job_queue.pop(0))
 
     @inlineCallbacks
     def executeJob(self, job):
-
         plugin = job.function_name.split('/')[0]
         dotted_function = '.'.join(job.function_name.split('/'))
         try:
