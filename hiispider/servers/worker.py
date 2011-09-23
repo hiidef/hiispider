@@ -191,17 +191,25 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             except:
                 return
 
-    @inlineCallbacks
+
     def executeJob(self, job):
         plugin = job.function_name.split('/')[0]
         dotted_function = '.'.join(job.function_name.split('/'))
+        d = super(WorkerServer, self).executeJob(job)
+        d.addCallback(self._executeJobCallback)
+        d.addErrback(self._executeJobErrback)
+    
+    def _executeJobCallback(self, data):
+        self.saveJobHistory(job, True)
+        self.jobs_complete += 1
+        self.clearPageCache(job)
+
+    def _executeJobErrback(self, error):
         try:
-            yield super(WorkerServer, self).executeJob(job)
-            self.saveJobHistory(job, True)
-            self.jobs_complete += 1
+            error.raiseException()
         except DeleteReservationException:
             self.jobs_complete += 1
-            yield self.deleteReservation(job.uuid)
+            self.deleteReservation(job.uuid)
         except StaleContentException:
             self.jobs_complete += 1
         except QueueTimeoutException, e:
@@ -224,7 +232,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
             self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
-        yield self.clearPageCache(job)
+        
 
     @inlineCallbacks
     def getFastCache(self, uuid):
