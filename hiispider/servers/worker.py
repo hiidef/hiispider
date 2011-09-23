@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 25
+    simultaneous_reqs = 30
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -58,12 +58,12 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
-        ## setup manhole
-        #manhole_namespace = {
-        #    'service': self,
-        #    'globals': globals(),
-        #}
-        #reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
+        # setup manhole
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -120,7 +120,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.jobs_chan.basic_ack(msg.delivery_tag)
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
         self.uuids_dequeued += 1
-        if len(self.uuid_queue) > 200:
+        if len(self.uuid_queue) > 20:
             uuids, self.uuid_queue = self.uuid_queue, []
             d = self.redis_client.mget(*uuids)
             d.addCallback(self._dequeuejobsCallback2, uuids)
