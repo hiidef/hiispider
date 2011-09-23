@@ -187,7 +187,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     def executeJobs(self):
         for i in range(0, self.simultaneous_jobs - len(self.active_jobs)):
             try:
-                self.executeJob(self.job_queue.pop(0))
+                job = self.job_queue.pop(0)
                 d = super(WorkerServer, self).executeJob(job)
                 d.addCallback(self._executeJobCallback, job)
                 d.addErrback(self._executeJobErrback, job)
