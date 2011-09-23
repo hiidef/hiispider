@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 30
+    simultaneous_reqs = 25
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
@@ -58,12 +58,12 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
-        # setup manhole
-        manhole_namespace = {
-            'service': self,
-            'globals': globals(),
-        }
-        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
+        ## setup manhole
+        #manhole_namespace = {
+        #    'service': self,
+        #    'globals': globals(),
+        #}
+        #reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
