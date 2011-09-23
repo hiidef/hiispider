@@ -24,7 +24,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_reqs = 40
+    simultaneous_reqs = 30
     uuids_dequeued = 0
     jobs_complete = 0
     job_failures = 0
