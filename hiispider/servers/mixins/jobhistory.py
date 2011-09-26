@@ -10,25 +10,36 @@ from collections import defaultdict
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, returnValue, waitForDeferred
 from txredisapi import RedisConnectionPool
+import logging
 
-safere = re.compile('[^a-zA-Z0-9_]')
-def keysafe(string):
-    return safere.sub('.', string)
+
+logger = logging.getLogger(__name__)
+
 
 class JobHistoryMixin(object):
 
     jobhistory_enabled = False
 
-    @inlineCallbacks
     def setupJobHistory(self, config):
         conf = config.get('jobhistory', {})
         if not conf or not conf.get('enabled', False):
-            returnValue(None)
-        host, port = conf['host'].split(':')
-        self.jobhistory_client = yield RedisConnectionPool(host, int(port))
+            return
+        self.jobhistory_host, self.jobhistory_port = conf['host'].split(':')
         self.jobhistory_enabled = True
-        returnValue(None)
 
+    @inlineCallbacks
+    def startJobHistory(self):
+        if not self.jobhistory_enabled:
+            return
+        try:
+            self.jobhistory_client = yield RedisConnectionPool(
+                self.jobhistory_host, 
+                int(self.jobhistory_port))
+        except Exception, e:
+            logger.error("Could not connect to JobHistory Redis: %s" % e)
+            self.shutdown()
+            raise Exception("Could not connect to JobHistory Redis.")
+ 
     def saveJobHistory(self, job, success):
         if not self.jobhistory_enabled or not job.uuid:
             return
