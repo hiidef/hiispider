@@ -6,6 +6,7 @@
 import time
 import re
 
+from collections import defaultdict
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, returnValue, waitForDeferred
 from txredisapi import RedisConnectionPool
@@ -15,6 +16,8 @@ def keysafe(string):
     return safere.sub('.', string)
 
 class JobHistoryMixin(object):
+
+    job_history = []
     jobhistory_enabled = False
 
     @inlineCallbacks
@@ -27,15 +30,20 @@ class JobHistoryMixin(object):
         self.jobhistory_enabled = True
         returnValue(None)
 
-    @inlineCallbacks
     def saveJobHistory(self, job, success):
-        if not self.jobhistory_enabled:
-            returnValue(None)
-        if not job.uuid:
-            returnValue(None)
-        t = time.time()
-        key = "job:%s:%s" % (job.uuid, 'good' if success else 'bad')
-        yield self.jobhistory_client.lpush(key, t)
-        yield self.jobhistory_client.ltrim(key, 0, 9)
-        returnValue(None)
-
+        if not self.jobhistory_enabled or not job.uuid:
+            return
+        self.job_history.append(
+            ("job:%s:%s" % (job.uuid, 'good' if success else 'bad'), 
+            time.time()))
+        if len(self.job_history) > 500:
+            self._saveJobHistory()
+    
+    @inlineCallbacks
+    def _saveJobHistory(self):
+        job_history, self.job_history = self.job_history, []
+        yield self.jobhistory_client.multi()
+        for job in job_history:
+            self.jobhistory_client._send('LPUSH', job[0], job[1])
+            self.jobhistory_client._send('LTRIM', job[0], 0, 9)
+        yield self.jobhistory_client.execute()

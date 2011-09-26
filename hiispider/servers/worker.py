@@ -38,10 +38,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     uuid_queue_size = 500
     job_queue_size = 500
     uncached_uuid_queue = []
-    uncached_uuid_dequeueing = False
     user_account_queue = []
-    user_account_dequeueing = False
-    service_credential_dequeueing = False
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
@@ -58,12 +55,6 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
-        # setup manhole
-        manhole_namespace = {
-            'service': self,
-            'globals': globals(),
-        }
-        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -96,11 +87,8 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         yield self.stopPageCacheQueue()    
 
     def dequeue(self):
-        self.dequeuejobs()
         if self.uncached_uuid_queue:
             self.lookupjobs()
-
-    def dequeuejobs(self):
         if self.uuid_dequeueing:
             return
         if len(self.job_queue) > self.job_queue_size or len(self.uuid_queue) > self.uuid_queue_size:
@@ -129,6 +117,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self._dequeuejobs()
 
     def _dequeuejobsErrback(self, error):
+        logger.error(str(error))
         self._dequeuejobs()
 
     def _dequeuejobsCallback2(self, data, uuids):
@@ -209,14 +198,12 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             self.jobs_complete += 1
         except QueueTimeoutException, e:
             self.job_failures += 1
-            logger.error("Queue timeout for %s" % job.subservice)
             dotted_function = '.'.join(job.function_name.split('/'))
             self.stats.increment('job.%s.queuetimeout' % dotted_function)
             self.stats.increment('pg.queuetimeout.hit', 0.05)
             self.saveJobHistory(job, False)
         except NegativeCacheException, e:
             self.jobs_complete += 1
-            logger.error("Negative cache for %s" % job.subservice)
             dotted_function = '.'.join(job.function_name.split('/'))
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
@@ -253,11 +240,11 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             logger.error("Could not set fast cache: %s" % e)
 
     def logStatus(self):
-        logger.critical('UUIDs: %d' % len(self.uuid_queue))
-        logger.critical('Uncached UUIDs: %d' % len(self.uncached_uuid_queue))
-        logger.critical('User accounts: %d' % len(self.user_account_queue))
-        logger.critical('Queued Jobs: %d' % len(self.job_queue))
-        logger.critical('Active Jobs: %d' % len(self.active_jobs))
-        logger.critical('Completed Jobs: %d' % self.jobs_complete)
-        logger.critical('Job failures: %d' % self.job_failures)
-        logger.critical('Lost jobs: %d' % (self.uuids_dequeued - self.jobs_complete - self.job_failures - len(self.uuid_queue) - len(self.uncached_uuid_queue) - len(self.user_account_queue) - len(self.job_queue) - len(self.active_jobs)))
+        logger.info('UUIDs: %d' % len(self.uuid_queue))
+        logger.info('Uncached UUIDs: %d' % len(self.uncached_uuid_queue))
+        logger.info('User accounts: %d' % len(self.user_account_queue))
+        logger.info('Queued Jobs: %d' % len(self.job_queue))
+        logger.info('Active Jobs: %d' % len(self.active_jobs))
+        logger.info('Completed Jobs: %d' % self.jobs_complete)
+        logger.info('Job failures: %d' % self.job_failures)
+        logger.info('Lost jobs: %d' % (self.uuids_dequeued - self.jobs_complete - self.job_failures - len(self.uuid_queue) - len(self.uncached_uuid_queue) - len(self.user_account_queue) - len(self.job_queue) - len(self.active_jobs)))
