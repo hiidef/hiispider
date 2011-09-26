@@ -7,9 +7,9 @@ import time
 import re
 
 from collections import defaultdict
-from twisted.internet import reactor
+from twisted.internet import reactor, protocol
 from twisted.internet.defer import inlineCallbacks, returnValue, waitForDeferred
-from txredisapi import RedisConnectionPool
+from txredis.protocol import Redis
 import logging
 
 
@@ -32,9 +32,12 @@ class JobHistoryMixin(object):
         if not self.jobhistory_enabled:
             return
         try:
-            self.jobhistory_client = yield RedisConnectionPool(
+            logger.info("Connecting to JobHistory Redis.")
+            clientCreator = protocol.ClientCreator(reactor, Redis)
+            self.jobhistory_client = yield clientCreator.connectTCP(
                 self.jobhistory_host, 
                 int(self.jobhistory_port))
+            logger.info("Connected to JobHistory Redis.")
         except Exception, e:
             logger.error("Could not connect to JobHistory Redis: %s" % e)
             self.shutdown()
