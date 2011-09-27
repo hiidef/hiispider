@@ -112,7 +112,6 @@ class CassandraServer(BaseServer, JobGetterMixin):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
 
-
     @inlineCallbacks
     def executeJob(self, job):
         user_id = job.user_account["user_id"]
