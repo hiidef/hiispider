@@ -1,20 +1,31 @@
 from components import Component
 from txZMQ import ZmqFactory, ZmqEndpoint, ZmqEndpointType, ZmqConnection
 from zmq.core.error import ZMQError
-from zmq.core.constants import DEALER, ROUTER
+from zmq.core.constants import ROUTER, DEALER
 from components import Queue, Logger, MySQL
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from twisted.internet import task
 from cPickle import loads, dumps
 import time
+from hiispider.components import *
+from hiispider.metacomponents import *
 
 # Factory to make ZmqConnections
 ZF = ZmqFactory() 
 # Bind / Connect shortcuts
 BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 # The component class objects we intend to instantiate
-COMPONENTS = [Queue, Logger, MySQL]
+COMPONENTS = [
+    Cassandra, 
+    Logger, 
+    MySQL, 
+    Redis, 
+    Stats,
+    JobQueue, 
+    PagecacheQueue, 
+    IdentityQueue,
+    PageGetter]
 # The intra-server poll interval
 POLL_INTERVAL = 5
 
@@ -95,10 +106,10 @@ class Server(object):
             name = cls.__name__.lower()
             if cls in args:
                 address = "%s:%s" % (ip, int(port) + 1 + i)
-                component = cls(config, address) # Instantiate as active
+                component = cls(self, config, address) # Instantiate as active
                 self.active[name] = address # Keep track of actives
             else:
-                component = cls(config) # Instantiate as inactive
+                component = cls(self, config) # Instantiate as inactive
             self.components.append(component)
             setattr(self, name, component) # Attach component as property
         # Make sure we shut things down before the reactor stops.

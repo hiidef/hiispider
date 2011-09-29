@@ -53,6 +53,7 @@ class ComponentClient(ZmqConnection):
     
     def messageReceived(self, message):
         DEFERRED_DICT[message[0]].callback(loads(message[1]))
+        del DEFERRED_DICT[message[0]]
 
     def send(self, function_name, args, kwargs):
         tag = HiiGUID().packed
@@ -72,7 +73,8 @@ class Component(object):
     component_client = None
     server_mode = False
 
-    def __init__(self, address=None):
+    def __init__(self, server, address=None):
+        self.server = server
         self.connections = []
         if address:
             ip, port = address.split(":")
@@ -102,7 +104,7 @@ class Component(object):
         Execute the requested call. Callback and errback are the same as we're 
         passing pickled objects back and forth.
         """
-        d = maybeDeferred(getattr(self, function_name), *args, **kwargs)
+        d = getattr(self, function_name)(*args, **kwargs)
         d.addCallback(self._component_server_callback2, route, tag)
         d.addErrback(self._component_server_callback2, route, tag)
 

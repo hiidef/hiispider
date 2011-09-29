@@ -3,6 +3,10 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from twisted.internet import reactor
 from ..amqp import amqp as AMQP
+import logging
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Queue(Component):
@@ -10,8 +14,8 @@ class Queue(Component):
     conn = None
     chan = None
 
-    def __init__(self, config, address=None, **kwargs):
-        super(Queue, self).__init__(address=address)
+    def __init__(self, server, config, address=None, **kwargs):
+        super(Queue, self).__init__(server, address=address)
         config = copy(config)
         config.update(kwargs)
         self.amqp_host = config["amqp_host"]
@@ -21,12 +25,13 @@ class Queue(Component):
         self.amqp_queue = config["amqp_queue"]
         self.amqp_exchange = config["amqp_exchange"]
         self.amqp_prefetch_count = config["amqp_prefetch_count"]
-        self.amqp_vhost = config["amqp_jobs_vhost"]
+        self.amqp_vhost = config["amqp_vhost"]
         self.amqp_setup = True
 
     @inlineCallbacks
     def initialize(self):
-        if self.server_mode:        
+        if self.server_mode:
+            LOGGER.info('Initializing %s' % self.__class__.__name__)        
             self.conn = yield AMQP.createClient(
                 self.amqp_host,
                 self.amqp_vhost,
@@ -53,8 +58,23 @@ class Queue(Component):
             yield self.chan.basic_consume(queue=self.amqp_queue,
                 no_ack=False,
                 consumer_tag="hiispider")
+            self.queue = yield self.conn.queue("hiispider_consumer")
             self.initialized = True
+            LOGGER.info('%s initialized.' % self.__class__.__name__)        
+
+    @inlineCallbacks
+    def shutdown(self):
+        if self.server_mode:
+            LOGGER.info('Closing %s' % self.__class__.__name__)
+            yield self.chan.channel_close()
+            chan0 = yield self.conn.channel(0)
+            yield chan0.connection_close()
+            LOGGER.info('%s closed.' % self.__class__.__name__)
 
     @shared
-    def hello(self):
-        return "World"
+    def get(self, *args, **kwargs):
+        return self.queue.get(*args, **kwargs)
+
+    @shared
+    def basic_ack(self, *args, **kwargs):
+        self.chan.basic_ack(*args, **kwargs)
