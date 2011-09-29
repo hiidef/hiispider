@@ -171,7 +171,19 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue(new_data)
 
     @inlineCallbacks
+    def saveData(self, user_id, uuid, data):
+        """Save data in cassandra.  The opposite of ``getData``."""
+        ret = yield self.cassandra_client.insert(
+            str(user_id),
+            self.cassandra_cf_content,
+            zlib.compress(simplejson.dumps(data)),
+            column=uuid)
+        returnValue(ret)
+
+
+    @inlineCallbacks
     def getData(self, user_id, uuid):
+        """Get data from cassandra by user id and uuid."""
         try:
             data = yield self.cassandra_client.get(
                 key=str(user_id),
