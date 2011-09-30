@@ -4,6 +4,9 @@ from twisted.internet import reactor
 from twisted.internet.defer import Deferred, maybeDeferred
 from cPickle import loads, dumps
 from hiiguid import HiiGUID
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 # Factory to make ZmqConnections
 ZF = ZmqFactory()
@@ -116,7 +119,7 @@ class Component(object):
         if address not in self.connections:
             if self.component_client:
                 self.component_client.shutdown()
-            print "making connection to %s" % address
+            LOGGER.info("Connecting to %s" % address)
             self.connections.append(address)
             endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.connections]
             self.component_client = ComponentClient(

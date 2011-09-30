@@ -10,7 +10,10 @@ from cPickle import loads, dumps
 import time
 from hiispider.components import *
 from hiispider.metacomponents import *
+import logging
 
+
+LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
 ZF = ZmqFactory() 
 # Bind / Connect shortcuts
@@ -25,7 +28,8 @@ COMPONENTS = [
     JobQueue, 
     PagecacheQueue, 
     IdentityQueue,
-    PageGetter]
+    PageGetter,
+    Worker]
 # The intra-server poll interval
 POLL_INTERVAL = 5
 
@@ -174,7 +178,8 @@ class Server(object):
         d.addCallback(self._start3, start_deferred)
 
     def _start3(self, data, start_deferred):
-        print "Starting."
+
+        LOGGER.critical("Starting server with components: %s" % ", ".join(self.active.keys()))
         start_deferred.callback(True)
 
     def getConnections(self):

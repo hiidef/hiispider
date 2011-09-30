@@ -20,8 +20,8 @@ class Redis(Component):
     
     @inlineCallbacks
     def initialize(self):
-        LOGGER.info("Initializing %s" % self.__class__.__name__)
         if self.server_mode:
+            LOGGER.info("Initializing %s" % self.__class__.__name__)
             try:
                 self.client = yield RedisShardingConnection(self.hosts)
             except Exception, e:
@@ -29,7 +29,7 @@ class Redis(Component):
                 self.server.shutdown()
                 raise Exception("Could not connect to Redis.")
             self.initialized = True
-    
+            LOGGER.info("%s initialized." % self.__class__.__name__)
     @shared
     def get(self, *args, **kwargs):
         return self.client.get(*args, **kwargs)
