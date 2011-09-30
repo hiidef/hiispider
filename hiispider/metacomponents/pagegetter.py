@@ -1,4 +1,4 @@
-from ..components.base import Component, shared
+from ..components.base import Component, shared, broadcasted
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from ..pagegetter import PageGetter as pg
@@ -16,7 +16,6 @@ class PageGetter(Component):
         config = copy(config)
         config.update(kwargs)
         if self.server_mode:
-            
             self.rq = rq(
                 max_simultaneous_requests=config["max_simultaneous_requests"],
                 max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
@@ -37,4 +36,11 @@ class PageGetter(Component):
     @shared
     def getPage(self, *args, **kwargs):
         return self.pg.getPage(*args, **kwargs)
+    
+    @broadcasted
+    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+        return self.rq.setHostMaxRequestsPerSecond(*args, **kwargs)
 
+    @broadcasted
+    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+        return self.rq.setHostMaxSimultaneousRequests(*args, **kwargs)

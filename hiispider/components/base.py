@@ -15,6 +15,21 @@ BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 # Dictionary to hold deferreds. {tag:deferred}
 DEFERRED_DICT = {}
 
+
+def broadcasted(func):
+    """
+    Fanout Proxying decorator. If the component is in server_mode, field the
+    request. If not, send the request to all members of the component pool.
+    """
+    def decorator(self, *args, **kwargs):
+        LOGGER.critical("Broadcasted proxying not implemented.")
+        if self.server_mode:
+            return maybeDeferred(func, self, *args, **kwargs)
+        else:
+            return self.component_client.send(func.__name__, args, kwargs)
+    return decorator
+
+
 def shared(func):
     """
     Proxying decorator. If the component is in server_mode, field the
@@ -75,11 +90,12 @@ class Component(object):
     initialized = False
     component_client = None
     server_mode = False
+    connected = True # Connect to other servers of this type.
 
     def __init__(self, server, address=None):
         self.server = server
         self.connections = []
-        if address:
+        if address and self.connected:
             ip, port = address.split(":")
             self.server_mode = True
             # If in server mode, bind the socket.
@@ -116,6 +132,9 @@ class Component(object):
 
     def makeConnection(self, address):
         """Connect to multiple remote servers."""
+        if not self.connected:
+            self.initialized = True
+            return
         if address not in self.connections:
             if self.component_client:
                 self.component_client.shutdown()
@@ -131,7 +150,7 @@ class Component(object):
     def _shutdown(self):
         if self.component_client:
             self.component_client.shutdown()
-        if self.server_mode:
+        if self.server_mode and self.connected:
             self.component_server.shutdown()
         return self.shutdown()
 

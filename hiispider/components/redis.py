@@ -30,6 +30,7 @@ class Redis(Component):
                 raise Exception("Could not connect to Redis.")
             self.initialized = True
             LOGGER.info("%s initialized." % self.__class__.__name__)
+            
     @shared
     def get(self, *args, **kwargs):
         return self.client.get(*args, **kwargs)

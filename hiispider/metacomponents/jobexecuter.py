@@ -1,9 +1,18 @@
-from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
+from ..components.base import Component, shared
+from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from copy import copy
 from twisted.internet import task
 import time
 import logging
+from hiispider.exceptions import NegativeCacheException
+import inspect
+import os
+import time
+import pprint
+from decimal import Decimal
+from uuid import uuid4
+from MySQLdb import OperationalError
+from twisted.web.resource import Resource
 
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +28,7 @@ class Job(object):
     mapped = False
     fast_cache = None
     uuid = None
+    connected = False
 
     def __init__(self,
             function_name,
@@ -30,7 +40,7 @@ class Job(object):
         ``kwargs`` on the job) are colums from the ``content_(service)account``
         table, and the ``user_account`` is a row of the ``spider_service``
         table along with the user's flavors username and chosen DNS host."""
-        logger.debug("Creating job %s (%s) with kwargs %s and user %s" % (
+        LOGGER.debug("Creating job %s (%s) with kwargs %s and user %s" % (
             uuid, function_name, service_credentials, user_account))
         self.function_name = function_name
         self.kwargs = service_credentials
@@ -58,6 +68,7 @@ class JobExecuter(Component):
     delta_functions = {}
     fast_cache = {}
     function_resource = None
+    start_time = time.time()
 
     def __init__(self, server, config, address=None, **kwargs):
         super(JobExecuter, self).__init__(server, address=address)
@@ -67,6 +78,7 @@ class JobExecuter(Component):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
+        self.initialized = True
         
     def initialize(self):
         pass
@@ -74,6 +86,18 @@ class JobExecuter(Component):
     def start(self):
         pass
     
+    def getPage(self, *args, **kwargs):
+        return self.server.pagegetter.getPage(*args, **kwargs)
+
+    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+        return self.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
+
+    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+        return self.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
+
+    def delta(self, func, handler):
+        self.delta_functions[id(func)] = handler
+
     @inlineCallbacks
     def executeJob(self, job):
         dotted_function = '.'.join(job.function_name.split('/'))
@@ -94,30 +118,30 @@ class JobExecuter(Component):
         except NegativeCacheException:
             raise
         except Exception, e:
-            self.stats.increment('job.%s.failure' % dotted_function)
-            self.stats.timer.stop(timer)
-            self.stats.timer.stop('job.time')
+            self.server.stats.increment('job.%s.failure' % dotted_function)
+            self.server.stats.timer.stop(timer)
+            self.server.stats.timer.stop('job.time')
             raise
         finally:
             if job.uuid in self.active_jobs:
                 del self.active_jobs[job.uuid]
         # If the data is None, there's nothing to store.
         # stats collection
-        self.stats.increment('job.%s.success' % dotted_function)
-        self.stats.timer.stop(timer)
-        self.stats.timer.stop('job.time')
+        self.server.stats.increment('job.%s.success' % dotted_function)
+        self.server.stats.timer.stop(timer)
+        self.server.stats.timer.stop('job.time')
         returnValue(data)
 
     @inlineCallbacks
     def executeFunction(self, function_key, **kwargs):
         """Execute a function by key w/ kwargs and return the data."""
-        logger.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
+        LOGGER.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
         try:
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
         except NegativeCacheException:
             raise
         except Exception, e:
-            logger.error("Error with %s.\n%s" % (function_key, e))
+            LOGGER.error("Error with %s.\n%s" % (function_key, e))
             raise
         returnValue(data)
 
@@ -141,6 +165,9 @@ class JobExecuter(Component):
         argspec[0] = args[0:len(args) - len(defaults)]
         argspec[3] = args[len(args) - len(defaults):]
         return argspec
+
+    def expose(self, *args, **kwargs):
+        return self.makeCallable(expose=True, *args, **kwargs)
 
     def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
         argspec = self._getArguments(func)
@@ -178,12 +205,12 @@ class JobExecuter(Component):
         for key in required_arguments:
             if key in self.reserved_arguments:
                 message = "Required argument name '%s' is reserved." % key
-                logger.error(message)
+                LOGGER.error(message)
                 raise Exception(message)
         for key in optional_arguments:
             if key in self.reserved_arguments:
                 message = "Optional argument name '%s' is reserved." % key
-                logger.error(message)
+                LOGGER.error(message)
                 raise Exception(message)
         # Make sure we don't already have a function with the same name.
         if function_name in self.functions:
@@ -201,7 +228,7 @@ class JobExecuter(Component):
             "delta":self.delta_functions.get(id(func), None),
             "category":category,
         }
-        logger.info("Function %s is now callable." % function_name)
+        LOGGER.info("Function %s is now callable." % function_name)
         if expose and self.function_resource is not None:
             self.exposed_functions.append(function_name)
             er = ExposedResource(self, function_name)
@@ -216,5 +243,68 @@ class JobExecuter(Component):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.function_resource.putChild(function_name_parts[0], er)
-            logger.info("%s is now available via HTTP." % function_name)
+            LOGGER.info("%s is now available via HTTP." % function_name)
         return function_name
+
+    def mapJob(self, job):
+        if job.function_name in self.service_mapping:
+            LOGGER.debug('Remapping resource %s to %s' % (
+                job.function_name,
+                self.service_mapping[job.function_name]))
+            job.function_name = self.service_mapping[job.function_name]
+        service_name = job.function_name.split('/')[0]
+        if service_name in self.inverted_args_mapping:
+            kwargs = {}
+            mapping = self.inverted_args_mapping[service_name]
+            f = self.functions[job.function_name]
+            # add in support for completely variadic methods;  these are methods
+            # that accept *args, **kwargs in some fashion (usually because of a
+            # decorator like inlineCallbacks);  note that these will be called
+            # with the full amt of kwargs pulled in by the jobGetter and should
+            # therefore take **kwargs somewhere underneath and have all of its
+            # real positional args mapped in the inverted_args_mapping
+            if f['variadic']:
+                kwargs = dict(job.kwargs)
+                for key,value in mapping.iteritems():
+                    if value in kwargs:
+                        kwargs[key] = kwargs.pop(value)
+            else:
+                for key in f['required_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+                    # mimic the behavior of the old job mapper, mapping args (like 'type')
+                    # to the spider_service object itself in addition to the job kwargs
+                    elif key in job.user_account:
+                        kwargs[key] = job.user_account[key]
+                    else:
+                        LOGGER.error('Could not find required argument %s for function %s in %s' % (
+                            key, job.function_name, job))
+                        # FIXME: we shouldn't except here because a log message and quiet
+                        # failure is enough;  we need some quiet error channel
+                        raise Exception("Could not find argument: %s" % key)
+                for key in f['optional_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+            job.kwargs = kwargs
+        job.mapped = True
+        return job
+    
+    def getServerData(self):
+        running_time = time.time() - self.start_time
+        active_requests_by_host = self.rq.getActiveRequestsByHost()
+        pending_requests_by_host = self.rq.getPendingRequestsByHost()
+        data = {
+            "load_avg":[str(Decimal(str(x), 2)) for x in os.getloadavg()],
+            "running_time":running_time,
+            "active_requests_by_host":active_requests_by_host,
+            "pending_requests_by_host":pending_requests_by_host,
+            "active_requests":self.rq.getActive(),
+            "pending_requests":self.rq.getPending()
+        }
+        logger.debug("Got server data:\n%s" % pprint.pformat(data))
+        return data
+

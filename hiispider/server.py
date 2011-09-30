@@ -22,14 +22,16 @@ BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 COMPONENTS = [
     Cassandra, 
     Logger, 
-    MySQL, 
-    Redis, 
+    MySQL,  
     Stats,
+    Redis,
     JobQueue, 
     PagecacheQueue, 
     IdentityQueue,
     PageGetter,
-    Worker]
+    Worker,
+    JobHistoryRedis,
+    JobGetter]
 # The intra-server poll interval
 POLL_INTERVAL = 5
 
@@ -171,6 +173,7 @@ class Server(object):
         # proxy component.
         for x in self.components:
             if not x.initialized:
+                LOGGER.info("Waiting for %s" % x.__class__.__name__)
                 reactor.callLater(1, self._start2, data, start_deferred)
                 return
         # Start the various components.
