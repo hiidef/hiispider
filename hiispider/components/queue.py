@@ -26,12 +26,11 @@ class Queue(Component):
         self.amqp_exchange = config["amqp_exchange"]
         self.amqp_prefetch_count = config["amqp_prefetch_count"]
         self.amqp_vhost = config["amqp_vhost"]
-        self.amqp_setup = True
-
+        
     @inlineCallbacks
     def initialize(self):
         if self.server_mode:
-            LOGGER.info('Initializing %s' % self.__class__.__name__)        
+            LOGGER.info("Initializing %s" % self.__class__.__name__)    
             self.conn = yield AMQP.createClient(
                 self.amqp_host,
                 self.amqp_vhost,
@@ -77,4 +76,4 @@ class Queue(Component):
 
     @shared
     def basic_ack(self, *args, **kwargs):
-        self.chan.basic_ack(*args, **kwargs)
+        return self.chan.basic_ack(*args, **kwargs)

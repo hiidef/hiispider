@@ -16,6 +16,7 @@ class JobGetter(Component):
     dequeueloop = None
     uuid_queue = []
     uncached_uuid_queue = []
+    user_account_queue = []
     job_queue = []
     uuid_dequeueing = False
     uuid_queue_size = 500
@@ -31,11 +32,15 @@ class JobGetter(Component):
             self.dequeueloop = task.LoopingCall(self.dequeue)
             self.dequeueloop.start(5)
             self.initialized = True
-            
+
+    @inlineCallbacks
     def shutdown(self):
         if self.dequeueloop:
             self.dequeueloop.stop()
-    
+        self.uuid_queue = []
+        self.uncached_uuid_queue = []
+        self.user_account_queue = []
+   
     def dequeue(self):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
         if self.uncached_uuid_queue:
@@ -49,6 +54,7 @@ class JobGetter(Component):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
+            LOGGER.info("Dequeing")
             d = self.server.jobqueue.get()
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
@@ -56,6 +62,7 @@ class JobGetter(Component):
             self.uuid_dequeueing = False
 
     def _dequeuejobsCallback(self, msg):
+        LOGGER.info("Got msg")
         self.jobqueue.basic_ack(msg.delivery_tag)
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
         self.uuids_dequeued += 1
