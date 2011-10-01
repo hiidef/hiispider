@@ -54,7 +54,6 @@ class JobGetter(Component):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            LOGGER.info("Dequeing")
             d = self.server.jobqueue.get()
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
