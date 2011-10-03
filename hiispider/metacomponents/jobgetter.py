@@ -33,7 +33,6 @@ class JobGetter(Component):
             self.dequeueloop.start(5)
             self.initialized = True
 
-    @inlineCallbacks
     def shutdown(self):
         if self.dequeueloop:
             self.dequeueloop.stop()
@@ -54,7 +53,9 @@ class JobGetter(Component):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            d = self.server.jobqueue.get()
+            LOGGER.info(self.server.jobqueue.amqp_vhost)
+            d = self.server.jobqueue.queue.get()
+            print self.server.jobqueue.queue
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
         else:
@@ -75,7 +76,7 @@ class JobGetter(Component):
 
     def _dequeuejobsErrback(self, error):
         LOGGER.error(str(error))
-        self._dequeuejobs()
+        self.uuid_dequeueing = False
 
     def _dequeuejobsCallback2(self, data, uuids):
         results = zip(uuids, data)

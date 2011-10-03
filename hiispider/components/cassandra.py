@@ -27,7 +27,9 @@ class Cassandra(Component):
 
     def shutdown(self):
         if self.server_mode:
-            self.client.stopService()
+            LOGGER.info("Stopping %s" % self.__class__.__name__) 
+            self.client.stopService()   
+            LOGGER.info("%s stopped." % self.__class__.__name__)
             
     @shared
     def batch_insert(self, *args, **kwargs):

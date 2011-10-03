@@ -30,7 +30,14 @@ class Redis(Component):
                 raise Exception("Could not connect to Redis.")
             self.initialized = True
             LOGGER.info("%s initialized." % self.__class__.__name__)
-            
+    
+    @inlineCallbacks
+    def shutdown(self):
+        if self.server_mode:
+            LOGGER.info("Disconnecting %s" % self.__class__.__name__)
+            yield self.client.disconnect()      
+            LOGGER.info("%s disconnected." % self.__class__.__name__)
+           
     @shared
     def get(self, *args, **kwargs):
         return self.client.get(*args, **kwargs)

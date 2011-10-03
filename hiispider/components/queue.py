@@ -1,5 +1,5 @@
 from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from copy import copy
 from twisted.internet import reactor
 from ..amqp import amqp as AMQP
@@ -55,7 +55,7 @@ class Queue(Component):
                 queue=self.amqp_queue,
                 exchange=self.amqp_exchange)
             yield self.chan.basic_consume(queue=self.amqp_queue,
-                no_ack=False,
+                no_ack=True,
                 consumer_tag="hiispider")
             self.queue = yield self.conn.queue("hiispider_consumer")
             self.initialized = True
