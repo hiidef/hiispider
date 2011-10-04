@@ -16,11 +16,14 @@ def parseDate(data, dates):
             if x not in _data:
                 break
             elif isinstance(_data[x], basestring):
-                return time.mktime(dateutil.parser.parse(_data[x]).timetuple())
+                if _data[x].isdigit:
+                    return float(_data[x])
+                else:
+                    return time.mktime(dateutil.parser.parse(_data[x]).timetuple())
             elif isinstance(_data[x], dict):
                 _data = _data[x]
             elif isinstance(_data[x], Number):
-                return _data[x]
+                return float(_data[x])
             else:
                 break
     return time.time()
