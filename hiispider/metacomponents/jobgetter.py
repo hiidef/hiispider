@@ -1,4 +1,5 @@
 from ..components.base import Component, shared
+from ..components import Queue
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from twisted.internet import task
@@ -13,7 +14,7 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 
-class JobGetter(Component):
+class JobGetter(Queue):
 
     dequeueloop = None
     uuid_queue = []
@@ -25,7 +26,8 @@ class JobGetter(Component):
     job_queue_size = 500
 
     def __init__(self, server, config, address=None, **kwargs):
-        super(JobGetter, self).__init__(server, address=address)
+        kwargs["amqp_vhost"] = config["amqp_jobs_vhost"]
+        super(JobGetter, self).__init__(server, config, address=address, **kwargs)
         config = copy(config)
         config.update(kwargs)
 
@@ -34,13 +36,15 @@ class JobGetter(Component):
             self.dequeueloop = task.LoopingCall(self.dequeue)
             self.dequeueloop.start(5)
             self.initialized = True
-
+        
+    @inlineCallbacks
     def shutdown(self):
         if self.dequeueloop:
             self.dequeueloop.stop()
         self.uuid_queue = []
         self.uncached_uuid_queue = []
         self.user_account_queue = []
+        yield super(JobGetter, self).shutdown()
    
     def dequeue(self):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
@@ -55,7 +59,7 @@ class JobGetter(Component):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            d = self.server.jobqueue.get(timeout=5)
+            d = self.get(timeout=5)
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
         else:
@@ -109,8 +113,8 @@ class JobGetter(Component):
         self.user_account_queue = []
         for service_type in accounts_by_type:
             accounts_by_id = {}
-            for user_accounts in accounts_by_type[service_type]:
-                accounts_by_id[str(user_accounts["account_id"])] = user_account
+            for user_account in accounts_by_type[service_type]:
+                accounts_by_id[str(user_account["account_id"])] = user_account
             sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (service_type.split("/")[0], ",".join(accounts_by_id.keys()))
             try:
                 data = yield self.server.mysql.runQuery(sql)
