@@ -56,12 +56,12 @@ def _sort(a, ignores, includes):
         # If there are include paths, iterate through keys in these paths.
         included_keys = _included(includes)
         if included_keys:
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(included_keys) if x in a]
         else:
             # Disregard keys at the top level of the ignore paths.
             ignored_keys = _ignored(ignores)
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes))) 
+            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(a) if x not in ignored_keys]
     elif type(a) is list:
         try:
@@ -104,15 +104,16 @@ def _compare_lists(a, b, ignores, includes):
     except TypeError:
         # A and b are not hashable.
         pass
-    hashed_a = dict([(_hash(x, ignores, includes), x) for x in a])
-    hashed_b = dict([(_hash(x, ignores, includes), x) for x in b])
+    included_keys = _included(includes)
+    hashed_a = dict([(_hash(x, ignores, includes), x) for x in a if x in included_keys])
+    hashed_b = dict([(_hash(x, ignores, includes), x) for x in b if x in included_keys])
     # Compare the hashes to get a list of items in a that are not in b.
     return [hashed_a[x] for x in set(hashed_a) - set(hashed_b)]
 
 
 def _narrow(a, b, path):
     """
-    Recursively remove keys not in path. Combine lists of lists if 
+    Recursively remove keys not in path. Combine lists of lists if
     indicated by the path.
     """
     if not b:
@@ -189,7 +190,7 @@ class Autogenerator(object):
                 path_parameters["includes"] = _includes
                 path_parameters["ignores"] = _ignores
                 self.paths.append(path_parameters)
-    
+
     def __call__(self, a, b):
         """
         Compare dictionaries or lists of objects. Returns a list.
