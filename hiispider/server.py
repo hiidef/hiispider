@@ -11,7 +11,8 @@ import time
 from hiispider.components import *
 from hiispider.metacomponents import *
 import logging
-
+from .resources import ExposedResource
+import inspect
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -78,17 +79,34 @@ class MetadataClient(ZmqCallbackConnection):
             super(MetadataClient, self).send([tag])
 
 
+def invert(d):
+    """Invert a dictionary."""
+    return dict([(v, k) for (k, v) in d.iteritems()])
+
+
 class Server(object):
     """
     Uses metadata servers and clients to tell components where to 
     look for peers.
     """
-
+    reserved_arguments = [
+        "reservation_function_name",
+        "reservation_created",
+        "reservation_next_request",
+        "reservation_error"]
+    exposed_function_resources = {}
+    function_resource = None
+    functions = {}
+    delta_functions = {}
     connectionsloop = None
     components_start_deferred = None
     shutdown_trigger = None
 
     def __init__(self, config, address, *args):
+        self.service_mapping = config["service_mapping"]
+        self.service_args_mapping = config["service_args_mapping"]
+        self.inverted_args_mapping = dict([(s[0], invert(s[1]))
+            for s in self.service_args_mapping.items()])
         self.active = {} # name:address of active components
         self.inactive = {} # name:address of inactive components
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
@@ -205,3 +223,162 @@ class Server(object):
         for client, timestamp in self.metadata_clients.values():
             client.shutdown()
 
+    def delta(self, func, handler):
+        self.delta_functions[id(func)] = handler
+
+    def expose(self, *args, **kwargs):
+        return self.makeCallable(expose=True, *args, **kwargs)
+
+    def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
+        argspec = self._getArguments(func)
+        required_arguments, optional_arguments = argspec[0], argspec[3]
+        variadic = all(argspec[1:3])
+        if variadic:
+            required_arguments, optional_arguments = [], []
+        # Reservation fast cache is stored on with the reservation
+        if "fast_cache" in required_arguments:
+            del required_arguments[required_arguments.index("fast_cache")]
+            check_fast_cache = True
+        elif "fast_cache" in optional_arguments:
+            del optional_arguments[optional_arguments.index("fast_cache")]
+            check_fast_cache = True
+        else:
+            check_fast_cache = False
+        # Indicates whether to send the reservation's UUID to the function
+        if "job_uuid" in required_arguments:
+            del required_arguments[required_arguments.index("job_uuid")]
+            get_job_uuid = True
+        elif "job_uuid" in optional_arguments:
+            del optional_arguments[optional_arguments.index("job_uuid")]
+            get_job_uuid = True
+        else:
+            get_job_uuid = False
+        # Get function name, usually class/method
+        if name is not None:
+            function_name = name
+        elif hasattr(func, "im_class"):
+            function_name = "%s/%s" % (func.im_class.__name__, func.__name__)
+        else:
+            function_name = func.__name__
+        function_name = function_name.lower()
+        # Make sure the function isn't using any reserved arguments.
+        for key in required_arguments:
+            if key in self.reserved_arguments:
+                message = "Required argument name '%s' is reserved." % key
+                LOGGER.error(message)
+                raise Exception(message)
+        for key in optional_arguments:
+            if key in self.reserved_arguments:
+                message = "Optional argument name '%s' is reserved." % key
+                LOGGER.error(message)
+                raise Exception(message)
+        # Make sure we don't already have a function with the same name.
+        if function_name in self.functions:
+            raise Exception("Function %s is already callable." % function_name)
+        # Add it to our list of callable functions.
+        self.functions[function_name] = {
+            "function":func,
+            "id":id(func),
+            "interval":interval,
+            "required_arguments":required_arguments,
+            "optional_arguments":optional_arguments,
+            "check_fast_cache":check_fast_cache,
+            "variadic":variadic,
+            "get_job_uuid":get_job_uuid,
+            "delta":self.delta_functions.get(id(func), None),
+            "category":category,
+        }
+        LOGGER.info("Function %s is now callable." % function_name)
+        if expose and self.function_resource is not None:
+            self.exposed_functions.append(function_name)
+            er = ExposedResource(self, function_name)
+            function_name_parts = function_name.split("/")
+            if len(function_name_parts) > 1:
+                if function_name_parts[0] in self.exposed_function_resources:
+                    r = self.exposed_function_resources[function_name_parts[0]]
+                else:
+                    r = Resource()
+                    self.exposed_function_resources[function_name_parts[0]] = r
+                self.function_resource.putChild(function_name_parts[0], r)
+                r.putChild(function_name_parts[1], er)
+            else:
+                self.function_resource.putChild(function_name_parts[0], er)
+            LOGGER.info("%s is now available via HTTP." % function_name)
+        return function_name
+    
+    def _getArguments(self, func):
+        """Get required or optional arguments for a plugin method.  This
+        function returns a quadruple similar to inspect.getargspec (upon
+        which it is based).  The argument ``self`` is always ignored.  If
+        varargs or keywords (*args or **kwargs) are available, the caller
+        should call call with all available arguments as kwargs.  If there
+        are positional arguments required by the original function not
+        present in the kwargs from the job, be sure to add that to the keyword
+        arguments map in your spider config.  Unlike getargspec, the first element
+        contains only required (positional) arguments, and the third element
+        contains only keyword arguments in the argspec, not their defaults."""
+        # this returns (args, varargs, keywords, defaults)
+        argspec = list(inspect.getargspec(func))
+        if argspec[0] and argspec[0][0] == 'self':
+            argspec[0] = argspec[0][1:]
+        args, defaults = argspec[0], argspec[3]
+        defaults = [] if defaults is None else defaults
+        argspec[0] = args[0:len(args) - len(defaults)]
+        argspec[3] = args[len(args) - len(defaults):]
+        return argspec
+
+    def getPage(self, *args, **kwargs):
+        return self.pagegetter.getPage(*args, **kwargs)
+
+    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+        return self.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
+
+    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+        return self.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
+    
+    def mapJob(self, job):
+        if job.function_name in self.service_mapping:
+            LOGGER.debug('Remapping resource %s to %s' % (
+                job.function_name,
+                self.service_mapping[job.function_name]))
+            job.function_name = self.service_mapping[job.function_name]
+        service_name = job.function_name.split('/')[0]
+        if service_name in self.inverted_args_mapping:
+            kwargs = {}
+            mapping = self.inverted_args_mapping[service_name]
+            f = self.functions[job.function_name]
+            # add in support for completely variadic methods;  these are methods
+            # that accept *args, **kwargs in some fashion (usually because of a
+            # decorator like inlineCallbacks);  note that these will be called
+            # with the full amt of kwargs pulled in by the jobGetter and should
+            # therefore take **kwargs somewhere underneath and have all of its
+            # real positional args mapped in the inverted_args_mapping
+            if f['variadic']:
+                kwargs = dict(job.kwargs)
+                for key,value in mapping.iteritems():
+                    if value in kwargs:
+                        kwargs[key] = kwargs.pop(value)
+            else:
+                for key in f['required_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+                    # mimic the behavior of the old job mapper, mapping args (like 'type')
+                    # to the spider_service object itself in addition to the job kwargs
+                    elif key in job.user_account:
+                        kwargs[key] = job.user_account[key]
+                    else:
+                        LOGGER.error('Could not find required argument %s for function %s in %s. Available: %s, %s' % (
+                            key, job.function_name, job, job.kwargs, job.user_account))
+                        # FIXME: we shouldn't except here because a log message and quiet
+                        # failure is enough;  we need some quiet error channel
+                        raise Exception("Could not find argument: %s" % key)
+                for key in f['optional_arguments']:
+                    if key in mapping and mapping[key] in job.kwargs:
+                        kwargs[key] = job.kwargs[mapping[key]]
+                    elif key in job.kwargs:
+                        kwargs[key] = job.kwargs[key]
+            job.kwargs = kwargs
+        job.mapped = True
+        return job

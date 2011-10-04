@@ -55,16 +55,17 @@ class Queue(Component):
                 queue=self.amqp_queue,
                 exchange=self.amqp_exchange)
             yield self.chan.basic_consume(queue=self.amqp_queue,
-                no_ack=True,
-                consumer_tag="hiispider")
+                no_ack=False,
+                consumer_tag="hiispider_consumer")
             self.queue = yield self.conn.queue("hiispider_consumer")
             self.initialized = True
-            LOGGER.info('%s initialized.' % self.__class__.__name__)        
+            LOGGER.info('%s initialized.' % self.__class__.__name__)
 
     @inlineCallbacks
     def shutdown(self):
         if self.server_mode:
             LOGGER.info('Closing %s' % self.__class__.__name__)
+            yield self.queue.close()
             yield self.chan.channel_close()
             chan0 = yield self.conn.channel(0)
             yield chan0.connection_close()
@@ -72,8 +73,10 @@ class Queue(Component):
 
     @shared
     def get(self, *args, **kwargs):
-        return self.queue.get(*args, **kwargs)
+        d = self.queue.get(*args, **kwargs)
+        d.addCallback(self.basic_ack)
+        return d
 
-    @shared
-    def basic_ack(self, *args, **kwargs):
-        return self.chan.basic_ack(*args, **kwargs)
+    def basic_ack(self, msg):
+        self.chan.basic_ack(msg.delivery_tag)
+        return msg

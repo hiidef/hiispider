@@ -4,9 +4,11 @@ from copy import copy
 from twisted.internet import task
 from jobexecuter import Job
 import cPickle
-from zlib import decompress
+from zlib import decompress, compress
 from uuid import UUID
+from collections import defaultdict
 import logging
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,19 +55,14 @@ class JobGetter(Component):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            LOGGER.info(self.server.jobqueue.amqp_vhost)
-            d = self.server.jobqueue.queue.get()
-            print self.server.jobqueue.queue
+            d = self.server.jobqueue.get(timeout=5)
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
         else:
             self.uuid_dequeueing = False
 
     def _dequeuejobsCallback(self, msg):
-        LOGGER.info("Got msg")
-        self.jobqueue.basic_ack(msg.delivery_tag)
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
-        self.uuids_dequeued += 1
         if len(self.uuid_queue) > 200:
             uuids, self.uuid_queue = self.uuid_queue, []
             d = self.server.redis.mget(*uuids)
@@ -101,9 +98,9 @@ class JobGetter(Component):
                 AND auth_user.id=content_userprofile.user_id
                 """ % "','".join(uuids)
             try:
-                data = yield self.mysql.runQuery(sql)
-            except:
-                LOGGER.error("Could not find users in '%s'" % "','".join(uuids))
+                data = yield self.server.mysql.runQuery(sql)
+            except Exception, e:
+                LOGGER.error("Could not find users in '%s': %s" % ("','".join(uuids), e))
                 continue
             self.user_account_queue.extend(data)
         accounts_by_type = defaultdict(list)
@@ -111,22 +108,33 @@ class JobGetter(Component):
             accounts_by_type[user_account["type"]].append(user_account)
         self.user_account_queue = []
         for service_type in accounts_by_type:
-            accounts_by_id = defaultdict(list)
+            accounts_by_id = {}
             for user_accounts in accounts_by_type[service_type]:
-                accounts_by_id[user_accounts["account_id"]].append(user_account)
-            sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (service_type, ",".join(accounts_by_id.keys()))
+                accounts_by_id[str(user_accounts["account_id"])] = user_account
+            sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (service_type.split("/")[0], ",".join(accounts_by_id.keys()))
             try:
-                data = yield self.mysql.runQuery(sql)
+                data = yield self.server.mysql.runQuery(sql)
             except Exception, e:
-                LOGGER.error("Could not find service %s, %s" % (service_type, sql))
+                LOGGER.error("Could not find service %s, %s: %s" % (service_type, sql, e))
                 continue
             for service_credentials in data:
-                user_account = accounts_by_id[service_credentials["account_id"]]
+                user_account = accounts_by_id[str(service_credentials["account_id"])]
                 job = Job(
                     function_name=user_account['type'],
                     service_credentials=service_credentials,
                     user_account=user_account,
                     uuid=user_account['uuid'])
-                self.mapJob(job) # Do this now so mapped values are cached.
+                self.server.mapJob(job) # Do this now so mapped values are cached.
                 self._setJobCache(job)
                 self.job_queue.append(job)
+
+    @inlineCallbacks
+    def _setJobCache(self, job):
+        """Set job cache in redis. Expires at now + 7 days."""
+        job_data = compress(cPickle.dumps(job), 1)
+        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
+        try:
+            yield self.server.redis.set(job.uuid, job_data)
+            yield self.server.redis.expire(job.uuid, 60*60*24*7)
+        except Exception, e:
+            logger.error(str(e))

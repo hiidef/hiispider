@@ -53,3 +53,8 @@ class Redis(Component):
     @shared
     def mset(self, *args, **kwargs):
         return self.client.mset(*args, **kwargs)
+
+    @shared
+    def expire(self, *args, **kwargs):
+        return self.client.expire(*args, **kwargs)
+
