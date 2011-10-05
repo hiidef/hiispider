@@ -275,6 +275,6 @@ class Autogenerator(object):
         if isinstance(paths, basestring):
             paths = [paths]
         elif not isinstance(paths, list):
-            raise TypeError("Parameter must be str, unicode, or list.")
+            raise TypeError("Parameter must be str, unicode, or list. '%s' is type: %s" % (paths, type(paths)))
         # Filters a list of paths split on '/' to remove empty strings.
         return [[x for x in path.split("/") if x] for path in paths]

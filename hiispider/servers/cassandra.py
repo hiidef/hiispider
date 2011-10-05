@@ -273,6 +273,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             paths=None,
             includes=None,
             ignores=None,
+            dates=None,
             return_new_keys=False):
         # Get the delta data, the old data, the new data, and the subservice.
         data = yield self.cassandra_client.get_slice(
