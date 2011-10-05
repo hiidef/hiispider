@@ -6,7 +6,6 @@ from hiiguid import HiiGUID
 import dateutil.parser
 from numbers import Number
 
-
 def parseDate(data, dates):
     if not isinstance(data, dict):
         return time.time()
@@ -100,7 +99,6 @@ def _sort(a, ignores, includes):
             return a
     return a
 
-
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
     try:
@@ -112,6 +110,8 @@ def _hash(a, ignores, includes):
     # the same hash. To remedy this we convert dictionaries and other
     # iterables into lists and sort the lists prior to hashing.
     a = _sort(a, ignores, includes)
+    if not a:
+        return None
     try:
         # Marshal is fast. Try it first.
         return hash(marshal.dumps(a))
@@ -134,14 +134,8 @@ def _compare_lists(a, b, ignores, includes):
     except TypeError:
         # A and b are not hashable.
         pass
-    # FIXME: Not sure if this is working, commenting out for now
-    # if includes:
-    #     included_keys = _included(includes)
-    #     hashed_a = dict([(_hash(x, ignores, includes), x) for x in a if x in included_keys])
-    #     hashed_b = dict([(_hash(x, ignores, includes), x) for x in b if x in included_keys])
-    # else:
-    hashed_a = dict([(_hash(x, ignores, includes), x) for x in a])
-    hashed_b = dict([(_hash(x, ignores, includes), x) for x in b])
+    hashed_a = dict([x for x in [(_hash(x, ignores, includes), x) for x in a] if x[0]])
+    hashed_b = dict([x for x in [(_hash(x, ignores, includes), x) for x in b] if x[0]])
     # Compare the hashes to get a list of items in a that are not in b.
     return [hashed_a[x] for x in set(hashed_a) - set(hashed_b)]
 
