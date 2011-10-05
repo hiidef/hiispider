@@ -17,9 +17,9 @@ def aliases(*args):
     return decorator
 
 
-def autodelta(paths=None, includes=None, ignores=None):
+def autodelta(paths=None, includes=None, ignores=None, dates=None):
     def decorator(f):
-        DELTA_FUNCTIONS[id(f)] = Autogenerator(paths=paths, includes=includes, ignores=ignores)
+        DELTA_FUNCTIONS[id(f)] = Autogenerator(paths=paths, includes=includes, ignores=ignores, dates=dates)
         return f
     return decorator
 
@@ -95,12 +95,12 @@ class HiiSpiderPlugin(object):
 
     def getPage(self, *args, **kwargs):
         return self.spider.getPage(*args, **kwargs)
-    
+
     @make_callable
     def _getIdentity(self, *args, **kwargs):
         raise NotImplementedError()
-        
+
     @make_callable
     def _getConnections(self, *args, **kwargs):
         raise NotImplementedError()
-    
+
