@@ -285,6 +285,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             paths=None,
             includes=None,
             ignores=None,
+            dates=None,
             return_new_keys=False):
         # Get the delta data, the old data, the new data, and the subservice.
         data = yield self.cassandra_client.get_slice(
@@ -304,17 +305,20 @@ class CassandraServer(BaseServer, JobGetterMixin):
             yield self.delete_delta(delta_id, user_id)
             return
         delete_on_empty = False
-        if not all([x is None for x in (paths, includes, ignores)]):
+        if not all([x is None for x in (paths, includes, ignores, dates)]):
             if paths:
                 paths = paths.split(",")
             if includes:
                 includes = includes.split(",")
             if ignores:
                 ignores = ignores.split(",")
+            if dates:
+                dates = dates.split(",")
             delta_func = Autogenerator(
                 paths,
                 ignores,
                 includes,
+                dates,
                 bool(int(return_new_keys)))
             logger.debug("Using custom Autogenerator.")
         else:
@@ -331,6 +335,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     paths,
                     ignores,
                     includes,
+                    dates,
                     bool(int(return_new_keys)))
             # In the event of a stock Autogenerator, remove on empty.
             if isinstance(delta_func, Autogenerator):
