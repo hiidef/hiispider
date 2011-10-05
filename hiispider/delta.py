@@ -270,7 +270,7 @@ class Autogenerator(object):
             return [Delta(pathstring, a, dates=dates)]
 
     def _parse_paths(self, paths):
-        if paths is None:
+        if paths is None or isinstance(paths, bool):
             return []
         if isinstance(paths, basestring):
             paths = [paths]
