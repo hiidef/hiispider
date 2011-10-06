@@ -14,7 +14,7 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 
-class JobGetter(Queue):
+class JobGetter(Component):
 
     dequeueloop = None
     uuid_queue = []
@@ -26,8 +26,7 @@ class JobGetter(Queue):
     job_queue_size = 500
 
     def __init__(self, server, config, address=None, **kwargs):
-        kwargs["amqp_vhost"] = config["amqp_jobs_vhost"]
-        super(JobGetter, self).__init__(server, config, address=address, **kwargs)
+        super(JobGetter, self).__init__(server, address=address)
         config = copy(config)
         config.update(kwargs)
 
@@ -59,7 +58,7 @@ class JobGetter(Queue):
 
     def _dequeuejobs(self):
         if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            d = self.get(timeout=5)
+            d = self.server.jobqueue.get(timeout=5)
             d.addCallback(self._dequeuejobsCallback)
             d.addErrback(self._dequeuejobsErrback)
         else:
