@@ -138,7 +138,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     if self.functions[job.function_name]['category']:
                         category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
+                    user_column = b'%s:%s:%s:%s' % (delta.id, category, job.subservice, job.user_account['account_id'])
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(delta.data)),
                         'user_id': str(user_id),
