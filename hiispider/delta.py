@@ -6,6 +6,7 @@ from hiiguid import HiiGUID
 import dateutil.parser
 from numbers import Number
 
+
 def parseDate(data, dates):
     if not isinstance(data, dict):
         return time.time()
@@ -98,6 +99,7 @@ def _sort(a, ignores, includes):
         except ValueError:
             return a
     return a
+
 
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
@@ -205,7 +207,7 @@ class Autogenerator(object):
                 "dates": dates}]
         else:
             self.paths = []
-            # Trim the include and ignores to remove items on eacb path.
+            # Trim the include and ignores to remove items on each path.
             for path in paths:
                 path_parameters = {"path": path}
                 _includes = includes

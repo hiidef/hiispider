@@ -1,63 +1,45 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Testing server, runs uuids like a workerserver but only on http req."""
+
 from uuid import uuid4
 import logging
+
+from MySQLdb.cursors import DictCursor
 from twisted.internet import reactor
 from twisted.web import server
 from twisted.enterprise import adbapi
-from MySQLdb.cursors import DictCursor
 from twisted.internet.defer import inlineCallbacks
-from .base import BaseServer
 from twisted.web.resource import Resource
+
+from hiispider.servers.base import BaseServer
+from hiispider.servers.mixins.mysql import MySQLMixin
 
 logger = logging.getLogger(__name__)
 
-
-class TestingServer(BaseServer):
+class TestingServer(BaseServer, MySQLMixin):
 
     name = "Testing Server UUID: %s" % str(uuid4())
 
-    def __init__(self,
-            mysql_username,
-            mysql_password,
-            mysql_host,
-            mysql_database,
-            mysql_port=3306,
-            port=5002,
-            service_mapping=None,
-            service_args_mapping=None,
-            log_file='testingserver.log',
-            log_directory=None,
-            log_level="debug"):
+    def __init__(self, config, port=5002):
+        BaseServer.__init__(self, config)
+        self.setupMySQL(config)
+        port = int(port)
         self.function_resource = Resource()
-        # Create MySQL connection.
-        self.mysql = adbapi.ConnectionPool(
-            "MySQLdb",
-            db=mysql_database,
-            port=mysql_port,
-            user=mysql_username,
-            passwd=mysql_password,
-            host=mysql_host,
-            cp_reconnect=True,
-            cursorclass=DictCursor)
-        # Resource Mappings
-        self.service_mapping = service_mapping
-        self.service_args_mapping = service_args_mapping
         # HTTP interface
         resource = Resource()
         self.function_resource = Resource()
         resource.putChild("function", self.function_resource)
         self.site_port = reactor.listenTCP(port, server.Site(resource))
         # Logging, etc
-        BaseServer.__init__(
-            self,
-            log_file=log_file,
-            log_directory=log_directory,
-            log_level=log_level)
         self.expose(self.listUUIDs)
         self.expose(self.executeUUID)
 
     def start(self):
+        start_deferred = super(TestingServer, self).start()
         reactor.callWhenRunning(self._start)
-        return self.start_deferred
+        return start_deferred
 
     def _start(self):
         # Load in names of functions supported by plugins

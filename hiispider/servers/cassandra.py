@@ -140,7 +140,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     if self.functions[job.function_name]['category']:
                         category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
-                    user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
+                    user_column = b'%s||%s||%s||%s' % (delta.id, category, job.subservice, str(job.user_account['account_id']))
                     mapping = {
                         'data': zlib.compress(simplejson.dumps(delta.data)),
                         'user_id': str(user_id),
@@ -173,7 +173,19 @@ class CassandraServer(BaseServer, JobGetterMixin):
         returnValue(new_data)
 
     @inlineCallbacks
+    def saveData(self, user_id, uuid, data):
+        """Save data in cassandra.  The opposite of ``getData``."""
+        ret = yield self.cassandra_client.insert(
+            str(user_id),
+            self.cassandra_cf_content,
+            zlib.compress(simplejson.dumps(data)),
+            column=uuid)
+        returnValue(ret)
+
+
+    @inlineCallbacks
     def getData(self, user_id, uuid):
+        """Get data from cassandra by user id and uuid."""
         try:
             data = yield self.cassandra_client.get(
                 key=str(user_id),
