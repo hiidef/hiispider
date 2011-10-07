@@ -21,3 +21,4 @@ class JobHistoryRedis(Redis):
         key = "job:%s:%s" % (job.uuid, 'good' if success else 'bad')
         self.client._send('LPUSH', key, time.time())
         self.client._send('LTRIM', key, 0, 9)
+
