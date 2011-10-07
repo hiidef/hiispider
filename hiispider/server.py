@@ -13,6 +13,12 @@ from hiispider.metacomponents import *
 import logging
 from .resources import ExposedResource
 import inspect
+from twisted.web import server
+from twisted.web.resource import Resource
+import cStringIO, gzip
+import simplejson
+from traceback import format_tb, format_exc
+
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -37,37 +43,34 @@ COMPONENTS = [
 POLL_INTERVAL = 5
 
 
-from twisted.web.resource import Resource
-import cStringIO, gzip
-import traceback
-import simplejson
-import logging
-import pprint
-
-logger = logging.getLogger(__name__)
-
 class ExposedFunctionResource(Resource):
 
     isLeaf = True
 
-    def __init__(self):
+    def __init__(self, server, function_name):
         Resource.__init__(self)
+        self.server = server
+        self.function_name = function_name
+    
+    def render(self, request):
+        request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
+        kwargs = {}
+        for key in request.args:
+            kwargs[key.replace('.', '_')] = request.args[key][0]
+        f = self.server.functions[self.function_name]
+        d = maybeDeferred(f["function"], **kwargs)
+        d.addCallback(self._successResponse)
+        d.addErrback(self._errorResponse)
+        d.addCallback(self._immediateResponse, request)
+        return server.NOT_DONE_YET
 
     def _successResponse(self, data):
-        # if isinstance(data, str):
-        #      return data
         return simplejson.dumps(data)
 
     def _errorResponse(self, error):
-        reason = str(error.value)
-        # there are two ways to extract a traceback;  we pick whichever one
-        # is longer as that probably has more information
-        tbs = [error.getTraceback(),
-               traceback.format_exc(traceback.extract_tb(error.tb))]
-        tbs.sort(key=lambda x: len(x), reverse=True)
-        tb = tbs[0]
-        logger.error("%s\n%s" % (reason, tb))
-        return simplejson.dumps({"error":reason, "traceback":tb})
+        return simplejson.dumps({
+            "error":str(error.value), 
+            "traceback":error.getTraceback()})
 
     def _immediateResponse(self, data, request):
         # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
@@ -88,17 +91,6 @@ class ExposedFunctionResource(Resource):
             request.write(data)
         request.finish()
 
-    def render(self, request):
-        request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
-        kwargs = {}
-        for key in request.args:
-            kwargs[key.replace('.', '_')] = request.args[key][0]
-        d = maybeDeferred(self.primary_server.executeExposedFunction, self.function_name, **kwargs)
-        d.addCallback(self._successResponse)
-        d.addErrback(self._errorResponse)
-        d.addCallback(self._immediateResponse, request)
-        return server.NOT_DONE_YET
-
 
 class ZmqCallbackConnection(ZmqConnection):
     """Adds a messageRecieved callback function."""
@@ -108,7 +100,7 @@ class ZmqCallbackConnection(ZmqConnection):
         self.callback = callback
 
 
-class MetadataServer(ZmqCallbackConnection):
+class ZMQRouter(ZmqCallbackConnection):
     """Reports metadata to connected clients."""
 
     socketType = ROUTER
@@ -120,12 +112,12 @@ class MetadataServer(ZmqCallbackConnection):
 
     def send(self, route, tag, message=None):
         if message:
-            super(MetadataServer, self).send([route, tag, dumps(message)])
+            super(ZMQRouter, self).send([route, tag, dumps(message)])
         else:
-            super(MetadataServer, self).send([route, tag])
+            super(ZMQRouter, self).send([route, tag])
 
 
-class MetadataClient(ZmqCallbackConnection):
+class ZMQDealer(ZmqCallbackConnection):
     """Requests metadata from a connected server."""
 
     socketType = DEALER
@@ -137,9 +129,9 @@ class MetadataClient(ZmqCallbackConnection):
 
     def send(self, tag, message=None):
         if message:
-            super(MetadataClient, self).send([tag, dumps(message)])
+            super(ZMQDealer, self).send([tag, dumps(message)])
         else:
-            super(MetadataClient, self).send([tag])
+            super(ZMQDealer, self).send([tag])
 
 class Server(object):
     """
@@ -150,6 +142,7 @@ class Server(object):
     connectionsloop = None
     components_start_deferred = None
     shutdown_trigger = None
+    exposed_functions = []
     exposed_function_resources = {}
     function_resource = None
     functions = {}
@@ -160,9 +153,9 @@ class Server(object):
         self.inactive = {} # name:address of inactive components
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
         self.components = [] # Component objects
-        ip, port = address.split(":")
+        ip, port = address.split(":")[0], int(address.split(":")[1])
         location = "tcp://%s:%s" % (ip, port)
-        self.metadata_server = MetadataServer(
+        self.metadata_server = ZMQRouter(
             self.metadata_server_callback, 
             ZF, 
             ZmqEndpoint(BIND, location))
@@ -178,13 +171,15 @@ class Server(object):
         for i, cls in enumerate(COMPONENTS):
             name = cls.__name__.lower()
             if cls in args:
-                address = "%s:%s" % (ip, int(port) + 1 + i)
+                address = "%s:%s" % (ip, port + 1 + i)
                 component = cls(self, config, address) # Instantiate as active
                 self.active[name] = address # Keep track of actives
             else:
                 component = cls(self, config) # Instantiate as inactive
             self.components.append(component)
             setattr(self, name, component) # Attach component as property
+        self.resource = Resource()
+        self.site_port = reactor.listenTCP(port, server.Site(self.resource))
         # Make sure we shut things down before the reactor stops.
         reactor.addSystemEventTrigger(
             'before',
@@ -195,7 +190,7 @@ class Server(object):
         """Make a connection to address."""
         if address in self.metadata_clients:
             self.metadata_clients[address][0].shutdown()
-        client = MetadataClient(
+        client = ZMQDealer(
             self.metadata_client_callback, 
             ZF, 
             ZmqEndpoint(CONNECT, "tcp://%s" % address))
@@ -324,9 +319,9 @@ class Server(object):
             "category":category,
         }
         LOGGER.info("Function %s is now callable." % function_name)
-        if expose and self.function_resource is not None:
+        if expose and self.resource is not None:
             self.exposed_functions.append(function_name)
-            er = ExposedResource(self, function_name)
+            er = ExposedFunctionResource(self, function_name)
             function_name_parts = function_name.split("/")
             if len(function_name_parts) > 1:
                 if function_name_parts[0] in self.exposed_function_resources:
@@ -334,7 +329,7 @@ class Server(object):
                 else:
                     r = Resource()
                     self.exposed_function_resources[function_name_parts[0]] = r
-                self.function_resource.putChild(function_name_parts[0], r)
+                self.resource.putChild(function_name_parts[0], r)
                 r.putChild(function_name_parts[1], er)
             else:
                 self.function_resource.putChild(function_name_parts[0], er)

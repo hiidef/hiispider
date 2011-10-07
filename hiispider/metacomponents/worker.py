@@ -21,8 +21,8 @@ class Worker(JobExecuter):
 
     def start(self):
         self.running = True
-        for i in range(0, self.simultaneous_jobs):
-            self.work()
+        #for i in range(0, self.simultaneous_jobs):
+        #    self.work()
 
     def shutdown(self):
         self.running = False
