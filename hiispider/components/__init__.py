@@ -5,3 +5,7 @@ from .mysql import MySQL
 from .queue import Queue
 from .redis import Redis
 from .stats import Stats
+from .identityqueue import IdentityQueue
+from .jobqueue import JobQueue
+from .pagecachequeue import PagecacheQueue
+from .jobhistoryredis import JobHistoryRedis

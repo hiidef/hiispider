@@ -9,10 +9,11 @@ from zlib import decompress, compress
 from uuid import UUID
 from collections import defaultdict
 import logging
-
+from traceback import format_exc
+import urllib
+from ..exceptions import *
 
 LOGGER = logging.getLogger(__name__)
-
 
 class JobGetter(Component):
 
@@ -20,15 +21,71 @@ class JobGetter(Component):
     uuid_queue = []
     uncached_uuid_queue = []
     user_account_queue = []
+    fast_cache_queue = []
     job_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 500
-    job_queue_size = 500
+    uuid_queue_size = 50
+    job_queue_size = 50
+    job_requests = []
 
     def __init__(self, server, config, address=None, **kwargs):
         super(JobGetter, self).__init__(server, address=address)
         config = copy(config)
         config.update(kwargs)
+        self.scheduler_server = config["scheduler_server"]
+        self.scheduler_server_port = config["scheduler_server_port"]    
+    
+    @inlineCallbacks
+    def setJobCache(self, job):
+        """Set job cache in redis. Expires at now + 7 days."""
+        job_data = compress(cPickle.dumps(job), 1)
+        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
+        try:
+            yield self.server.redis.set(job.uuid, job_data)
+            yield self.server.redis.expire(job.uuid, 60*60*24*7)
+        except Exception, e:
+            LOGGER.error(format_exc())
+
+    @shared
+    @inlineCallbacks
+    def setFastCache(self, uuid, data):
+        if not isinstance(data, str):
+            raise Exception("FastCache must be a string.")
+        if uuid is None:
+            return
+        try:    
+            data = yield self.server.redis.set("fastcache:%s" % uuid, data)
+        except Exception, e:
+            LOGGER.error(format_exc())
+        
+    @shared
+    @inlineCallbacks
+    def deleteReservation(self, job):
+        """Delete a reservation by uuid."""
+        uuid = job.uuid
+        LOGGER.info('Deleting job: %s, %s' % (job.function_name, job.uuid))
+        yield self.server.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
+        url = 'http://%s:%s/function/schedulerserver/removefromjobsheap?%s' % (
+            self.scheduler_server,
+            self.scheduler_server_port,
+            urllib.urlencode({'uuid': uuid}))
+        try:
+            yield self.server.pagegetter.getPage(url=url, cache=-1)
+        except:
+            LOGGER.error(format_exc())
+        yield self.self.cassandra.remove(
+            uuid,
+            self.cassandra_cf_content)
+        returnValue({'success': True})
+
+    @shared
+    def getJob(self):
+        if self.job_queue:
+            return self.job_queue.pop(0)
+        else:
+            d = Deferred()
+            self.job_requests.append(d)
+            return d
 
     def start(self):
         if self.server_mode:
@@ -40,6 +97,14 @@ class JobGetter(Component):
     def shutdown(self):
         if self.dequeueloop:
             self.dequeueloop.stop()
+        while self.job_requests:
+            if self.job_queue:
+                d = self.job_requests.pop(0)
+                d.callback(self.job_queue.pop(0))
+            else:
+                break
+        for req in self.job_requests:
+            req.errback(JobGetterShutdownException("JobGetter shut down."))
         self.uuid_queue = []
         self.uncached_uuid_queue = []
         self.user_account_queue = []
@@ -47,8 +112,16 @@ class JobGetter(Component):
    
     def dequeue(self):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
+        while self.job_requests:
+            if self.job_queue:
+                d = self.job_requests.pop(0)
+                d.callback(self.job_queue.pop(0))
+            else:
+                break
         if self.uncached_uuid_queue:
             self.lookupjobs()
+        if self.fast_cache_queue:
+            self.getFastCache()
         if self.uuid_dequeueing:
             return
         if len(self.job_queue) > self.job_queue_size or len(self.uuid_queue) > self.uuid_queue_size:
@@ -66,7 +139,7 @@ class JobGetter(Component):
 
     def _dequeuejobsCallback(self, msg):
         self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
-        if len(self.uuid_queue) > 200:
+        if len(self.uuid_queue) > self.uuid_queue_size / 2:
             uuids, self.uuid_queue = self.uuid_queue, []
             d = self.server.redis.mget(*uuids)
             d.addCallback(self._dequeuejobsCallback2, uuids)
@@ -83,8 +156,7 @@ class JobGetter(Component):
         for row in results:
             if row[1]:
                 job = cPickle.loads(decompress(row[1]))
-                LOGGER.debug('Found uuid in Redis: %s' % row[0])
-                self.job_queue.append(job)
+                self.fast_cache_queue.append(job)
             else:
                 LOGGER.debug('Could not find uuids %s in Redis.' % row[0])
                 self.uncached_uuid_queue.append(row[0])
@@ -127,17 +199,23 @@ class JobGetter(Component):
                     service_credentials=service_credentials,
                     user_account=user_account,
                     uuid=user_account['uuid'])
-                self.server.mapJob(job) # Do this now so mapped values are cached.
-                self._setJobCache(job)
-                self.job_queue.append(job)
-
+                self.server.worker.mapJob(job) # Do this now so mapped values are cached.
+                self.setJobCache(job)
+                self.fast_cache_queue.append(job)
+        
     @inlineCallbacks
-    def _setJobCache(self, job):
-        """Set job cache in redis. Expires at now + 7 days."""
-        job_data = compress(cPickle.dumps(job), 1)
-        # TODO: Figure out why txredisapi thinks setex doesn't like sharding.
-        try:
-            yield self.server.redis.set(job.uuid, job_data)
-            yield self.server.redis.expire(job.uuid, 60*60*24*7)
-        except Exception, e:
-            logger.error(str(e))
+    def getFastCache(self):
+        fast_cache_jobs = []
+        while self.fast_cache_queue:
+            job = self.fast_cache_queue.pop(0)
+            if self.server.worker.functions[job.function_name]["check_fast_cache"]:
+                fast_cache_jobs.append(job)
+            else:
+                self.job_queue.append(job)
+        while fast_cache_jobs:
+            jobs, fast_cache_jobs = fast_cache_jobs[0:200], fast_cache_jobs[200:]
+            data = yield self.server.redis.mget(*[x.uuid for x in jobs])
+            for row in zip(jobs, data):
+                if row[1]:
+                    row[0].fast_cache = row[1]
+                self.job_queue.append(row[0])

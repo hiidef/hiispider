@@ -1,11 +1,11 @@
 from ..components.base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
+from twisted.internet.defer import inlineCallbacks, Deferred, returnValue, maybeDeferred
 from copy import copy
 from twisted.internet import task
 import time
 import logging
 from hiispider.exceptions import NegativeCacheException
-
+import zlib
 import os
 import time
 import pprint
@@ -14,13 +14,27 @@ from uuid import uuid4
 from MySQLdb import OperationalError
 from twisted.web.resource import Resource
 import inspect
+import simplejson
+from traceback import format_tb, format_exc
+from hiispider.exceptions import *
+
 
 LOGGER = logging.getLogger(__name__)
+DOTTED_FUNCTION_NAMES = {}
 
 
 def invert(d):
     """Invert a dictionary."""
     return dict([(v, k) for (k, v) in d.iteritems()])
+
+
+def dotted(job):
+    try:
+        return DOTTED_FUNCTION_NAMES[job.function_name]
+    except Exception, e:
+        pass
+    DOTTED_FUNCTION_NAMES[job.function_name] = job.function_name.replace("/", ".")
+    return DOTTED_FUNCTION_NAMES[job.function_name]
 
 
 class Job(object):
@@ -29,7 +43,6 @@ class Job(object):
     fast_cache = None
     uuid = None
     connected = False
-    _dotted_function = None
 
     def __init__(self,
             function_name,
@@ -48,14 +61,6 @@ class Job(object):
         self.subservice = function_name
         self.uuid = uuid
         self.user_account = user_account
-        self._dotted_function = '.'.join(self.function_name.split('/'))
-
-    def get_dotted_function(self):
-        if not self._dotted_function:    
-            self._dotted_function = '.'.join(self.function_name.split('/'))
-        return self._dotted_function
-    
-    dotted_function = property(get_dotted_function)
 
     def __repr__(self):
         return '<job: %s(%s)>' % (self.function_name, self.uuid)
@@ -90,6 +95,9 @@ class JobExecuter(Component):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
+        self.cassandra_cf_content = config["cassandra_cf_content"]            
+        self.delta_debug = config.get('delta_debug', False)
+        self.mysql = self.server.mysql # For legacy plugins.
 
     def initialize(self):
         pass
@@ -98,9 +106,9 @@ class JobExecuter(Component):
         pass
 
     def executeJob(self, job):
-        timer = 'job.%s.duration' % (job.dotted_function)
+        timer = 'job.%s.duration' % dotted(job)
         self.server.stats.timer.start(timer, 0.5)
-        self.server.timer.start('job.time', 0.1)
+        self.server.stats.timer.start('job.time', 0.1)
         if not job.mapped:
             raise Exception("Unmapped job.")
         f = self.functions[job.function_name]
@@ -116,7 +124,10 @@ class JobExecuter(Component):
         return d
 
     def _executeJobCallback(self, data, job, timer):
-        self.server.stats.increment('job.%s.success' % dotted_function)
+        self.server.jobhistoryredis.save(job, True)
+        self.jobs_complete += 1
+        self.server.pagecachequeue.clear(job)
+        self.server.stats.increment('job.%s.success' % dotted(job))
         self.server.stats.timer.stop(timer)
         self.server.stats.timer.stop('job.time')
         return data      
@@ -128,32 +139,89 @@ class JobExecuter(Component):
             error.raiseException()
         except DeleteReservationException:
             self.jobs_complete += 1
-            if job.uuid:
-                self.deleteReservation(job.uuid)
+            self.server.jobgetter.delete(job)
+        except JobGetterShutdownException, e:
+            LOGGER.info(e)
         except StaleContentException:
             self.jobs_complete += 1
         except QueueTimeoutException, e:
             self.job_failures += 1
-            self.stats.increment('job.%s.queuetimeout' % job.dotted_function)
-            self.stats.increment('pg.queuetimeout.hit', 0.05)
-            self.saveJobHistory(job, False)
+            self.server.stats.increment('job.%s.queuetimeout' % dotted(job))
+            self.server.stats.increment('pg.queuetimeout.hit', 0.05)
+            self.server.jobhistoryredis.save(job, False)
         except NegativeCacheException, e:
             self.jobs_complete += 1
             if isinstance(e, NegativeReqCacheException):
-                self.stats.increment('job.%s.negreqcache' % job.dotted_function)
+                self.server.stats.increment('job.%s.negreqcache' % dotted(job))
             else:
-                self.stats.increment('job.%s.negcache' % job.dotted_function)
-            self.saveJobHistory(job, False)
+                self.server.stats.increment('job.%s.negcache' % dotted(job))
+            self.server.jobhistoryredis.save(job, False)
         except Exception, e:
             self.job_failures += 1
-            self.server.stats.increment('job.%s.failure' % dotted_function)
+            self.server.stats.increment('job.%s.failure' % dotted(job))
             self.server.stats.timer.stop(timer)
             self.server.stats.timer.stop('job.time')
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
-            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
-            self.stats.increment('job.exceptions', 0.1)
-            self.saveJobHistory(job, False)
+            tb = '\n'.join(format_tb(error.getTracebackObject()))
+            plugl.error("Error executing job:\n%s\n%s\n%s" % (job, tb, format_exc()))
+            self.server.stats.increment('job.exceptions', 0.1)
+            self.server.jobhistoryredis.save(job, False)
+
+    @inlineCallbacks
+    def getData(self, job):
+        try:
+            data = yield self.server.cassandra.get(
+                key=str(job.user_account["user_id"]),
+                column_family=self.cassandra_cf_content,
+                column=job.uuid)
+            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+        except NotFoundException:
+            return
+    
+    def setData(self, data, job):
+        return self.server.cassandra.insert(
+            str(job.user_account["user_id"]),
+            self.cassandra_cf_content,
+            zlib.compress(simplejson.dumps(data)),
+            column=job.uuid)
+    
+    @inlineCallbacks
+    def generate_deltas(self, new_data, job):
+        delta_func = self.functions[job.function_name]["delta"]
+        if not delta_func:
+            return
+        old_data = yield self.getData(job)
+        if not old_data:
+            return
+        deltas = delta_func(new_data, old_data)
+        for delta in deltas:
+            category = self.functions[job.function_name].get('category', 'unknown')
+            user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
+            mapping = {
+                'data': zlib.compress(simplejson.dumps(delta.data)),
+                'user_id': str(user_id),
+                'category': category,
+                'service': job.subservice.split('/')[0],
+                'subservice': job.subservice,
+                'uuid': job.uuid,
+                "path": delta.path}
+            if self.delta_debug:
+                ts = str(time.time())
+                mapping.update({
+                    'old_data': zlib.compress(simplejson.dumps(old_data)),
+                    'new_data': zlib.compress(simplejson.dumps(new_data)),
+                    'generated': ts,
+                    'updated': ts})
+            yield self.server.cassandra.batch_insert(
+                key=str(delta.id),
+                column_family=self.cassandra_cf_delta,
+                mapping=mapping)
+            yield self.server.cassandra.insert(
+                key=str(user_id),
+                column_family=self.cassandra_cf_delta_user,
+                column=user_column,
+                value='')
 
     def getServerData(self):
         running_time = time.time() - self.start_time
@@ -167,7 +235,7 @@ class JobExecuter(Component):
             "active_requests":self.rq.getActive(),
             "pending_requests":self.rq.getPending()
         }
-        logger.debug("Got server data:\n%s" % pprint.pformat(data))
+        LOGGER.debug("Got server data:\n%s" % pprint.pformat(data))
         return data
     
     def mapJob(self, job):
@@ -330,3 +398,5 @@ class JobExecuter(Component):
     def setHostMaxSimultaneousRequests(self, *args, **kwargs):
         return self.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
     
+    def setFastCache(self, *args, **kwargs):
+        return self.server.jobgetter.setFastCache(*args, **kwargs)

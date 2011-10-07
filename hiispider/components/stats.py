@@ -27,3 +27,7 @@ class Stats(Component):
         def decorator(f):
             return f
         return decorator
+    
+    @shared
+    def increment(self, name, i=1):
+        pass

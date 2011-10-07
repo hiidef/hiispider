@@ -16,7 +16,6 @@ class Cassandra(Component):
         config.update(kwargs)
         if self.server_mode:
             LOGGER.info('Initializing %s' % self.__class__.__name__)        
-            self.cassandra_cf_content = config["cassandra_cf_content"]
             self.client = CassandraClusterPool(
                 config["cassandra_servers"],
                 keyspace=config["cassandra_keyspace"],

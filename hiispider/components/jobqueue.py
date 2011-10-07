@@ -1,4 +1,4 @@
-from ..components import Queue
+from queue import Queue
 
 
 class JobQueue(Queue):

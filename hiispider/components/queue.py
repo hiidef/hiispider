@@ -4,6 +4,7 @@ from copy import copy
 from twisted.internet import reactor
 from ..amqp import amqp as AMQP
 import logging
+from twisted.internet import task
 
 
 LOGGER = logging.getLogger(__name__)
@@ -13,6 +14,8 @@ class Queue(Component):
 
     conn = None
     chan = None
+    queue_size = 0
+    statusloop = None
 
     def __init__(self, server, config, address=None, **kwargs):
         super(Queue, self).__init__(server, address=address)
@@ -58,12 +61,16 @@ class Queue(Component):
                 no_ack=False,
                 consumer_tag="hiispider_consumer")
             self.queue = yield self.conn.queue("hiispider_consumer")
+            self.statusloop = task.LoopingCall(self.status_check)
+            self.statusloop.start(60)
             self.initialized = True
             LOGGER.info('%s initialized.' % self.__class__.__name__)
 
     @inlineCallbacks
     def shutdown(self):
         if self.server_mode:
+            if self.statusloop:
+                self.statusloop.stop()
             LOGGER.info('Closing %s' % self.__class__.__name__)
             yield self.queue.close()
             yield self.chan.channel_close()
@@ -80,3 +87,11 @@ class Queue(Component):
     def basic_ack(self, msg):
         self.chan.basic_ack(msg.delivery_tag)
         return msg
+    
+    @inlineCallbacks
+    def status_check(self):
+        queue_status = yield self.chan.queue_declare(
+            queue=self.amqp_queue,
+            passive=True)
+        self.queue_size = queue_status.fields[1]
+        LOGGER.debug('%s queue size: %d' % (self.__class__.__name__, self.queue_size))

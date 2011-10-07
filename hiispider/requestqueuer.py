@@ -7,12 +7,11 @@ import dateutil.parser
 from .unicodeconverter import convertToUTF8
 from OpenSSL import SSL
 import logging
-
+from .exceptions import QueueTimeoutException
 
 logger = logging.getLogger(__name__)
 
-class QueueTimeoutException(Exception):
-    pass
+
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):
     """A context factory for SSL clients that uses all ciphers."""

@@ -12,9 +12,14 @@ class StaleContentException(Exception):
 class NegativeCacheException(Exception):
     pass
 
+class QueueTimeoutException(Exception):
+    pass
+
 class NegativeHostCacheException(NegativeCacheException):
     pass
 
 class NegativeReqCacheException(NegativeCacheException):
     pass
 
+class JobGetterShutdownException(Exception):
+    pass

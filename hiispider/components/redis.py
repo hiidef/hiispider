@@ -58,3 +58,6 @@ class Redis(Component):
     def expire(self, *args, **kwargs):
         return self.client.expire(*args, **kwargs)
 
+    @shared
+    def delete(self, *args, **kwargs):
+        return self.client.delete(*args, **kwargs)

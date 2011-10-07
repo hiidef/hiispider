@@ -28,7 +28,7 @@ class PageGetter(Component):
             LOGGER.info('Initializing %s' % self.__class__.__name__) 
             self.pg = pg(
                 self.server.cassandra.client,
-                redis_client=self.server.redis.client,
+                redis_client=self.server.redis,
                 rq=self.rq)
             self.initialized = True
             LOGGER.info('%s initialized.' % self.__class__.__name__)
