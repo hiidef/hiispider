@@ -37,7 +37,7 @@ class Redis(Component):
             LOGGER.info("Disconnecting %s" % self.__class__.__name__)
             yield self.client.disconnect()      
             LOGGER.info("%s disconnected." % self.__class__.__name__)
-           
+
     @shared
     def get(self, *args, **kwargs):
         return self.client.get(*args, **kwargs)
@@ -49,7 +49,7 @@ class Redis(Component):
     @shared
     def set(self, *args, **kwargs):
         return self.client.set(*args, **kwargs)
-    
+
     @shared
     def mset(self, *args, **kwargs):
         return self.client.mset(*args, **kwargs)
