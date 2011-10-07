@@ -95,14 +95,6 @@ class JobGetter(Component):
         
     @inlineCallbacks
     def shutdown(self):
-        if self.dequeueloop:
-            self.dequeueloop.stop()
-        while self.job_requests:
-            if self.job_queue:
-                d = self.job_requests.pop(0)
-                d.callback(self.job_queue.pop(0))
-            else:
-                break
         for req in self.job_requests:
             req.errback(JobGetterShutdownException("JobGetter shut down."))
         self.uuid_queue = []
@@ -208,7 +200,7 @@ class JobGetter(Component):
         fast_cache_jobs = []
         while self.fast_cache_queue:
             job = self.fast_cache_queue.pop(0)
-            if self.server.worker.functions[job.function_name]["check_fast_cache"]:
+            if self.server.functions[job.function_name]["check_fast_cache"]:
                 fast_cache_jobs.append(job)
             else:
                 self.job_queue.append(job)

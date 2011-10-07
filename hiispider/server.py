@@ -12,7 +12,7 @@ from hiispider.components import *
 from hiispider.metacomponents import *
 import logging
 from .resources import ExposedResource
-
+import inspect
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -35,6 +35,85 @@ COMPONENTS = [
     JobGetter]
 # The intra-server poll interval
 POLL_INTERVAL = 5
+
+from twisted.python.failure import Failure
+from twisted.web.resource import Resource
+import cStringIO, gzip
+import traceback
+import simplejson
+import logging
+import pprint
+
+logger = logging.getLogger(__name__)
+
+class ExposedFunctionResource(Resource):
+
+    isLeaf = True
+
+    def __init__(self):
+        Resource.__init__(self)
+
+    def _successResponse(self, data):
+        # if isinstance(data, str):
+        #      return data
+        return simplejson.dumps(data)
+
+    def _errorResponse(self, error):
+        reason = str(error.value)
+        # there are two ways to extract a traceback;  we pick whichever one
+        # is longer as that probably has more information
+        tbs = [error.getTraceback(),
+               traceback.format_exc(traceback.extract_tb(error.tb))]
+        tbs.sort(key=lambda x: len(x), reverse=True)
+        tb = tbs[0]
+        logger.error("%s\n%s" % (reason, tb))
+        return simplejson.dumps({"error":reason, "traceback":tb})
+
+    def _immediateResponse(self, data, request):
+        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
+        encoding = request.getHeader("accept-encoding")
+        if encoding and "gzip" in encoding:
+            zbuf = cStringIO.StringIO()
+            zfile = gzip.GzipFile(None, 'wb', 9, zbuf)
+            if isinstance(data, unicode):
+                zfile.write(unicode(data).encode("utf-8"))
+            elif isinstance(data, str):
+                zfile.write(unicode(data, 'utf-8').encode("utf-8"))
+            else:
+                zfile.write(unicode(data).encode("utf-8"))
+            zfile.close()
+            request.setHeader("Content-encoding","gzip")
+            request.write(zbuf.getvalue())
+        else:
+            request.write(data)
+        request.finish()
+
+
+
+import sys
+from twisted.web import server
+from twisted.internet.defer import maybeDeferred
+from .base import BaseResource
+
+class ExposedResource(BaseResource):
+
+    isLeaf = True
+
+    def __init__(self, server, function_name):
+        self.primary_server = server
+        self.function_name = function_name
+        BaseResource.__init__(self)
+
+    def render(self, request):
+        request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
+        kwargs = {}
+        for key in request.args:
+            kwargs[key.replace('.', '_')] = request.args[key][0]
+        d = maybeDeferred(self.primary_server.executeExposedFunction, self.function_name, **kwargs)
+        d.addCallback(self._successResponse)
+        d.addErrback(self._errorResponse)
+        d.addCallback(self._immediateResponse, request)
+        return server.NOT_DONE_YET
 
 
 class ZmqCallbackConnection(ZmqConnection):
@@ -78,10 +157,6 @@ class MetadataClient(ZmqCallbackConnection):
         else:
             super(MetadataClient, self).send([tag])
 
-
-
-
-
 class Server(object):
     """
     Uses metadata servers and clients to tell components where to 
@@ -91,9 +166,12 @@ class Server(object):
     connectionsloop = None
     components_start_deferred = None
     shutdown_trigger = None
+    exposed_function_resources = {}
+    function_resource = None
+    functions = {}
+    delta_functions = {}
 
     def __init__(self, config, address, *args):
-
         self.active = {} # name:address of active components
         self.inactive = {} # name:address of inactive components
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
@@ -210,5 +288,97 @@ class Server(object):
         for client, timestamp in self.metadata_clients.values():
             client.shutdown()
 
+    def expose(self, *args, **kwargs):
+        return self.makeCallable(expose=True, *args, **kwargs)
+
+    def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
+        argspec = self._getArguments(func)
+        required_arguments, optional_arguments = argspec[0], argspec[3]
+        variadic = all(argspec[1:3])
+        if variadic:
+            required_arguments, optional_arguments = [], []
+        # Reservation fast cache is stored on with the reservation
+        if "fast_cache" in required_arguments:
+            del required_arguments[required_arguments.index("fast_cache")]
+            check_fast_cache = True
+        elif "fast_cache" in optional_arguments:
+            del optional_arguments[optional_arguments.index("fast_cache")]
+            check_fast_cache = True
+        else:
+            check_fast_cache = False
+        # Indicates whether to send the reservation's UUID to the function
+        if "job_uuid" in required_arguments:
+            del required_arguments[required_arguments.index("job_uuid")]
+            get_job_uuid = True
+        elif "job_uuid" in optional_arguments:
+            del optional_arguments[optional_arguments.index("job_uuid")]
+            get_job_uuid = True
+        else:
+            get_job_uuid = False
+        # Get function name, usually class/method
+        if name is not None:
+            function_name = name
+        elif hasattr(func, "im_class"):
+            function_name = "%s/%s" % (func.im_class.__name__, func.__name__)
+        else:
+            function_name = func.__name__
+        function_name = function_name.lower()
+        # Make sure we don't already have a function with the same name.
+        if function_name in self.functions:
+            raise Exception("Function %s is already callable." % function_name)
+        # Add it to our list of callable functions.
+        self.functions[function_name] = {
+            "function":func,
+            "id":id(func),
+            "interval":interval,
+            "required_arguments":required_arguments,
+            "optional_arguments":optional_arguments,
+            "check_fast_cache":check_fast_cache,
+            "variadic":variadic,
+            "get_job_uuid":get_job_uuid,
+            "delta":self.delta_functions.get(id(func), None),
+            "category":category,
+        }
+        LOGGER.info("Function %s is now callable." % function_name)
+        if expose and self.function_resource is not None:
+            self.exposed_functions.append(function_name)
+            er = ExposedResource(self, function_name)
+            function_name_parts = function_name.split("/")
+            if len(function_name_parts) > 1:
+                if function_name_parts[0] in self.exposed_function_resources:
+                    r = self.exposed_function_resources[function_name_parts[0]]
+                else:
+                    r = Resource()
+                    self.exposed_function_resources[function_name_parts[0]] = r
+                self.function_resource.putChild(function_name_parts[0], r)
+                r.putChild(function_name_parts[1], er)
+            else:
+                self.function_resource.putChild(function_name_parts[0], er)
+            LOGGER.info("%s is now available via HTTP." % function_name)
+        return function_name
+    
+    def _getArguments(self, func):
+        """Get required or optional arguments for a plugin method.  This
+        function returns a quadruple similar to inspect.getargspec (upon
+        which it is based).  The argument ``self`` is always ignored.  If
+        varargs or keywords (*args or **kwargs) are available, the caller
+        should call call with all available arguments as kwargs.  If there
+        are positional arguments required by the original function not
+        present in the kwargs from the job, be sure to add that to the keyword
+        arguments map in your spider config.  Unlike getargspec, the first element
+        contains only required (positional) arguments, and the third element
+        contains only keyword arguments in the argspec, not their defaults."""
+        # this returns (args, varargs, keywords, defaults)
+        argspec = list(inspect.getargspec(func))
+        if argspec[0] and argspec[0][0] == 'self':
+            argspec[0] = argspec[0][1:]
+        args, defaults = argspec[0], argspec[3]
+        defaults = [] if defaults is None else defaults
+        argspec[0] = args[0:len(args) - len(defaults)]
+        argspec[3] = args[len(args) - len(defaults):]
+        return argspec
+
+    def delta(self, func, handler):
+        self.delta_functions[id(func)] = handler
 
 
