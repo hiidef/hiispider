@@ -216,6 +216,7 @@ class Autogenerator(object):
                 for key in path:
                     _includes = [x[1:] for x in _includes if x and x[0] == key]
                     _ignores = [x[1:] for x in _ignores if x and x[0] == key]
+                    _dates = [x[1:] for x in _dates if x and x[0] == key]
                 # Make sure the ignores don't supersede the includes.
                 for ignore in _ignores:
                     for include in _includes:
