@@ -2,7 +2,7 @@ from .base import Component, shared
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 
-from pylogd.stats import Logd
+from pylogd.stats import Logd, Timer
 from pylogd.twisted import socket
 
 import logging
@@ -19,12 +19,13 @@ class Stats(Component, Logd):
         self.logd_port = config.get('logd_port', 8126)
         self.addr = (self.logd_host, self.logd_port)
         self.prefix = config.get('logd_prefix', '')
+        self.timer = Timer(self)
 
     def initialize(self):
         if self.server_mode:
             self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
             self.initialized = True
-            
+
     def send(self, data, sample_rate=1):
         if sample_rate < 1:
             if random.random() > sample_rate:
