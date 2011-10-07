@@ -26,7 +26,7 @@ class Stats(Component, Logd):
         if self.server_mode:
             self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
 
-    def send(self, data, sample_rate=1)
+    def send(self, data, sample_rate=1):
         if sample_rate < 1:
             if random.random() > sample_rate:
                 return
