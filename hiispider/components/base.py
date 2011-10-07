@@ -6,6 +6,8 @@ from cPickle import loads, dumps
 from hiiguid import HiiGUID
 import logging
 
+from hiispider.exceptions import NotRunningException
+
 LOGGER = logging.getLogger(__name__)
 
 # Factory to make ZmqConnections
@@ -38,7 +40,7 @@ def shared(func):
     def decorator(self, *args, **kwargs):
         if not self._running:
             return NotRunningException("%s not running. Could not "
-                "execute %s" % (self.__class__name, func.__name__))
+                "execute %s" % (self.__class__.name, func.__name__))
         if self.server_mode:
             return maybeDeferred(func, self, *args, **kwargs)
         else:
