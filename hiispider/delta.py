@@ -203,7 +203,8 @@ class Autogenerator(object):
             self.paths = [{
                 "path":[],
                 "includes": includes,
-                "ignores": ignores}]
+                "ignores": ignores,
+                "dates": dates}]
         else:
             self.paths = []
             # Trim the include and ignores to remove items on eacb path.
