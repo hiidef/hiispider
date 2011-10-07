@@ -6,6 +6,7 @@ from hiiguid import HiiGUID
 import dateutil.parser
 from numbers import Number
 
+
 def parseDate(data, dates):
     if not isinstance(data, dict):
         return time.time()
@@ -98,6 +99,7 @@ def _sort(a, ignores, includes):
         except ValueError:
             return a
     return a
+
 
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
