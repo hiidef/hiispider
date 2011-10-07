@@ -23,3 +23,6 @@ class NegativeReqCacheException(NegativeCacheException):
 
 class JobGetterShutdownException(Exception):
     pass
+
+class NotRunningException(Exception):
+	pass

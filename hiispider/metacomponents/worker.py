@@ -10,7 +10,6 @@ LOGGER = logging.getLogger(__name__)
 class Worker(JobExecuter):
 
     simultaneous_jobs = 30
-    running = False
 
     def __init__(self, server, config, address=None, **kwargs):
         super(Worker, self).__init__(server, config, address=address)
@@ -20,7 +19,7 @@ class Worker(JobExecuter):
         self.delta_sample_rate = config.get('delta_sample_rate', 1.0)
 
     def start(self):
-        self.running = True
+        super(Worker, self).start()
         #for i in range(0, self.simultaneous_jobs):
         #    self.work()
 
@@ -29,7 +28,7 @@ class Worker(JobExecuter):
 
     @inlineCallbacks
     def work(self):
-        if not self.running:
+        if not self._running:
             return
         try:
             job = yield self.server.jobgetter.getJob()

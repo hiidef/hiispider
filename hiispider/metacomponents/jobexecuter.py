@@ -90,12 +90,6 @@ class JobExecuter(Component):
         self.delta_debug = config.get('delta_debug', False)
         self.mysql = self.server.mysql # For legacy plugins.
 
-    def initialize(self):
-        pass
-
-    def start(self):
-        pass
-
     def executeJob(self, job):
         timer = 'job.%s.duration' % dotted(job)
         self.server.stats.timer.start(timer, 0.5)

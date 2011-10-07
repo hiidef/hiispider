@@ -92,6 +92,7 @@ class JobGetter(Component):
             self.dequeueloop = task.LoopingCall(self.dequeue)
             self.dequeueloop.start(5)
             self.initialized = True
+        super(JobGetter, self).start()
         
     @inlineCallbacks
     def shutdown(self):
@@ -148,6 +149,9 @@ class JobGetter(Component):
         for row in results:
             if row[1]:
                 job = cPickle.loads(decompress(row[1]))
+                if job.function_name not in self.server.functions:
+                    LOGGER.error("Unknown service type %s" % job.function_name)
+                    continue
                 self.fast_cache_queue.append(job)
             else:
                 LOGGER.debug('Could not find uuids %s in Redis.' % row[0])
@@ -175,6 +179,8 @@ class JobGetter(Component):
             accounts_by_type[user_account["type"]].append(user_account)
         self.user_account_queue = []
         for service_type in accounts_by_type:
+            if service_type not in self.server.functions:
+                LOGGER.error("Unknown service type %s" % service_type)
             accounts_by_id = {}
             for user_account in accounts_by_type[service_type]:
                 accounts_by_id[str(user_account["account_id"])] = user_account

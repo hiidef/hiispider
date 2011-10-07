@@ -36,6 +36,9 @@ def shared(func):
     request. If not, send the request to the component pool.
     """
     def decorator(self, *args, **kwargs):
+        if not self._running:
+            return NotRunningException("%s not running. Could not "
+                "execute %s" % (self.__class__name, func.__name__))
         if self.server_mode:
             return maybeDeferred(func, self, *args, **kwargs)
         else:
@@ -91,6 +94,7 @@ class Component(object):
     component_client = None
     server_mode = False
     connected = True # Connect to other servers of this type.
+    _running = False 
 
     def __init__(self, server, address=None):
         self.server = server
@@ -116,7 +120,7 @@ class Component(object):
 
     def start(self):
         """Abstract initialization method."""
-        pass
+        self._running = True
 
     def _component_server_callback(self, route, tag, function_name, args, kwargs):
         """
@@ -148,6 +152,7 @@ class Component(object):
                 self.initialized = True
 
     def _shutdown(self):
+        self._running = False
         if self.component_client:
             self.component_client.shutdown()
         if self.server_mode and self.connected:

@@ -49,7 +49,7 @@ class ExposedFunctionResource(Resource):
 
     def __init__(self, server, function_name):
         Resource.__init__(self)
-        self.server = server
+        self._server = server
         self.function_name = function_name
     
     def render(self, request):
@@ -57,7 +57,7 @@ class ExposedFunctionResource(Resource):
         kwargs = {}
         for key in request.args:
             kwargs[key.replace('.', '_')] = request.args[key][0]
-        f = self.server.functions[self.function_name]
+        f = self._server.functions[self.function_name]
         d = maybeDeferred(f["function"], **kwargs)
         d.addCallback(self._successResponse)
         d.addErrback(self._errorResponse)
@@ -92,47 +92,6 @@ class ExposedFunctionResource(Resource):
         request.finish()
 
 
-class ZmqCallbackConnection(ZmqConnection):
-    """Adds a messageRecieved callback function."""
-
-    def __init__(self, callback, *args, **kwargs):
-        super(ZmqCallbackConnection, self).__init__(*args, **kwargs)
-        self.callback = callback
-
-
-class ZMQRouter(ZmqCallbackConnection):
-    """Reports metadata to connected clients."""
-
-    socketType = ROUTER
-
-    def messageReceived(self, message):
-        # message is route, tag, optional dumped message
-        message = message[0:2] + [loads(x) for x in message[2:]]
-        self.callback(self, *message)
-
-    def send(self, route, tag, message=None):
-        if message:
-            super(ZMQRouter, self).send([route, tag, dumps(message)])
-        else:
-            super(ZMQRouter, self).send([route, tag])
-
-
-class ZMQDealer(ZmqCallbackConnection):
-    """Requests metadata from a connected server."""
-
-    socketType = DEALER
-
-    def messageReceived(self, message):
-        # message is tag, optional dumped message
-        message = message[0:1] + [loads(x) for x in message[1:]]
-        self.callback(self, *message)
-
-    def send(self, tag, message=None):
-        if message:
-            super(ZMQDealer, self).send([tag, dumps(message)])
-        else:
-            super(ZMQDealer, self).send([tag])
-
 class Server(object):
     """
     Uses metadata servers and clients to tell components where to 
@@ -154,14 +113,7 @@ class Server(object):
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
         self.components = [] # Component objects
         ip, port = address.split(":")[0], int(address.split(":")[1])
-        location = "tcp://%s:%s" % (ip, port)
-        self.metadata_server = ZMQRouter(
-            self.metadata_server_callback, 
-            ZF, 
-            ZmqEndpoint(BIND, location))
         # Connect to servers in the config file.
-        for address in config["servers"]:
-            self.setup_client(address)
         for component in args:
             if not issubclass(component, Component):
                 raise Exception("%s is not a Component" % component)
@@ -185,30 +137,10 @@ class Server(object):
             'before',
             'shutdown',
             self.shutdown)
-    
-    def setup_client(self, address):
-        """Make a connection to address."""
-        if address in self.metadata_clients:
-            self.metadata_clients[address][0].shutdown()
-        client = ZMQDealer(
-            self.metadata_client_callback, 
-            ZF, 
-            ZmqEndpoint(CONNECT, "tcp://%s" % address))
-        self.metadata_clients[address] = [client, time.time()]
-        return client
-
-    def metadata_server_callback(self, server, route, tag, message=None):
-        """Responds to clients with metadata."""
-        if tag == "server":
-            # Message is COMPONENT_ADDRESS
-            server.send(route, "server", (message, self.active))
+        self.expose(self.activeComponents)
         
-    def metadata_client_callback(self, client, tag, message=None):
-        """Handles server responses and updates heartbeat."""
-        if tag == "server":
-            # Message is COMPONENT_ADDRESS, list of COMPONENT_NAME
-            self.metadata_clients[message[0]][1] = time.time()
-            self.makeConnections(message[1])
+    def activeComponents(self):
+        return self.active
 
     def makeConnections(self, data):
         # data is list of {COMPONENT_NAME:COMPONENT_ADDRESS}
@@ -243,29 +175,15 @@ class Server(object):
         d.addCallback(self._start3, start_deferred)
 
     def _start3(self, data, start_deferred):
-
         LOGGER.critical("Starting server with components: %s" % ", ".join(self.active.keys()))
         start_deferred.callback(True)
 
     def getConnections(self):
-        for address in self.metadata_clients:
-            client, timestamp = self.metadata_clients[address]
-            # If it's been more than two poll intervals, attempt to reconnect.
-            if time.time() - timestamp > POLL_INTERVAL * 2 + 1:
-                self.setup_client(address)
-                continue
-            # Request a heartbeat.
-            try:
-                client.send("server", address)
-            except ZMQError, e:
-                print e
+        raise NotImplementedError("getConnections not implemeneted yo.")
 
     def shutdown(self):
         if self.connectionsloop:
             self.connectionsloop.stop()
-        self.metadata_server.shutdown()
-        for client, timestamp in self.metadata_clients.values():
-            client.shutdown()
 
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
