@@ -111,7 +111,9 @@ class Server(object):
     requires = set([])
 
     def __init__(self, config, address, *args):
-        self.servers = config["servers"]
+        self.servers = config.get("servers", None)
+        if not self.servers:
+            self.servers = []
         self.active = {} # name:address of active components
         self.inactive = {} # name:address of inactive components
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
@@ -172,7 +174,7 @@ class Server(object):
         self.connectionsloop = task.LoopingCall(self.getConnections)
         self.connectionsloop.start(POLL_INTERVAL, False)
         # Initialize components, but don't have them do anything yet.
-        d = DeferredList([maybeDeferred(x.initialize) for x in self.components])
+        d = DeferredList([x._initialize() for x in self.components])
         d.addCallback(self._start2, start_deferred)
 
     def _start2(self, data, start_deferred):
@@ -184,7 +186,7 @@ class Server(object):
                 reactor.callLater(1, self._start2, data, start_deferred)
                 return
         # Start the various components.
-        d = DeferredList([maybeDeferred(x.start) for x in self.components])
+        d = DeferredList([x._start() for x in self.components])
         d.addCallback(self._start3, start_deferred)
 
     def _start3(self, data, start_deferred):

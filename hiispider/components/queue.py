@@ -32,51 +32,48 @@ class Queue(Component):
         
     @inlineCallbacks
     def initialize(self):
-        if self.server_mode:
-            LOGGER.info("Initializing %s" % self.__class__.__name__)    
-            self.conn = yield AMQP.createClient(
-                self.amqp_host,
-                self.amqp_vhost,
-                self.amqp_port)
-            yield self.conn.authenticate(self.amqp_username, self.amqp_password)
-            self.chan = yield self.conn.channel(2)
-            yield self.chan.channel_open()
-            yield self.chan.basic_qos(prefetch_count=self.amqp_prefetch_count)
-            # Create Queue
-            yield self.chan.queue_declare(
-                queue=self.amqp_queue,
-                durable=False,
-                exclusive=False,
-                auto_delete=False)
-            # Create Exchange
-            yield self.chan.exchange_declare(
-                exchange=self.amqp_exchange,
-                type="fanout",
-                durable=False,
-                auto_delete=False)
-            yield self.chan.queue_bind(
-                queue=self.amqp_queue,
-                exchange=self.amqp_exchange)
-            yield self.chan.basic_consume(queue=self.amqp_queue,
-                no_ack=False,
-                consumer_tag="hiispider_consumer")
-            self.queue = yield self.conn.queue("hiispider_consumer")
-            self.statusloop = task.LoopingCall(self.status_check)
-            self.statusloop.start(60)
-            self.initialized = True
-            LOGGER.info('%s initialized.' % self.__class__.__name__)
+        LOGGER.info("Initializing %s" % self.__class__.__name__)    
+        self.conn = yield AMQP.createClient(
+            self.amqp_host,
+            self.amqp_vhost,
+            self.amqp_port)
+        yield self.conn.authenticate(self.amqp_username, self.amqp_password)
+        self.chan = yield self.conn.channel(2)
+        yield self.chan.channel_open()
+        yield self.chan.basic_qos(prefetch_count=self.amqp_prefetch_count)
+        # Create Queue
+        yield self.chan.queue_declare(
+            queue=self.amqp_queue,
+            durable=False,
+            exclusive=False,
+            auto_delete=False)
+        # Create Exchange
+        yield self.chan.exchange_declare(
+            exchange=self.amqp_exchange,
+            type="fanout",
+            durable=False,
+            auto_delete=False)
+        yield self.chan.queue_bind(
+            queue=self.amqp_queue,
+            exchange=self.amqp_exchange)
+        yield self.chan.basic_consume(queue=self.amqp_queue,
+            no_ack=False,
+            consumer_tag="hiispider_consumer")
+        self.queue = yield self.conn.queue("hiispider_consumer")
+        self.statusloop = task.LoopingCall(self.status_check)
+        self.statusloop.start(60)
+        LOGGER.info('%s initialized.' % self.__class__.__name__)
 
     @inlineCallbacks
     def shutdown(self):
-        if self.server_mode:
-            if self.statusloop:
-                self.statusloop.stop()
-            LOGGER.info('Closing %s' % self.__class__.__name__)
-            yield self.queue.close()
-            yield self.chan.channel_close()
-            chan0 = yield self.conn.channel(0)
-            yield chan0.connection_close()
-            LOGGER.info('%s closed.' % self.__class__.__name__)
+        if self.statusloop:
+            self.statusloop.stop()
+        LOGGER.info('Closing %s' % self.__class__.__name__)
+        yield self.queue.close()
+        yield self.chan.channel_close()
+        chan0 = yield self.conn.channel(0)
+        yield chan0.connection_close()
+        LOGGER.info('%s closed.' % self.__class__.__name__)
 
     @shared
     def get(self, *args, **kwargs):

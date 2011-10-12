@@ -22,9 +22,7 @@ class Stats(Component, Logd):
         self.timer = Timer(self)
 
     def initialize(self):
-        if self.server_mode:
-            self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
-            self.initialized = True
+        self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
 
     def send(self, data, sample_rate=1):
         if sample_rate < 1:

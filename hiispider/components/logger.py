@@ -30,11 +30,9 @@ class Logger(Component, PylogdHandler):
         logging.Handler.__init__(self)
 
     def initialize(self):
-        if self.server_mode:
-            self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
-            if self.__class__ not in (x.__class__ for x in self.logger.handlers):
-                self.logger.addHandler(self)
-            self.initialized = True
+        self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
+        if self.__class__ not in (x.__class__ for x in self.logger.handlers):
+            self.logger.addHandler(self)
 
     # make sure this stuff isn't done
     def makeSocket(self): return None

@@ -92,10 +92,8 @@ class JobGetter(Component):
             return d
 
     def start(self):
-        if self.server_mode:
-            self.dequeueloop = task.LoopingCall(self.dequeue)
-            self.dequeueloop.start(5)
-            self.initialized = True
+        self.dequeueloop = task.LoopingCall(self.dequeue)
+        self.dequeueloop.start(5)
         super(JobGetter, self).start()
         
     @inlineCallbacks

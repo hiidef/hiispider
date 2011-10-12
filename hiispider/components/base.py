@@ -1,7 +1,7 @@
 from txZMQ import ZmqFactory, ZmqEndpoint, ZmqEndpointType, ZmqConnection
 from zmq.core.constants import DEALER, ROUTER
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, maybeDeferred
+from twisted.internet.defer import Deferred, maybeDeferred, inlineCallbacks, returnValue
 from cPickle import loads, dumps
 from hiiguid import HiiGUID
 import logging
@@ -117,14 +117,28 @@ class Component(object):
         for func in BROADCASTED:
             self.server.expose(func)
 
-    def initialize(self):
+    @inlineCallbacks
+    def _initialize(self):
+        if self.server_mode:
+            yield maybeDeferred(self.initialize)
+        self.initialized = True
+        returnValue(None)
+
+    @inlineCallbacks
+    def _start(self):
         """Abstract initialization method."""
         if self.server_mode:
-            self.initialized = True
-
-    def start(self):
-        """Abstract initialization method."""
+            yield maybeDeferred(self.start)       
         self._running = True
+        returnValue(None)
+
+    def initialize(self):
+        """Abstract initialization method."""
+        pass
+    
+    def start(self):
+        """Abstract start method."""
+        pass
 
     def _component_server_callback(self, route, tag, function_name, args, kwargs):
         """
@@ -152,13 +166,16 @@ class Component(object):
                     *endpoints)
             self.initialized = True
 
+    @inlineCallbacks
     def _shutdown(self):
         self._running = False
         if self.component_client:
             self.component_client.shutdown()
         if self.server_mode and self.allow_clients:
             self.component_server.shutdown()
-        return self.shutdown()
+        if self.server_mode:
+            yield maybeDeferred(self.shutdown)
+        returnValue(None)
 
     def shutdown(self):
         pass

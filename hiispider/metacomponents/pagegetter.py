@@ -18,14 +18,12 @@ class PageGetter(Component):
         config.update(kwargs)
 
     def initialize(self):
-        if self.server_mode:
-            LOGGER.info('Initializing %s' % self.__class__.__name__) 
-            self.pg = pg(
-                self.server.cassandra.client,
-                redis_client=self.server.redis,
-                rq=self.server.rq)
-            self.initialized = True
-            LOGGER.info('%s initialized.' % self.__class__.__name__)
+        LOGGER.info('Initializing %s' % self.__class__.__name__) 
+        self.pg = pg(
+            self.server.cassandra.client,
+            redis_client=self.server.redis,
+            rq=self.server.rq)
+        LOGGER.info('%s initialized.' % self.__class__.__name__)
 
     @shared
     def getPage(self, *args, **kwargs):

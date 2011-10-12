@@ -14,21 +14,23 @@ class Cassandra(Component):
         super(Cassandra, self).__init__(server, address=address)
         config = copy(config)
         config.update(kwargs)
-        if self.server_mode:
-            LOGGER.info('Initializing %s' % self.__class__.__name__)        
-            self.client = CassandraClusterPool(
-                config["cassandra_servers"],
-                keyspace=config["cassandra_keyspace"],
-                pool_size=len(config["cassandra_servers"]) * 2)
-            self.client.startService()
-            self.initialized = True
-            LOGGER.info('%s initialized.' % self.__class__.__name__)        
+        self.servers = config["cassandra_servers"]
+        self.keyspace = config["cassandra_keyspace"]
+        self.pool_size = len(config["cassandra_servers"]) * 2  
+
+    def initialize(self):
+        LOGGER.info('Initializing %s' % self.__class__.__name__)        
+        self.client = CassandraClusterPool(
+            self.servers,
+            keyspace=self.keyspace,
+            pool_size=self.pool_size)
+        self.client.startService()
+        LOGGER.info('%s initialized.' % self.__class__.__name__)        
 
     def shutdown(self):
-        if self.server_mode:
-            LOGGER.info("Stopping %s" % self.__class__.__name__) 
-            self.client.stopService()   
-            LOGGER.info("%s stopped." % self.__class__.__name__)
+        LOGGER.info("Stopping %s" % self.__class__.__name__) 
+        self.client.stopService()   
+        LOGGER.info("%s stopped." % self.__class__.__name__)
             
     @shared
     def batch_insert(self, *args, **kwargs):
