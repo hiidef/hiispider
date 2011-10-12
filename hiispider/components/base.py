@@ -24,7 +24,6 @@ def broadcasted(func):
     Fanout Proxying decorator. If the component is in server_mode, field the
     request. If not, send the request to all members of the component pool.
     """
-    LOGGER.critical("Broadcast decorator %s" % func)
     BROADCASTED.append(func)
     def decorator(self, *args, **kwargs):
         LOGGER.critical("Broadcasted proxying not implemented.")
@@ -141,8 +140,8 @@ class Component(object):
 
     def makeConnection(self, address):
         """Connect to multiple remote servers."""
-        if address not in self.connections and not self.server_mode:
-            if self.__class__ in self.server.requires:
+        if not self.server_mode:
+            if address not in self.connections and self.__class__ in self.server.requires:
                 if self.component_client:
                     self.component_client.shutdown()
                 LOGGER.info("%s connecting to %s" % (self.__class__.__name__, address))
@@ -151,8 +150,7 @@ class Component(object):
                 self.component_client = ComponentClient(
                     ZF, 
                     *endpoints)
-            if not self.server_mode:
-                self.initialized = True
+            self.initialized = True
 
     def _shutdown(self):
         self._running = False
