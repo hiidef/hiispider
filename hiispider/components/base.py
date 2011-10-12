@@ -11,7 +11,7 @@ from hiispider.exceptions import NotRunningException
 LOGGER = logging.getLogger(__name__)
 
 # Factory to make ZmqConnections
-ZF = ZmqFactory()
+
 # Bind / Connect shortcuts
 BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 # Dictionary to hold deferreds. {tag:deferred}
@@ -98,6 +98,7 @@ class Component(object):
     requires = None
 
     def __init__(self, server, address=None):
+        self.ZF = ZmqFactory()
         self.server = server
         self.connections = []
         if address:
@@ -107,7 +108,7 @@ class Component(object):
                 # If in server mode, bind the socket.
                 self.component_server = ComponentServer(
                     self._component_server_callback,
-                    ZF, 
+                    self.ZF, 
                     ZmqEndpoint(BIND, "tcp://%s:%s" % (ip, port)))
         # Shutdown before the reactor.
         reactor.addSystemEventTrigger(
@@ -162,7 +163,7 @@ class Component(object):
                 self.connections.append(address)
                 endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.connections]
                 self.component_client = ComponentClient(
-                    ZF, 
+                    self.ZF, 
                     *endpoints)
             self.initialized = True
 

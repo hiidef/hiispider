@@ -24,7 +24,7 @@ from collections import defaultdict
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
-ZF = ZmqFactory() 
+ 
 # Bind / Connect shortcuts
 BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 # The component class objects we intend to instantiate
