@@ -1,5 +1,5 @@
 from components import Component
-from txZMQ import ZmqFactory, ZmqEndpoint, ZmqEndpointType, ZmqConnection
+from txZMQ import ZmqFactory
 from zmq.core.error import ZMQError
 from zmq.core.constants import ROUTER, DEALER
 from components import Queue, Logger, MySQL
@@ -24,9 +24,8 @@ from collections import defaultdict
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
- 
-# Bind / Connect shortcuts
-BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
+
+
 # The component class objects we intend to instantiate
 COMPONENTS = [
     Cassandra, 
@@ -111,6 +110,7 @@ class Server(object):
     requires = set([])
 
     def __init__(self, config, address, *args):
+        self.ZF = ZmqFactory()
         self.servers = config.get("servers", None)
         if not self.servers:
             self.servers = []
