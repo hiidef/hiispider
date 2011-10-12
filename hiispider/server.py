@@ -4,7 +4,7 @@ from zmq.core.error import ZMQError
 from zmq.core.constants import ROUTER, DEALER
 from components import Queue, Logger, MySQL
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
+from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
 from twisted.internet import task
 from cPickle import loads, dumps
 import time
@@ -15,10 +15,12 @@ from .resources import ExposedResource
 import inspect
 from twisted.web import server
 from twisted.web.resource import Resource
-import cStringIO, gzip
+import gzip
+from io import StringIO
 import simplejson
 from traceback import format_tb, format_exc
-
+from requestqueuer import RequestQueuer
+from collections import defaultdict
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -40,7 +42,7 @@ COMPONENTS = [
     JobHistoryRedis,
     JobGetter]
 # The intra-server poll interval
-POLL_INTERVAL = 5
+POLL_INTERVAL = 60
 
 
 class ExposedFunctionResource(Resource):
@@ -76,7 +78,7 @@ class ExposedFunctionResource(Resource):
         # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
-            zbuf = cStringIO.StringIO()
+            zbuf = StringIO()
             zfile = gzip.GzipFile(None, 'wb', 9, zbuf)
             if isinstance(data, unicode):
                 zfile.write(unicode(data).encode("utf-8"))
@@ -106,13 +108,16 @@ class Server(object):
     function_resource = None
     functions = {}
     delta_functions = {}
+    requires = set([])
 
     def __init__(self, config, address, *args):
+        self.servers = config["servers"]
         self.active = {} # name:address of active components
         self.inactive = {} # name:address of inactive components
         self.metadata_clients = {} # name:(client, last heartbeat timestamp)
         self.components = [] # Component objects
         ip, port = address.split(":")[0], int(address.split(":")[1])
+        self.resource = Resource()
         # Connect to servers in the config file.
         for component in args:
             if not issubclass(component, Component):
@@ -129,23 +134,26 @@ class Server(object):
             else:
                 component = cls(self, config) # Instantiate as inactive
             self.components.append(component)
+            if component.requires:
+                self.requires.update(component.requires)
             setattr(self, name, component) # Attach component as property
-        self.resource = Resource()
+
         self.site_port = reactor.listenTCP(port, server.Site(self.resource))
         # Make sure we shut things down before the reactor stops.
         reactor.addSystemEventTrigger(
             'before',
             'shutdown',
             self.shutdown)
-        self.expose(self.activeComponents)
-        
-    def activeComponents(self):
-        return self.active
+        self.rq = RequestQueuer(
+            max_simultaneous_requests=config["max_simultaneous_requests"],
+            max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
+            max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
+        self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
+        self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
+        self.expose(self.availableComponents)
 
-    def makeConnections(self, data):
-        # data is list of {COMPONENT_NAME:COMPONENT_ADDRESS}
-        for name in data:
-            getattr(self, name).makeConnection(data[name])
+    def availableComponents(self):
+        return {x[0]:x[1] for x in self.active.items() if getattr(self, x[0]).allow_clients}
 
     def start(self):
         start_deferred = Deferred()
@@ -175,11 +183,21 @@ class Server(object):
         d.addCallback(self._start3, start_deferred)
 
     def _start3(self, data, start_deferred):
+        self.getConnections()
         LOGGER.critical("Starting server with components: %s" % ", ".join(self.active.keys()))
         start_deferred.callback(True)
-
+    
+    @inlineCallbacks
     def getConnections(self):
-        raise NotImplementedError("getConnections not implemeneted yo.")
+        connections = defaultdict(list)
+        for server in self.servers:
+            try:
+                data = yield self.rq.getPage("http://%s/server/availablecomponents" % server)
+            except Exception, e:
+                LOGGER.error("Server %s could not be contacted: %s" % (server, format_exc()))
+                continue
+            for key, address in simplejson.loads(data["response"]).items():
+                getattr(self, key).makeConnection(address)
 
     def shutdown(self):
         if self.connectionsloop:
@@ -221,8 +239,10 @@ class Server(object):
             function_name = func.__name__
         function_name = function_name.lower()
         # Make sure we don't already have a function with the same name.
+        #if function_name in self.functions:
+        #    raise Exception("Function %s is already callable." % function_name)
         if function_name in self.functions:
-            raise Exception("Function %s is already callable." % function_name)
+            return
         # Add it to our list of callable functions.
         self.functions[function_name] = {
             "function":func,
@@ -250,7 +270,7 @@ class Server(object):
                 self.resource.putChild(function_name_parts[0], r)
                 r.putChild(function_name_parts[1], er)
             else:
-                self.function_resource.putChild(function_name_parts[0], er)
+                self.resource.putChild(function_name_parts[0], er)
             LOGGER.info("%s is now available via HTTP." % function_name)
         return function_name
     

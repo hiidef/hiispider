@@ -3,7 +3,6 @@ from ..components import Queue
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from twisted.internet import task
-from jobexecuter import Job
 import cPickle
 from zlib import decompress, compress
 from uuid import UUID
@@ -12,8 +11,12 @@ import logging
 from traceback import format_exc
 import urllib
 from ..exceptions import *
+from ..components import Redis, MySQL, JobQueue
+from ..job import Job
+
 
 LOGGER = logging.getLogger(__name__)
+
 
 class JobGetter(Component):
 
@@ -27,6 +30,7 @@ class JobGetter(Component):
     uuid_queue_size = 50
     job_queue_size = 50
     job_requests = []
+    requires = [Redis, MySQL, JobQueue]
 
     def __init__(self, server, config, address=None, **kwargs):
         super(JobGetter, self).__init__(server, address=address)
@@ -70,7 +74,7 @@ class JobGetter(Component):
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))
         try:
-            yield self.server.pagegetter.getPage(url=url, cache=-1)
+            yield self.server.rq.getPage(url=url)
         except:
             LOGGER.error(format_exc())
         yield self.self.cassandra.remove(

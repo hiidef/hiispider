@@ -16,6 +16,7 @@ ZF = ZmqFactory()
 BIND, CONNECT = ZmqEndpointType.Bind, ZmqEndpointType.Connect
 # Dictionary to hold deferreds. {tag:deferred}
 DEFERRED_DICT = {}
+BROADCASTED = []
 
 
 def broadcasted(func):
@@ -23,12 +24,10 @@ def broadcasted(func):
     Fanout Proxying decorator. If the component is in server_mode, field the
     request. If not, send the request to all members of the component pool.
     """
+    LOGGER.critical("Broadcast decorator %s" % func)
+    BROADCASTED.append(func)
     def decorator(self, *args, **kwargs):
         LOGGER.critical("Broadcasted proxying not implemented.")
-        if self.server_mode:
-            return maybeDeferred(func, self, *args, **kwargs)
-        else:
-            return self.component_client.send(func.__name__, args, kwargs)
     return decorator
 
 
@@ -95,25 +94,29 @@ class Component(object):
     initialized = False
     component_client = None
     server_mode = False
-    connected = True # Connect to other servers of this type.
+    allow_clients = True # Allow other machines to connect
     _running = False 
+    requires = None
 
     def __init__(self, server, address=None):
         self.server = server
         self.connections = []
-        if address and self.connected:
-            ip, port = address.split(":")
+        if address:
             self.server_mode = True
-            # If in server mode, bind the socket.
-            self.component_server = ComponentServer(
-                self._component_server_callback,
-                ZF, 
-                ZmqEndpoint(BIND, "tcp://%s:%s" % (ip, port)))
+            if self.allow_clients:
+                ip, port = address.split(":")
+                # If in server mode, bind the socket.
+                self.component_server = ComponentServer(
+                    self._component_server_callback,
+                    ZF, 
+                    ZmqEndpoint(BIND, "tcp://%s:%s" % (ip, port)))
         # Shutdown before the reactor.
         reactor.addSystemEventTrigger(
             'before',
             'shutdown',
             self._shutdown)
+        for func in BROADCASTED:
+            self.server.expose(func)
 
     def initialize(self):
         """Abstract initialization method."""
@@ -138,18 +141,16 @@ class Component(object):
 
     def makeConnection(self, address):
         """Connect to multiple remote servers."""
-        if not self.connected:
-            self.initialized = True
-            return
-        if address not in self.connections:
-            if self.component_client:
-                self.component_client.shutdown()
-            LOGGER.info("Connecting to %s" % address)
-            self.connections.append(address)
-            endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.connections]
-            self.component_client = ComponentClient(
-                ZF, 
-                *endpoints)
+        if address not in self.connections and not self.server_mode:
+            if self.__class__ in self.server.requires:
+                if self.component_client:
+                    self.component_client.shutdown()
+                LOGGER.info("%s connecting to %s" % (self.__class__.__name__, address))
+                self.connections.append(address)
+                endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.connections]
+                self.component_client = ComponentClient(
+                    ZF, 
+                    *endpoints)
             if not self.server_mode:
                 self.initialized = True
 
@@ -157,7 +158,7 @@ class Component(object):
         self._running = False
         if self.component_client:
             self.component_client.shutdown()
-        if self.server_mode and self.connected:
+        if self.server_mode and self.allow_clients:
             self.component_server.shutdown()
         return self.shutdown()
 
