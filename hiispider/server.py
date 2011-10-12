@@ -153,7 +153,12 @@ class Server(object):
         self.expose(self.availableComponents)
 
     def availableComponents(self):
-        return {x[0]:x[1] for x in self.active.items() if getattr(self, x[0]).allow_clients}
+        # dictionary comprehensions 2.7 only
+        d = {}
+        for k,v in self.active.iteritems():
+            if getattr(self, k).allow_clients:
+                d[k] = v
+        return d
 
     def start(self):
         start_deferred = Deferred()
