@@ -38,7 +38,7 @@ def shared(func):
     def decorator(self, *args, **kwargs):
         if not self._running:
             return NotRunningException("%s not running. Could not "
-                "execute %s" % (self.__class__.name, func.__name__))
+                "execute %s" % (self.__class__.__name__, func.__name__))
         if self.server_mode:
             return maybeDeferred(func, self, *args, **kwargs)
         else:
