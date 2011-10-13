@@ -12,8 +12,8 @@ class PageGetter(Component):
 
     requires = [Redis, Cassandra]
 
-    def __init__(self, server, config, address=None, **kwargs):
-        super(PageGetter, self).__init__(server, address=address)
+    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+        super(PageGetter, self).__init__(server, address=address, allow_clients=allow_clients)
         config = copy(config)
         config.update(kwargs)
 

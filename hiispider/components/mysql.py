@@ -11,8 +11,8 @@ LOGGER = logging.getLogger(__name__)
 
 class MySQL(Component):
 
-    def __init__(self, server, config, address=None, **kwargs):
-        super(MySQL, self).__init__(server, address=address)
+    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+        super(MySQL, self).__init__(server, address=address, allow_clients=allow_clients)
         config = copy(config)
         config.update(kwargs)
         self.db = config["mysql_database"]

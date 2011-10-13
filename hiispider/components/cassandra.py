@@ -10,8 +10,8 @@ LOGGER = logging.getLogger(__name__)
 
 class Cassandra(Component):
 
-    def __init__(self, server, config, address=None, **kwargs):
-        super(Cassandra, self).__init__(server, address=address)
+    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+        super(Cassandra, self).__init__(server, address=address, allow_clients=allow_clients)
         config = copy(config)
         config.update(kwargs)
         self.servers = config["cassandra_servers"]

@@ -109,7 +109,7 @@ class Server(object):
     delta_functions = {}
     requires = set([])
 
-    def __init__(self, config, address, *args):
+    def __init__(self, config, address, components=None, provides=None):
         self.ZF = ZmqFactory()
         self.servers = config.get("servers", None)
         if not self.servers:
@@ -121,20 +121,24 @@ class Server(object):
         ip, port = address.split(":")[0], int(address.split(":")[1])
         self.resource = Resource()
         # Connect to servers in the config file.
-        for component in args:
+        for component in components:
             if not issubclass(component, Component):
                 raise Exception("%s is not a Component" % component)
         # Loop through components, initializing them as active or inactive
         # Active components process requests, inactive components proxy
         # requests to other servers.
         for i, cls in enumerate(COMPONENTS):
+            if cls in provides:
+                allow_clients = True
+            else:
+                allow_clients = False
             name = cls.__name__.lower()
-            if cls in args:
+            if cls in components:
                 address = "%s:%s" % (ip, port + 1 + i)
-                component = cls(self, config, address) # Instantiate as active
+                component = cls(self, config, address, allow_clients=allow_clients) # Instantiate as active
                 self.active[name] = address # Keep track of actives
             else:
-                component = cls(self, config) # Instantiate as inactive
+                component = cls(self, config, allow_clients=allow_clients) # Instantiate as inactive
             self.components.append(component)
             if component.requires:
                 self.requires.update(component.requires)
@@ -155,11 +159,11 @@ class Server(object):
         self.expose(self.availableComponents)
 
     def availableComponents(self):
-        # dictionary comprehensions 2.7 only
         d = {}
         for k,v in self.active.iteritems():
             if getattr(self, k).allow_clients:
                 d[k] = v
+        LOGGER.info(str(d))
         return d
 
     def start(self):
@@ -197,6 +201,7 @@ class Server(object):
     @inlineCallbacks
     def getConnections(self):
         connections = defaultdict(list)
+        components = set([])
         for server in self.servers:
             try:
                 data = yield self.rq.getPage("http://%s/server/availablecomponents" % server)
@@ -204,7 +209,11 @@ class Server(object):
                 LOGGER.error("Server %s could not be contacted: %s" % (server, format_exc()))
                 continue
             for key, address in simplejson.loads(data["response"]).items():
-                getattr(self, key).makeConnection(address)
+                component = getattr(self, key)
+                component.addConnection(address)
+                components.add(component)
+        for component in components:
+            component.makeConnections()
 
     def shutdown(self):
         if self.connectionsloop:

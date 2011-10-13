@@ -5,7 +5,8 @@ from twisted.internet import reactor
 from ..amqp import amqp as AMQP
 import logging
 from twisted.internet import task
-
+from txamqp.client import Closed
+from traceback import format_exc
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ class Queue(Component):
     queue_size = 0
     statusloop = None
 
-    def __init__(self, server, config, address=None, **kwargs):
-        super(Queue, self).__init__(server, address=address)
+    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+        super(Queue, self).__init__(server, address=address, allow_clients=allow_clients)
         config = copy(config)
         config.update(kwargs)
         self.amqp_host = config["amqp_host"]
@@ -87,8 +88,24 @@ class Queue(Component):
     
     @inlineCallbacks
     def status_check(self):
-        queue_status = yield self.chan.queue_declare(
-            queue=self.amqp_queue,
-            passive=True)
-        self.queue_size = queue_status.fields[1]
-        LOGGER.debug('%s queue size: %d' % (self.__class__.__name__, self.queue_size))
+        try:
+            queue_status = yield self.chan.queue_declare(
+                queue=self.amqp_queue,
+                passive=True)
+            self.queue_size = queue_status.fields[1]
+            LOGGER.debug('%s queue size: %d' % (self.__class__.__name__, self.queue_size))
+        except:
+            LOGGER.error(format_exc())
+            self.reconnect()
+    
+    @inlineCallbacks
+    def reconnect(self):
+        try:
+            yield self.shutdown()
+        except:
+            LOGGER.error(format_exc())
+        try:
+            yield self.initialize()
+        except:
+            LOGGER.error(format_exc())
+

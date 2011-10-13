@@ -11,8 +11,8 @@ class Worker(JobExecuter):
 
     simultaneous_jobs = 30
 
-    def __init__(self, server, config, address=None, **kwargs):
-        super(Worker, self).__init__(server, config, address=address)
+    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+        super(Worker, self).__init__(server, config, address=address, allow_clients=allow_clients)
         config = copy(config)
         config.update(kwargs)
         self.delta_enabled = config.get('delta_enabled', False)
@@ -20,8 +20,8 @@ class Worker(JobExecuter):
 
     def start(self):
         super(Worker, self).start()
-        #for i in range(0, self.simultaneous_jobs):
-        #    self.work()
+        for i in range(0, self.simultaneous_jobs):
+            self.work()
 
     def shutdown(self):
         self.running = False

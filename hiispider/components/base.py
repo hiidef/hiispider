@@ -97,9 +97,13 @@ class Component(object):
     _running = False 
     requires = None
 
-    def __init__(self, server, address=None):
+    def __init__(self, server, address=None, allow_clients=None):
+        LOGGER.info("%s, %s" % (self.__class__.__name__, allow_clients))
+        if allow_clients is not None:
+            self.allow_clients = allow_clients
         self.server = server
-        self.connections = []
+        self.connections = set([])
+        self.active_connections = set([])
         if address:
             self.server_mode = True
             if self.allow_clients:
@@ -121,7 +125,10 @@ class Component(object):
     def _initialize(self):
         if self.server_mode:
             yield maybeDeferred(self.initialize)
-        self.initialized = True
+            self.initialized = True
+        else:
+            if self.__class__ not in self.server.requires:
+                self.initialized = True
         returnValue(None)
 
     @inlineCallbacks
@@ -152,19 +159,22 @@ class Component(object):
     def _component_server_callback2(self, message, route, tag):
         self.component_server.send(route, tag, message)
 
-    def makeConnection(self, address):
+    def addConnection(self, address):
+        self.connections.add(address)
+
+    def makeConnections(self):
         """Connect to multiple remote servers."""
         if not self.server_mode:
-            if address not in self.connections and self.__class__ in self.server.requires:
+            if len(self.connections - self.active_connections) > 0:
+                self.active_connections.update(self.connections)
                 if self.component_client:
                     self.component_client.shutdown()
-                LOGGER.info("%s connecting to %s" % (self.__class__.__name__, address))
-                self.connections.append(address)
-                endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.connections]
+                LOGGER.info("%s connecting to %s" % (self.__class__.__name__, ", ".join(self.active_connections)))              
+                endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.active_connections]
                 self.component_client = ComponentClient(
                     self.server.ZF, 
                     *endpoints)
-            self.initialized = True
+                self.initialized = True
 
     @inlineCallbacks
     def _shutdown(self):
