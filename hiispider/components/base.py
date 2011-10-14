@@ -5,8 +5,9 @@ from twisted.internet.defer import Deferred, maybeDeferred, inlineCallbacks, ret
 from cPickle import loads, dumps
 from hiiguid import HiiGUID
 import logging
-
 from hiispider.exceptions import NotRunningException
+from ..sleep import Sleep
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +53,8 @@ class ComponentServer(ZmqConnection):
     """
     socketType = ROUTER
 
-    def __init__(self, callback, *args, **kwargs):
+    def __init__(self, identity, callback, *args, **kwargs):
+        self.identity = identity
         self.callback = callback
         super(ComponentServer, self).__init__(*args, **kwargs)
 
@@ -74,6 +76,10 @@ class ComponentClient(ZmqConnection):
     Makes RPC requests to connected server components. Receives responses.
     """
     socketType = DEALER
+
+    def __init__(self, identity, *args, **kwargs):
+        self.identity = identity
+        super(ComponentClient, self).__init__(*args, **kwargs)
     
     def messageReceived(self, message):
         LOGGER.debug("Received response %s" % HiiGUID(message[0]).base36)
@@ -103,7 +109,6 @@ class Component(object):
     requires = None
 
     def __init__(self, server, address=None, allow_clients=None):
-        ZF = ZmqFactory()
         if allow_clients is not None:
             self.allow_clients = allow_clients
         self.server = server
@@ -115,8 +120,9 @@ class Component(object):
                 LOGGER.info("Starting %s server at %s" % (self.__class__.__name__, address))
                 # If in server mode, bind the socket.
                 self.component_server = ComponentServer(
+                    "%s.%s" % (self.server.address, self.__class__.__name__),
                     self._component_server_callback,
-                    ZF, 
+                    self.server.ZF, 
                     ZmqEndpoint(BIND, "tcp://%s" % address))
         # Shutdown before the reactor.
         reactor.addSystemEventTrigger(
@@ -167,19 +173,23 @@ class Component(object):
     def addConnection(self, address):
         self.connections.add(address)
 
+    @inlineCallbacks
     def makeConnections(self):
         """Connect to multiple remote servers."""
         if not self.server_mode:
             if len(self.connections - self.active_connections) > 0:
-                ZF = ZmqFactory()
                 self.active_connections.update(self.connections)
                 if self.component_client:
+                    LOGGER.info("Shutting down component client before reconnect.")
                     self.component_client.shutdown()
+                    yield Sleep(1)
                 LOGGER.info("%s connecting to %s" % (self.__class__.__name__, ", ".join(self.active_connections)))              
                 endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.active_connections]
                 self.component_client = ComponentClient(
-                    ZF, 
+                    "%s.%s" % (self.server.address, self.__class__.__name__),
+                    self.server.ZF, 
                     *endpoints)
+                yield Sleep(1)
                 self.initialized = True
 
     @inlineCallbacks

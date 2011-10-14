@@ -21,6 +21,8 @@ import simplejson
 from traceback import format_tb, format_exc
 from requestqueuer import RequestQueuer
 from collections import defaultdict
+from sleep import Sleep
+
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -43,10 +45,7 @@ COMPONENTS = [
 # The intra-server poll interval
 POLL_INTERVAL = 60
 
-class Sleep(Deferred):
-    def __init__(self, timeout):
-        Deferred.__init__(self)
-        reactor.callLater(timeout, self.callback, None)
+
 
 class ExposedFunctionResource(Resource):
 
@@ -114,6 +113,7 @@ class Server(object):
     requires = set([])
 
     def __init__(self, config, address, components=None, provides=None):
+        self.address = address
         self.ZF = ZmqFactory()
         self.servers = config.get("servers", None)
         if not self.servers:
