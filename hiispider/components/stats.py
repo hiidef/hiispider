@@ -4,10 +4,11 @@ from copy import copy
 
 from pylogd.stats import Logd, Timer
 from pylogd.twisted import socket
-
+from random import random
 import logging
+import msgpack
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 class Stats(Component, Logd):
 
@@ -26,7 +27,7 @@ class Stats(Component, Logd):
 
     def send(self, data, sample_rate=1):
         if sample_rate < 1:
-            if random.random() > sample_rate:
+            if random() > sample_rate:
                 return
             data['rate'] = sample_rate
         if self.prefix:
@@ -34,9 +35,9 @@ class Stats(Component, Logd):
         try:
             self._send(data)
         except:
-            logger.error("unexpected error:\n%s" % traceback.format_exc())
+            LOGGER.error("unexpected error:\n%s" % traceback.format_exc())
 
     @shared
     def _send(self, data):
-        return self.sock.sendto(msg, self.addr)
+        return self.sock.sendto(msgpack.dumps(data), self.addr)
 

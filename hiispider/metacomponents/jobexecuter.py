@@ -16,7 +16,7 @@ from twisted.web.resource import Resource
 import simplejson
 from traceback import format_tb, format_exc
 from hiispider.exceptions import *
-from ..components import Stats, MySQL, JobHistoryRedis
+from ..components import Stats, MySQL, JobHistoryRedis, PageCacheQueue, Cassandra
 from jobgetter import JobGetter 
 from pagegetter import PageGetter
 from ..job import Job
@@ -48,7 +48,7 @@ class JobExecuter(Component):
     jobs_complete = 0
     job_failures = 0
     allow_clients = False
-    requires = [Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter]
+    requires = [Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra]
 
     def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
         super(JobExecuter, self).__init__(server, address=address, allow_clients=allow_clients)

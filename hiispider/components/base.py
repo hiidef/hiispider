@@ -36,10 +36,10 @@ def shared(func):
     request. If not, send the request to the component pool.
     """
     def decorator(self, *args, **kwargs):
-        if not self._running:
-            return NotRunningException("%s not running. Could not "
-                "execute %s" % (self.__class__.__name__, func.__name__))
         if self.server_mode:
+            if not self._running:
+                raise NotRunningException("%s not running. Could not "
+                    "execute %s" % (self.__class__.__name__, func.__name__))
             return maybeDeferred(func, self, *args, **kwargs)
         else:
             return self.component_client.send(func.__name__, args, kwargs)
@@ -59,10 +59,13 @@ class ComponentServer(ZmqConnection):
     def messageReceived(self, message):
         route = message[0]
         tag = message[1]
+        LOGGER.debug("Received request %s via %s" % (HiiGUID(tag).base36, route))
         function_name, args, kwargs = loads(message[2])
         self.callback(route, tag, function_name, args, kwargs)
 
     def send(self, route, tag, message):
+        LOGGER.debug("Responded to request %s via %s" % (HiiGUID(tag).base36, route))
+        LOGGER.debug("%s pending." % len(DEFERRED_DICT))
         super(ComponentServer, self).send([route, tag, dumps(message)])
 
 
@@ -73,12 +76,14 @@ class ComponentClient(ZmqConnection):
     socketType = DEALER
     
     def messageReceived(self, message):
+        LOGGER.debug("Received response %s" % HiiGUID(message[0]).base36)
         DEFERRED_DICT[message[0]].callback(loads(message[1]))
         del DEFERRED_DICT[message[0]]
 
     def send(self, function_name, args, kwargs):
         tag = HiiGUID().packed
         message = dumps([function_name, args, kwargs])
+        LOGGER.debug("Sending request %s" % HiiGUID(tag).base36)
         super(ComponentClient, self).send([tag, message])
         d = Deferred()
         DEFERRED_DICT[tag] = d
@@ -98,7 +103,7 @@ class Component(object):
     requires = None
 
     def __init__(self, server, address=None, allow_clients=None):
-        LOGGER.info("%s, %s" % (self.__class__.__name__, allow_clients))
+        ZF = ZmqFactory()
         if allow_clients is not None:
             self.allow_clients = allow_clients
         self.server = server
@@ -107,12 +112,12 @@ class Component(object):
         if address:
             self.server_mode = True
             if self.allow_clients:
-                ip, port = address.split(":")
+                LOGGER.info("Starting %s server at %s" % (self.__class__.__name__, address))
                 # If in server mode, bind the socket.
                 self.component_server = ComponentServer(
                     self._component_server_callback,
-                    self.server.ZF, 
-                    ZmqEndpoint(BIND, "tcp://%s:%s" % (ip, port)))
+                    ZF, 
+                    ZmqEndpoint(BIND, "tcp://%s" % address))
         # Shutdown before the reactor.
         reactor.addSystemEventTrigger(
             'before',
@@ -134,9 +139,9 @@ class Component(object):
     @inlineCallbacks
     def _start(self):
         """Abstract initialization method."""
+        self._running = True
         if self.server_mode:
             yield maybeDeferred(self.start)       
-        self._running = True
         returnValue(None)
 
     def initialize(self):
@@ -166,13 +171,14 @@ class Component(object):
         """Connect to multiple remote servers."""
         if not self.server_mode:
             if len(self.connections - self.active_connections) > 0:
+                ZF = ZmqFactory()
                 self.active_connections.update(self.connections)
                 if self.component_client:
                     self.component_client.shutdown()
                 LOGGER.info("%s connecting to %s" % (self.__class__.__name__, ", ".join(self.active_connections)))              
                 endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.active_connections]
                 self.component_client = ComponentClient(
-                    self.server.ZF, 
+                    ZF, 
                     *endpoints)
                 self.initialized = True
 

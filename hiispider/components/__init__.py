@@ -7,5 +7,5 @@ from .redis import Redis
 from .stats import Stats
 from .identityqueue import IdentityQueue
 from .jobqueue import JobQueue
-from .pagecachequeue import PagecacheQueue
+from .pagecachequeue import PageCacheQueue
 from .jobhistoryredis import JobHistoryRedis

@@ -8,11 +8,11 @@ from twisted.internet.defer import inlineCallbacks
 
 LOGGER = logging.getLogger(__name__)
 
-class PagecacheQueue(Queue):
+class PageCacheQueue(Queue):
 
     def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
         kwargs["amqp_vhost"] = config["amqp_pagecache_vhost"]
-        super(PagecacheQueue, self).__init__(server, config, address=address, allow_clients=allow_clients, **kwargs)
+        super(PageCacheQueue, self).__init__(server, config, address=address, allow_clients=allow_clients, **kwargs)
         self.pagecache_web_server_host = config["pagecache_web_server_host"]
 
     @shared

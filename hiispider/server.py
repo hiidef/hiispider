@@ -34,7 +34,7 @@ COMPONENTS = [
     Stats,
     Redis,
     JobQueue,
-    PagecacheQueue, 
+    PageCacheQueue, 
     IdentityQueue,
     PageGetter,
     Worker,
@@ -43,6 +43,10 @@ COMPONENTS = [
 # The intra-server poll interval
 POLL_INTERVAL = 60
 
+class Sleep(Deferred):
+    def __init__(self, timeout):
+        Deferred.__init__(self)
+        reactor.callLater(timeout, self.callback, None)
 
 class ExposedFunctionResource(Resource):
 
@@ -137,11 +141,11 @@ class Server(object):
                 address = "%s:%s" % (ip, port + 1 + i)
                 component = cls(self, config, address, allow_clients=allow_clients) # Instantiate as active
                 self.active[name] = address # Keep track of actives
+                if component.requires:
+                    self.requires.update(component.requires)
             else:
                 component = cls(self, config, allow_clients=allow_clients) # Instantiate as inactive
             self.components.append(component)
-            if component.requires:
-                self.requires.update(component.requires)
             setattr(self, name, component) # Attach component as property
 
         self.site_port = reactor.listenTCP(port, server.Site(self.resource))
@@ -171,31 +175,24 @@ class Server(object):
         reactor.callWhenRunning(self._start, start_deferred)
         return start_deferred
     
+    @inlineCallbacks
     def _start(self, start_deferred):
         # After one interval, attempt to communicate with the servers.
         # Important that you wait for a moment while the socket connects,
         # otherwise it breaks.
         self.connectionsloop = task.LoopingCall(self.getConnections)
-        self.connectionsloop.start(POLL_INTERVAL, False)
+        self.connectionsloop.start(POLL_INTERVAL)
         # Initialize components, but don't have them do anything yet.
-        d = DeferredList([x._initialize() for x in self.components])
-        d.addCallback(self._start2, start_deferred)
-
-    def _start2(self, data, start_deferred):
+        yield DeferredList([x._initialize() for x in self.components])
         # Make sure the component is initialized or connected to a 
         # proxy component.
         for x in self.components:
-            if not x.initialized:
+            while not x.initialized:
                 LOGGER.info("Waiting for %s" % x.__class__.__name__)
-                reactor.callLater(1, self._start2, data, start_deferred)
-                return
-        # Start the various components.
-        d = DeferredList([x._start() for x in self.components])
-        d.addCallback(self._start3, start_deferred)
-
-    def _start3(self, data, start_deferred):
-        self.getConnections()
+                yield Sleep(1)
+        yield Sleep(1)      
         LOGGER.critical("Starting server with components: %s" % ", ".join(self.active.keys()))
+        yield DeferredList([x._start() for x in self.components])
         start_deferred.callback(True)
     
     @inlineCallbacks
