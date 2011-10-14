@@ -4,7 +4,8 @@ from copy import copy
 import logging
 from twisted.internet import reactor
 from traceback import format_exc
-
+from ..sleep import Sleep
+from random import random
 LOGGER = logging.getLogger(__name__)
 
 class Worker(JobExecuter):
@@ -17,10 +18,12 @@ class Worker(JobExecuter):
         config.update(kwargs)
         self.delta_enabled = config.get('delta_enabled', False)
         self.delta_sample_rate = config.get('delta_sample_rate', 1.0)
-
+    
+    @inlineCallbacks
     def start(self):
         super(Worker, self).start()
         for i in range(0, self.simultaneous_jobs):
+            yield Sleep(1)
             self.work()
 
     def shutdown(self):

@@ -30,7 +30,7 @@ def broadcasted(func):
         LOGGER.critical("Broadcasted proxying not implemented.")
     return decorator
 
-
+from random import random
 def shared(func):
     """
     Proxying decorator. If the component is in server_mode, field the
@@ -47,11 +47,14 @@ def shared(func):
     return decorator
 
 
+from base64 import b64encode
+
 class ComponentServer(ZmqConnection):
     """
     Receives RPC requests from connected client components. Sends responses.
     """
     socketType = ROUTER
+    multicastRate = 10000000
 
     def __init__(self, identity, callback, *args, **kwargs):
         self.identity = identity
@@ -61,12 +64,12 @@ class ComponentServer(ZmqConnection):
     def messageReceived(self, message):
         route = message[0]
         tag = message[1]
-        LOGGER.debug("Received request %s via %s" % (HiiGUID(tag).base36, route))
+        LOGGER.debug("Received request %s via %s" % (HiiGUID(tag).base36, b64encode(route)))
         function_name, args, kwargs = loads(message[2])
         self.callback(route, tag, function_name, args, kwargs)
 
     def send(self, route, tag, message):
-        LOGGER.debug("Responded to request %s via %s" % (HiiGUID(tag).base36, route))
+        LOGGER.debug("Responded to request %s via %s" % (HiiGUID(tag).base36, b64encode(route)))
         LOGGER.debug("%s pending." % len(DEFERRED_DICT))
         super(ComponentServer, self).send([route, tag, dumps(message)])
 
@@ -76,6 +79,7 @@ class ComponentClient(ZmqConnection):
     Makes RPC requests to connected server components. Receives responses.
     """
     socketType = DEALER
+    multicastRate = 10000000
 
     def __init__(self, identity, *args, **kwargs):
         self.identity = identity
@@ -120,7 +124,7 @@ class Component(object):
                 LOGGER.info("Starting %s server at %s" % (self.__class__.__name__, address))
                 # If in server mode, bind the socket.
                 self.component_server = ComponentServer(
-                    "%s.%s" % (self.server.address, self.__class__.__name__),
+                    "%s.%s.server" % (self.server.address, self.__class__.__name__),
                     self._component_server_callback,
                     self.server.ZF, 
                     ZmqEndpoint(BIND, "tcp://%s" % address))
@@ -186,7 +190,7 @@ class Component(object):
                 LOGGER.info("%s connecting to %s" % (self.__class__.__name__, ", ".join(self.active_connections)))              
                 endpoints = [ZmqEndpoint(CONNECT, "tcp://%s" % x) for x in self.active_connections]
                 self.component_client = ComponentClient(
-                    "%s.%s" % (self.server.address, self.__class__.__name__),
+                    "%s.%s.client" % (self.server.address, self.__class__.__name__),
                     self.server.ZF, 
                     *endpoints)
                 yield Sleep(1)
