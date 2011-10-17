@@ -5,10 +5,13 @@
 
 from unittest import TestCase
 from hiispider import delta
-
+from pprint import pprint
 import os
 import random
 import simplejson
+import time
+from datetime import datetime
+from hiiguid import HiiGUID
 
 srt = lambda l: list(sorted(l))
 datapath = os.path.join(os.path.dirname(__file__), 'deltas')
@@ -19,94 +22,147 @@ def read(path):
         contents = f.read()
     return contents
 
-class CompareListsTest(TestCase):
-    """Test delta._compare_lists."""
+def autogenerate(*args, **kwargs):
+    autogenerator = delta.Autogenerator()
+    return [x.data for x in autogenerator(*args, **kwargs)]
 
-    def test_basics(self, comp=None):
-        """Basic list comparisson tests."""
-        comp = comp or delta._compare_lists
-        # test the identity comparisson against an empty list
-        for i in range(10):
-            rand = srt(random.sample(xrange(10000), 100))
-            self.assertEqual(srt(comp(rand, [])), rand)
-        # test some known valued lists against eachother
-        self.assertEqual(comp([1,2,3,4], [2,3,4]), [1])
-        # going the other way doesn't get us anything
-        self.assertEqual(comp([2,3,4], [1,2,3,4]), [])
-        # test interpolated values
-        self.assertEqual(comp([1,2,3,4,5,6,7], [2,5,1,3]), [4,6,7])
-        # establish what duplicates mean
-        self.assertEqual(comp([1,1,2,3,4,4,5], [1,2,3,4,5]), [])
-        # test comparissons on composite types
-        self.assertEqual(srt(comp(
-            [{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']],
-            [{'c': 3}])),
-            srt([{'a': 1, 'b': 2}, ['foo', 'bar']]),
-        )
-        self.assertEqual(srt(comp(
-            [{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']],
-            [{'a': 1, 'b': 3}])),
-            srt([{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']]),
-        )
-
-class CompareDictsTest(TestCase):
-    """Test delta._compare_dicts."""
-
-    def test_basics(self, comp=None):
-        """Basic dict comparisson tests."""
-        comp = comp or delta._compare_dicts
-        # test the identify comparisson against an empty dict
-        for i in range(10):
-            keys = [''.join(random.sample('abcdefghijklmnopqrstuvwxyz', 3)) for x in range(100)]
-            values = random.sample(xrange(10000), 100)
-            d = dict(zip(keys, values))
-            # compare_dicts returns a list of maps of new-keys to new values
-            self.assertEqual(srt(comp(d, {})), srt([{k:v} for k,v in d.iteritems()]))
-
-    def test_corpus(self, comp=None):
-        """Use tests/deltas/ test case data."""
-        full = lambda x: os.path.join(datapath, x)
-        comp = comp or delta._compare_dicts
-        old = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('old.js')]
-        new = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('new.js')]
-        res = [read(full(f)).decode('base64') for f in sorted(os.listdir(datapath)) if f.endswith('res.js')]
-        old = map(simplejson.loads, old)
-        new = map(simplejson.loads, new)
-        res = map(simplejson.loads, res)
-        for old,new,res in zip(old, new, res):
-            self.assertEqual(comp(new, old), res)
-
-class CompareAutogenerate(CompareDictsTest, CompareListsTest):
+class TestAutogenerate(TestCase):
     """Test delta.autogenerate."""
 
-    def test_basics(self):
-        """Test list & dict basics with autogenerate."""
-        CompareListsTest.test_basics(self, comp=delta.autogenerate)
-        CompareDictsTest.test_basics(self, comp=delta.autogenerate)
+    def setUp(self):
+        autogenerate = delta.Autogenerator()
 
-    def test_corpus(self):
-        """Test corpus with autogenerate."""
-        CompareDictsTest.test_corpus(self, comp=delta.autogenerate)
+    def test_includes(self):
+        def autogenerate_z_include(*args, **kwargs):
+            autogenerator = delta.Autogenerator(includes="z")
+            return [x.data for x in autogenerator(*args, **kwargs)]
+        # Neither value has the included key.
+        a = [{"x":1, "y":1}]
+        b = [{"x":1, "y":1}, {"x":3, "y":2}]
+        self.assertEqual(autogenerate_z_include(a, b), [])
+        # Neither value has the included key, second value is empty.
+        a = [{"x":3, "y":2}]
+        b = []
+        self.assertEqual(autogenerate_z_include(a, b), [])
+        # 'a' has the included key.
+        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
+        b = [{"x":1, "y":1}]
+        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":1}])
+        # 'a' and 'b' have the included key, but it does not change.
+        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
+        b = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}, {"x":4, "y":9, "z":1}]
+        self.assertEqual(autogenerate_z_include(a, b), [])
+        # 'a' and 'b' have the included key, but it does not change.
+        a = [{"x":1, "y":1, "z":2}, {"x":3, "y":2, "z":1}]
+        b = [{"x":5, "y":5, "z":2}, {"x":9, "y":4, "z":1}]
+        self.assertEqual(autogenerate_z_include(a, b), [])
+        # 'a' and 'b' have the included key, and it changes.
+        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
+        b = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]        
+        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":1}])
+        # 'a' and 'b' have the included key, and it changes.
+        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
+        b = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
+        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        # 'a' and 'b' have the included key, and it changes.
+        a = [{"x":1, "y":1, "z":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
+        b = [{"x":4, "y":5, "z":1}]
+        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        # Nested, multiple includes
+        autogenerator = delta.Autogenerator(includes=["example/y", "example/z"], paths="example")
+        a = {"example":[{"x":1, "y":2, "z":3}]}
+        b = {"example":[{"x":2, "y":2, "z":3}]}
+        self.assertEqual(autogenerator(a, b), [])
+        a = {"example":[{"x":2, "y":1, "z":3}]}
+        b = {"example":[{"x":2, "y":2, "z":3}]}  
+        self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":1, "z":3})
+        a = {"example":[{"x":2, "y":2, "z":3}]}
+        b = {"example":[{"x":2, "y":2, "z":4}]}        
+        self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":2, "z":3})
+
+    def test_date_parsing(self):
+        def autogenerate_z_date(*args, **kwargs):
+            autogenerator = delta.Autogenerator(dates="z")
+            return HiiGUID(autogenerator(*args, **kwargs)[0].id).timestamp     
+        now = time.time()
+        b = []
+        # Float
+        a = [{"z":float(now)}]
+        self.assertEqual(autogenerate_z_date(a, b), int(now))
+        # Int
+        a = [{"z":int(now)}]
+        self.assertEqual(autogenerate_z_date(a, b), int(now))        
+        # Str
+        a = [{"z":datetime.fromtimestamp(now).isoformat()}]
+        self.assertEqual(autogenerate_z_date(a, b), int(now)) 
+        # With include
+        autogenerator = delta.Autogenerator(dates="date", includes="z")
+        a = [{"date":int(now), "z":1}]
+        b = [{"date":int(now + 10), "z":1}]
+        self.assertEqual(autogenerator(a, b), [])
+        # With nested include
+        autogenerator = delta.Autogenerator(paths='example', dates="example/date", includes="example/z")
+        a = {"example":[{"date":int(now), "z":1}]}
+        b = {"example":[{"date":int(now + 10), "z":1}]}
+        self.assertEqual(autogenerator(a, b), []) 
+        # Nested, multiple includes
+        autogenerator = delta.Autogenerator(includes=["example/y", "example/z"], paths="example", dates="example/date")
+        a = {"example":[{"x":1, "y":2, "z":3, "date":int(now)}]}
+        b = {"example":[{"x":2, "y":2, "z":3, "date":int(now + 10)}]}
+        self.assertEqual(autogenerator(a, b), [])
+        a = {"example":[{"x":2, "y":1, "z":3, "date":int(now)}]}
+        b = {"example":[{"x":2, "y":2, "z":3, "date":int(now + 10)}]}  
+        self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":1, "z":3, "date":int(now)})
+        a = {"example":[{"x":2, "y":2, "z":3, "date":int(now)}]}
+        b = {"example":[{"x":2, "y":2, "z":4, "date":int(now + 10)}]}        
+        self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":2, "z":3, "date":int(now)})
+
 
     def test_exceptional_cases(self):
         """Test exceptional cases for autogenerate."""
-        # comparing strings throws a type error
+        # autogeneratearing strings throws a type error
         args = ('foo', 'bar')
-        self.assertRaises(TypeError, delta.autogenerate, args)
+        self.assertRaises(TypeError, autogenerate, args)
         # UNLESS(?) they're the same
         args = ('foo', 'foo')
-        self.assertEqual(delta.autogenerate(*args), [])
+        self.assertEqual(autogenerate(*args), [])
         # raise type error if classes aren't the same
         args = (['foo'], {'bar': 1})
-        self.assertRaises(TypeError, delta.autogenerate, args)
+        self.assertRaises(TypeError, autogenerate, args)
         # raises an error if it doesn't know about what classes they are
         class Flub(object):
             def __init__(self, val):
                 self.val = val
-        self.assertRaises(TypeError, delta.autogenerate, (Flub('hi'), Flub('bye')))
+        self.assertRaises(TypeError, autogenerate, (Flub('hi'), Flub('bye')))
         # but it doesn't if cmp works on the object and they're the same...
         class Flub2(Flub):
             def __cmp__(self, other):
                 return cmp(self.val, other.val)
-        self.assertEqual(delta.autogenerate(Flub2('hi'), Flub2('hi')), [])
+        self.assertEqual(autogenerate(Flub2('hi'), Flub2('hi')), [])
 
+    def test_lists(self):
+        """Basic list autogenerate comparisson tests."""
+        # test the identity autogenerate comparisson against an empty list
+        for i in range(10):
+            rand = srt(random.sample(xrange(10000), 100))
+            self.assertEqual(srt(autogenerate(rand, [])), rand)
+        # test some known valued lists against eachother
+        self.assertEqual(autogenerate([1,2,3,4], [2,3,4]), [1])
+        # going the other way doesn't get us anything
+        self.assertEqual(autogenerate([2,3,4], [1,2,3,4]), [])
+        # test interpolated values
+        self.assertEqual(autogenerate([1,2,3,4,5,6,7], [2,5,1,3]), [4,6,7])
+        # establish what duplicates mean
+        self.assertEqual(autogenerate([1,1,2,3,4,4,5], [1,2,3,4,5]), [])
+        # test autogenerate comparissons on autogenerateosite types
+        self.assertEqual(srt(autogenerate(
+            [{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']],
+            [{'c': 3}])),
+            srt([{'a': 1, 'b': 2}, ['foo', 'bar']]),
+        )
+        self.assertEqual(srt(autogenerate(
+            [{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']],
+            [{'a': 1, 'b': 3}])),
+            srt([{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']]),
+        )
+    

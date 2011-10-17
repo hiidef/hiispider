@@ -42,7 +42,7 @@ class InterfaceResource(BaseResource):
                     return self._errorResponse(Failure(exc_value=Exception("Parameter UUID is required.")))
             elif request.postpath[0] == "execute_reservation":
                 if "uuid" in request.args:
-                    d = self.interfaceserver.executeExposedFunction(request.args["uuid"][0])
+                    d = self.interfaceserver.executeJobByUUID(request.args["uuid"][0])
                     add_callbacks(d)
                     return server.NOT_DONE_YET
                 else:

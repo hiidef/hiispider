@@ -89,6 +89,18 @@ class InterfaceServer(CassandraServer):
         returnValue(None)
 
     @inlineCallbacks
+    def executeJobByUUID(self, uuid):    
+        logger.error("Getting job:\n%s" % uuid)
+        try:
+            job = yield self.getJob(uuid)
+        except Exception, e:
+            logger.error('Job Error: %s\n%s' % (e, traceback.format_exc()))
+            return
+        data = yield self.executeJob(job)
+        print data
+        returnValue(data)
+
+    @inlineCallbacks
     def executeExposedFunction(self, function_name, **kwargs):
         function = self.functions[function_name]
         data = yield super(InterfaceServer, self).executeExposedFunction(function_name, **kwargs)
