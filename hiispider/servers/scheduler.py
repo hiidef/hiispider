@@ -77,13 +77,13 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         while len(data) >= 100000 or start == 0:
             sql = """SELECT uuid, type
                      FROM spider_service
+                     WHERE type LIKE "tumblr/%"
                      ORDER BY id LIMIT %s, 100000
                   """ % start
             start += 100000
             data = yield self.mysql.runQuery(sql)
             for row in data:
-                if 'tumblr/' in row["type"]:
-                    self.addToJobsHeap(row["uuid"], row["type"])
+                self.addToJobsHeap(row["uuid"], row["type"])
         if not self.identity_enabled:
             return
         data = []
