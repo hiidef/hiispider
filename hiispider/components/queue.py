@@ -18,8 +18,8 @@ class Queue(Component):
     queue_size = 0
     statusloop = None
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(Queue, self).__init__(server, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(Queue, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
         self.amqp_host = config["amqp_host"]

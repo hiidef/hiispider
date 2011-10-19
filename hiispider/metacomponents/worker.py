@@ -12,8 +12,8 @@ class Worker(JobExecuter):
 
     simultaneous_jobs = 30
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(Worker, self).__init__(server, config, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(Worker, self).__init__(server, config, server_mode, **kwargs)
         config = copy(config)
         config.update(kwargs)
         self.delta_enabled = config.get('delta_enabled', False)
@@ -22,16 +22,23 @@ class Worker(JobExecuter):
     @inlineCallbacks
     def start(self):
         super(Worker, self).start()
-        for i in range(0, self.simultaneous_jobs):
-            yield Sleep(1)
-            self.work()
+        #for i in range(0, self.simultaneous_jobs):
+        #    yield Sleep(1)
+        #    self.ping()
 
     def shutdown(self):
         self.running = False
 
     @inlineCallbacks
+    def ping(self):
+        while True:
+            LOGGER.debug("PING")
+            d = yield self.server.pagegetter.ping()
+            LOGGER.debug(d)
+
+    @inlineCallbacks
     def work(self):
-        if not self._running:
+        if not self.running:
             return
         try:
             job = yield self.server.jobgetter.getJob()

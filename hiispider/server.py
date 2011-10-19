@@ -1,7 +1,4 @@
 from components import Component
-from txZMQ import ZmqFactory
-from zmq.core.error import ZMQError
-from zmq.core.constants import ROUTER, DEALER
 from components import Queue, Logger, MySQL
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks
@@ -22,7 +19,7 @@ from traceback import format_tb, format_exc
 from requestqueuer import RequestQueuer
 from collections import defaultdict
 from sleep import Sleep
-
+from twisted.spread import pb
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -45,6 +42,13 @@ COMPONENTS = [
 # The intra-server poll interval
 POLL_INTERVAL = 60
 
+
+def split_address(s):
+    return s.split(":")[0], int(s.split(":")[1])
+
+
+class ComponentServerException(Exception):
+    pass
 
 
 class ExposedFunctionResource(Resource):
@@ -96,7 +100,7 @@ class ExposedFunctionResource(Resource):
         request.finish()
 
 
-class Server(object):
+class Server(pb.Root):
     """
     Uses metadata servers and clients to tell components where to 
     look for peers.
@@ -111,18 +115,19 @@ class Server(object):
     functions = {}
     delta_functions = {}
     requires = set([])
+    connected_servers = {}
+    connected_server_factories = {}
+    component_servers = defaultdict(dict)
+    server_components = defaultdict(dict)
+    components = [] # Component objects
 
     def __init__(self, config, address, components=None, provides=None):
+        if len(set(provides) - set(components)) > 0:
+            raise ComponentServerException("Cannot provide a component not "
+                "running in server mode.")
+        self.provides = [x.__name__.lower() for x in provides]
         self.address = address
-        self.ZF = ZmqFactory()
-        self.servers = config.get("servers", None)
-        if not self.servers:
-            self.servers = []
-        self.active = {} # name:address of active components
-        self.inactive = {} # name:address of inactive components
-        self.metadata_clients = {} # name:(client, last heartbeat timestamp)
-        self.components = [] # Component objects
-        ip, port = address.split(":")[0], int(address.split(":")[1])
+        self.servers = config.get("servers", [])
         self.resource = Resource()
         # Connect to servers in the config file.
         for component in components:
@@ -132,43 +137,35 @@ class Server(object):
         # Active components process requests, inactive components proxy
         # requests to other servers.
         for i, cls in enumerate(COMPONENTS):
-            if cls in provides:
-                allow_clients = True
-            else:
-                allow_clients = False
             name = cls.__name__.lower()
             if cls in components:
-                address = "%s:%s" % (ip, port + 1 + i)
-                component = cls(self, config, address, allow_clients=allow_clients) # Instantiate as active
-                self.active[name] = address # Keep track of actives
-                if component.requires:
-                    self.requires.update(component.requires)
+                component = cls(self, config, True) # Instantiate as active
+                self.requires.update([x.__name__.lower() for x in component.requires])
             else:
-                component = cls(self, config, allow_clients=allow_clients) # Instantiate as inactive
+                component = cls(self, config, False) # Instantiate as inactive
             self.components.append(component)
             setattr(self, name, component) # Attach component as property
-
-        self.site_port = reactor.listenTCP(port, server.Site(self.resource))
+        # Set up connections 
+        ip, port = split_address(address)
+        self.http_port = reactor.listenTCP(port, server.Site(self.resource))
+        self.rq = RequestQueuer(
+            max_simultaneous_requests=config["max_simultaneous_requests"],
+            max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
+            max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
+        self.pb_port = reactor.listenTCP(port + 1, pb.PBServerFactory(self))
+        # Expose our internal methods.
+        self.expose(self.availableComponents)
+        # Make sure we're not doing something weird like rate limiting local connections
+        self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
+        self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
         # Make sure we shut things down before the reactor stops.
         reactor.addSystemEventTrigger(
             'before',
             'shutdown',
             self.shutdown)
-        self.rq = RequestQueuer(
-            max_simultaneous_requests=config["max_simultaneous_requests"],
-            max_requests_per_host_per_second=config["max_requests_per_host_per_second"],
-            max_simultaneous_requests_per_host=config["max_simultaneous_requests_per_host"])
-        self.rq.setHostMaxRequestsPerSecond("127.0.0.1", 0)
-        self.rq.setHostMaxSimultaneousRequests("127.0.0.1", 0)
-        self.expose(self.availableComponents)
 
     def availableComponents(self):
-        d = {}
-        for k,v in self.active.iteritems():
-            if getattr(self, k).allow_clients:
-                d[k] = v
-        LOGGER.info(str(d))
-        return d
+        return self.provides
 
     def start(self):
         start_deferred = Deferred()
@@ -191,30 +188,63 @@ class Server(object):
                 LOGGER.info("Waiting for %s" % x.__class__.__name__)
                 yield Sleep(1)
         yield Sleep(1)      
-        LOGGER.critical("Starting server with components: %s" % ", ".join(self.active.keys()))
+        active = ", ".join([x.__class__.__name__ for x in self.components if x.server_mode])
+        LOGGER.critical("Starting server with components: %s" % active)
         yield DeferredList([x._start() for x in self.components])
         start_deferred.callback(True)
     
     @inlineCallbacks
     def getConnections(self):
-        connections = defaultdict(list)
-        components = set([])
         for server in self.servers:
             try:
-                data = yield self.rq.getPage("http://%s/server/availablecomponents" % server)
-            except Exception, e:
-                LOGGER.error("Server %s could not be contacted: %s" % (server, format_exc()))
+                url = "http://%s/server/availablecomponents" % server
+                data = yield self.rq.getPage(url)
+            except:
+                LOGGER.error("%s could not be "
+                    "contacted: %s" % (server, format_exc()))
+                for component in set(self.server_components[server]):
+                    del self.component_servers[component][server]
+                self.server_components[server] = {}                    
                 continue
-            for key, address in simplejson.loads(data["response"]).items():
-                component = getattr(self, key)
-                component.addConnection(address)
-                components.add(component)
-        for component in components:
-            component.makeConnections()
+            components = set(simplejson.loads(data["response"]))
+            for component in components - set(self.server_components[server]):
+                if component in self.requires:
+                    try:
+                        connection = yield self.connect(server)
+                        self.server_components[server][component] = connection
+                        self.component_servers[component][server] = connection
+                    except:
+                        LOGGER.error("%s could not be "    
+                            "connected: %s" % (server, format_exc()))                        
+            # depopulate server_components and component_servers
+            for component in set(self.server_components[server]) - components:
+                del self.server_components[server][component]
+                del self.component_servers[component][server]
+            if not self.server_components[server]:
+                self.disconnect(server)
+
+    @inlineCallbacks       
+    def connect(self, server):
+        if server in self.connected_servers:
+            returnValue(self.connected_servers[server])
+        ip, port = split_address(server)
+        factory = pb.PBClientFactory()
+        reactor.connectTCP(ip, port + 1, factory)
+        remote = yield factory.getRootObject()
+        self.connected_servers[server] = remote
+        self.connected_server_factories[server] = factory
+        returnValue(remote)
+
+    def disconnect(self, server):
+        if server in self.connected_servers:
+            self.connected_server_factories[server].disconnect()
+        del self.connected_servers[server]
 
     def shutdown(self):
         if self.connectionsloop:
             self.connectionsloop.stop()
+        self.http_port.stopListening()
+        self.pb_port.stopListening()
 
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)

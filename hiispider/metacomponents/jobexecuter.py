@@ -50,8 +50,8 @@ class JobExecuter(Component):
     allow_clients = False
     requires = [Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra]
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(JobExecuter, self).__init__(server, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(JobExecuter, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
         self.initialized = True

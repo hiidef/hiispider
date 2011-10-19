@@ -12,8 +12,8 @@ class Redis(Component):
 
     client = None
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(Redis, self).__init__(server, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(Redis, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
         self.hosts = config["redis_hosts"]

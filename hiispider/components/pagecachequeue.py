@@ -10,9 +10,9 @@ LOGGER = logging.getLogger(__name__)
 
 class PageCacheQueue(Queue):
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+    def __init__(self, server, config, server_mode, **kwargs):
         kwargs["amqp_vhost"] = config["amqp_pagecache_vhost"]
-        super(PageCacheQueue, self).__init__(server, config, address=address, allow_clients=allow_clients, **kwargs)
+        super(PageCacheQueue, self).__init__(server, config, server_mode, **kwargs)
         self.pagecache_web_server_host = config["pagecache_web_server_host"]
 
     @shared

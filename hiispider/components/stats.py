@@ -12,8 +12,8 @@ LOGGER = logging.getLogger(__name__)
 
 class Stats(Component, Logd):
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(Stats, self).__init__(server, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(Stats, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
         self.logd_host = config.get('logd_host', 'localhost')

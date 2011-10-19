@@ -5,14 +5,14 @@ class JobHistoryRedis(Redis):
 
     enabled = False
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
+    def __init__(self, server, config, server_mode, **kwargs):
         conf = config.get('jobhistory', {})
         if conf and conf.get('enabled', False):
             self.enabled = True
             kwargs["redis_hosts"] = [conf["host"]]
         else:
             kwargs["redis_hosts"] = []
-        super(JobHistoryRedis, self).__init__(server, config, address=address, allow_clients=allow_clients, **kwargs)
+        super(JobHistoryRedis, self).__init__(server, config, server_mode, **kwargs)
 
     @shared
     def save(self, job, success):

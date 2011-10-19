@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 class Logger(Component, PylogdHandler):
 
-    def __init__(self, server, config, address=None, allow_clients=None, **kwargs):
-        super(Logger, self).__init__(server, address=address, allow_clients=allow_clients)
+    def __init__(self, server, config, server_mode, **kwargs):
+        super(Logger, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
         try:
