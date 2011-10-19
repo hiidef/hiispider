@@ -77,7 +77,7 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
         while len(data) >= 100000 or start == 0:
             sql = """SELECT uuid, type
                      FROM spider_service
-                     WHERE type LIKE "tumblr/%"
+                     WHERE type LIKE "tumblr/%%"
                      ORDER BY id LIMIT %s, 100000
                   """ % start
             start += 100000
