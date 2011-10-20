@@ -134,7 +134,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 logger.debug("Got %s deltas" % len(deltas))
                 for delta in deltas:
                     # FIXME why is category not always set?
-                    category = 'unkown'
+                    category = 'unknown'
                     if self.functions[job.function_name]['category']:
                         category = self.functions[job.function_name]['category']
                     service = job.subservice.split('/')[0]
