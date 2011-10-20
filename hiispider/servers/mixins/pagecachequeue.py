@@ -97,4 +97,4 @@ class PageCacheQueueMixin(AMQPMixin):
                 exchange=self.amqp_exchange,
                 content=msg)
         except Exception, e:
-            logger.error('Pagecache Error: %s' % str(error))
+            logger.error('Pagecache Error: %s' % str(e))

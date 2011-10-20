@@ -11,6 +11,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class QueueTimeoutException(Exception):
+    pass
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):
     """A context factory for SSL clients that uses all ciphers."""
@@ -32,6 +34,7 @@ class RequestQueuer(object):
     last_req = {}
     # Dictonary of integer counts of active requests, by host
     active_reqs = {}
+    total_active_reqs = 0
     # Dictionary of user specified minimum request intervals, by host
     min_req_interval_per_hosts = {}
     max_reqs_per_hosts_per_sec = {}
@@ -89,7 +92,7 @@ class RequestQueuer(object):
         """
         Return the number of active requests.
         """
-        return sum(self.active_reqs.values())
+        return self.total_active_reqs
 
     def getActiveRequestsByHost(self):
         """
@@ -173,7 +176,8 @@ class RequestQueuer(object):
                 timeout=60,
                 cookies=None,
                 follow_redirect=True,
-                prioritize=False
+                prioritize=False,
+                queue_timeout=5
                 ):
         """
         Make an HTTP Request.
@@ -200,6 +204,8 @@ class RequestQueuer(object):
            (Default ``True``)
          * *prioritize* -- Move this request to the front of the request
            queue. (Default ``False``)
+         * *queue_timeout* -- Number of seconds to hold a request in the local
+           queue before failure.
         """
         if headers is None:
             headers={}
@@ -229,9 +235,10 @@ class RequestQueuer(object):
             "timeout":timeout,
             "cookies":cookies,
             "follow_redirect":follow_redirect,
-            "deferred":Deferred()
-        }
+            "deferred":Deferred()}
         host = _parse(req["url"])[1]
+        req["host"] = host
+        req["queue_timeout"] = reactor.callLater(queue_timeout, self._timeout, req)
         if host not in self.pending_reqs:
             self.pending_reqs[host] = []
         if prioritize:
@@ -240,6 +247,10 @@ class RequestQueuer(object):
             self.pending_reqs[host].append(req)
         self._checkActive()
         return req["deferred"]
+
+    def _timeout(self, req):
+        self.pending_reqs[req["host"]].remove(req)
+        req["deferred"].errback(QueueTimeoutException("Timeout: %s" % req["host"]))
 
     def _hostRequestCheck(self, host):
         if host not in self.pending_reqs:
@@ -272,11 +283,14 @@ class RequestQueuer(object):
                 elif self._hostRequestCheck(host):
                     dispatched_requests = True
                     req = self.pending_reqs[host].pop(0)
+                    if req["queue_timeout"].active():
+                        req["queue_timeout"].cancel()
                     d = self._getPage(req)
                     d.addCallback(self._requestComplete, req["deferred"], host)
                     d.addErrback(self._requestError, req["deferred"], host)
                     self.last_req[host] = time.time()
                     self.active_reqs[host] = self.active_reqs.get(host, 0) + 1
+                    self.total_active_reqs += 1
             if not dispatched_requests:
                 break
         if self.getPending() > 0:
@@ -284,12 +298,14 @@ class RequestQueuer(object):
 
     def _requestComplete(self, response, deferred, host):
         self.active_reqs[host] -= 1
+        self.total_active_reqs -= 1
         self._checkActive()
         deferred.callback(response)
         return None
 
     def _requestError(self, error, deferred, host):
         self.active_reqs[host] -= 1
+        self.total_active_reqs -= 1
         self._checkActive()
         deferred.errback(error)
         return None

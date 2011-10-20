@@ -22,6 +22,10 @@ from ..resources import ExposedResource
 
 from hiispider import stats
 from hiispider.exceptions import NegativeCacheException
+from hiispider.requestqueuer import QueueTimeoutException
+
+from twisted.conch import manhole, manhole_ssh
+from twisted.cred import portal, checkers
 
 
 def invert(d):
@@ -129,6 +133,19 @@ class BaseServer(object):
         logger.removeHandler(self.logging_handler)
         returnValue(True)
 
+    def getManholeFactory(self, namespace, **passwords):
+        realm = manhole_ssh.TerminalRealm()
+
+        def getManhole(_):
+            return manhole.Manhole(namespace)
+
+        realm.chainedProtocolFactory.protocolFactory = getManhole
+        p = portal.Portal(realm)
+        p.registerChecker(
+            checkers.InMemoryUsernamePasswordDatabaseDontUse(**passwords))
+        f = manhole_ssh.ConchFactory(p)
+        return f
+
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
 
@@ -153,6 +170,12 @@ class BaseServer(object):
         try:
             data = yield self.executeFunction(job.function_name, **job.kwargs)
         except NegativeCacheException:
+            self.stats.timer.stop(timer)
+            self.stats.timer.stop('job.time')
+            raise
+        except QueueTimeoutException:
+            self.stats.timer.stop(timer)
+            self.stats.timer.stop('job.time')
             raise
         except Exception, e:
             self.stats.increment('job.%s.failure' % dotted_function)
@@ -175,6 +198,8 @@ class BaseServer(object):
         logger.debug("Executing function %s with kwargs %r" % (function_key, kwargs))
         try:
             data = yield maybeDeferred(self.functions[function_key]['function'], **kwargs)
+        except NegativeCacheException:
+            raise
         except Exception, e:
             logger.error("Error with %s.\n%s" % (function_key, e))
             raise

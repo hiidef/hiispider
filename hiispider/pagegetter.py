@@ -10,6 +10,7 @@ import time
 import copy
 from zlib import compress, decompress
 from twisted.internet.defer import maybeDeferred, DeferredList
+from twisted.internet.error import ConnectionDone
 from .requestqueuer import RequestQueuer
 from .unicodeconverter import convertToUTF8
 
@@ -164,10 +165,11 @@ class PageGetter:
                 if negative_cache_host and negative_cache_host['timeout'] > time.time():
                     # we get quite a lot of these, ~500/sec on occasions
                     stats.stats.increment('pg.negcache.hit', 0.1)
-                    negative_cache_hit(
-                        negative_cache_host['error'],
-                        NegativeHostCacheException
-                    )
+                    raise NegativeHostCacheException(str(negative_cache_host['error']))
+                    #negative_cache_hit(
+                    #    negative_cache_host['error'],
+                    #    NegativeHostCacheException
+                    #)
                 else:
                     logger.error('Removing host %s from the negative cache' % request_hash)
                     stats.stats.increment('pg.negcache.flush')
@@ -530,11 +532,18 @@ class PageGetter:
             request_kwargs,
             http_history=None,
             host=None):
-        logger.error(error.value.__dict__)
-        logger.error("Unable to get request %s for URL %s.\n%s" % (
-            request_hash,
-            url,
-            error))
+
+        # FIXME:  This is nearly impossible to follow;  it's pretty old code,
+        # with many cooks, and it's become a clusterf*ck of special cases and
+        # callback spaghetti;  badly needs some love
+
+        logger.error("Unable to get request %s for url %s.\nerror.value: %s\nerror: %s" % (
+            request_hash, url, error.value.__dict__, error.__dict__))
+
+        if 'tumblr.com' in url and isinstance(error.value, ConnectionDone):
+            logger.error("Tumblr ConnectionDone() detected.  Skipping negative cache.")
+            return error
+
         try:
             status = int(error.value.status)
         except:
@@ -543,8 +552,13 @@ class PageGetter:
             # profiles
             if 'twitter' in url:
                 return error
-            status = 500
+            elif 'tumblr.com' in url and not error.value.__dict__:
+                status = 404
+            else:
+                status = 500
         if 'tumblr.com' in url and status == 400:
+            logger.error("Tumblr.com error 400, adding to negative cache:\nerror: %s\nargs: %s: url: %s" % (
+                error, request_kwargs, url))
             status = 500
         elif 'twitter.com' in url and status == 502:
             # FIXME twitter says a 502 is a down for maint, but we are getting it when clearly

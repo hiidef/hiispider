@@ -9,9 +9,7 @@ from uuid import uuid4
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web.resource import Resource
 from twisted.internet import reactor
-import twisted.manhole.telnet
 from twisted.web import server
-from traceback import format_exc
 from .mixins import JobGetterMixin
 from .cassandra import CassandraServer
 from .base import Job
@@ -42,17 +40,17 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         self.scheduler_server_port = config["scheduler_server_port"]
         self.cassandra_cf_identity = config["cassandra_cf_identity"]
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_interface_port"], manhole)
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_interface_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
         # delta debugging
         if self.delta_debug:
             self.expose(self.regenerate_delta)
             self.expose(self.regenerate_deltas)
             self.expose(self.updateIdentity)
-            
+
     def start(self):
         start_deferred = super(InterfaceServer, self).start()
         start_deferred.addCallback(self._interfaceStart)
@@ -96,7 +94,7 @@ class InterfaceServer(CassandraServer, JobGetterMixin):
         try:
             job = yield self.getJob(uuid)
         except Exception, e:
-            logger.error('Job Error: %s\n%s' % (e, format_exc()))
+            logger.error('Job Error: %s\n%s' % (e, traceback.format_exc()))
             return
         data = yield self.executeJob(job)
         print data

@@ -1,19 +1,16 @@
-import urllib
 import logging
-from sys import exc_info
+import time
+
 from .cassandra import CassandraServer
 from ..resources import WorkerResource
 from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
+from hiispider.requestqueuer import QueueTimeoutException
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue
-import twisted.manhole.telnet
 import pprint
-from traceback import format_exc, format_tb
-
-from hiispider.exceptions import DeleteReservationException, StaleContentException,\
-        NegativeCacheException
-
+from traceback import format_exc
+from hiispider.exceptions import *
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -24,7 +21,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
     public_ip = None
     local_ip = None
     network_information = {}
-    simultaneous_jobs = 50
+    simultaneous_reqs = 50
     jobs_complete = 0
     job_queue = []
     jobsloop = None
@@ -33,6 +30,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
 
     def __init__(self, config, port=None):
         super(WorkerServer, self).__init__(config)
+        self.t0 = time.time()
         self.setupJobQueue(config)
         self.setupPageCacheQueue(config)
         self.setupJobGetter(config)
@@ -46,11 +44,11 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
         # setup manhole
-        manhole = twisted.manhole.telnet.ShellFactory()
-        manhole.username = config["manhole_username"]
-        manhole.password = config["manhole_password"]
-        manhole.namespace['server'] = self
-        reactor.listenTCP(config["manhole_worker_port"], manhole)
+        manhole_namespace = {
+            'service': self,
+            'globals': globals(),
+        }
+        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
@@ -92,6 +90,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             if self.shutdown_trigger_id is None:
                 return
             logger.error('Dequeue Error: %s' % e)
+            self.queue_requests -= 1
             return
         self.queue_requests -= 1
         logger.debug('Got job %s' % uuid)
@@ -100,7 +99,7 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         except Exception, e:
             logger.error('Job Error: %s\n%s' % (e, format_exc()))
             return
-        # getJob can return None if it encounters an error that is not 
+        # getJob can return None if it encounters an error that is not
         # exceptional, like seeing custom_* jobs in the scheduler
         if job is None:
             return
@@ -114,9 +113,10 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             return
 
     def executeJobs(self):
-        while len(self.job_queue) > 0 and len(self.active_jobs) < self.simultaneous_jobs:
-            job = self.job_queue.pop(0)
-            self.executeJob(job)
+        for i in range(0, self.simultaneous_reqs - self.rq.total_active_reqs):
+            if not len(self.job_queue):
+                return
+            self.executeJob(self.job_queue.pop(0))
 
     @inlineCallbacks
     def executeJob(self, job):
@@ -131,21 +131,20 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
             yield self.deleteReservation(job.uuid)
         except StaleContentException:
             pass
+        except QueueTimeoutException, e:
+            self.stats.increment('job.%s.queuetimeout' % dotted_function)
+            self.stats.increment('pg.queuetimeout.hit', 0.05)
+            self.saveJobHistory(job, False)
         except NegativeCacheException, e:
             if isinstance(e, NegativeReqCacheException):
                 self.stats.increment('job.%s.negreqcache' % dotted_function)
             else:
                 self.stats.increment('job.%s.negcache' % dotted_function)
+            self.saveJobHistory(job, False)
         except Exception, e:
-            if isinstance(e, NegativeReqCacheException):
-                self.stats.increment('job.%s.negreqcache' % dotted_function)
-            elif isinstance(e, NegativeHostCacheException):
-                self.stats.increment('job.%s.negcache' % dotted_function)
-            else:
-                exception_type, exception_value, exception_traceback = exc_info()
-                plugl = logging.getLogger(plugin)
-                plugl.error("Error executing job:\n%s\n%s" % (job, format_tb(exception_traceback)))
-                self.stats.increment('job.exceptions', 0.1)
+            plugl = logging.getLogger(plugin)
+            plugl.error("Error executing job:\n%s\n%s" % (job, format_exc()))
+            self.stats.increment('job.exceptions', 0.1)
             self.saveJobHistory(job, False)
         if (prev_complete != self.jobs_complete) or len(self.active_jobs):
             self.logStatus()
@@ -175,3 +174,4 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         logger.debug('Completed Jobs: %d' % self.jobs_complete)
         logger.debug('Queued Jobs: %d' % len(self.job_queue))
         logger.debug('Active Jobs: %d' % len(self.active_jobs))
+

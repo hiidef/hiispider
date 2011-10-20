@@ -12,7 +12,5 @@ class AMQPMixin(object):
             self.amqp_password = config["amqp_password"]
             self.amqp_queue = config["amqp_queue"]
             self.amqp_exchange = config["amqp_exchange"]
-            self.amqp_prefetch_count = config.get("amqp_prefetch_count", 50)
+            self.amqp_prefetch_count = config.get("amqp_prefetch_count", 1000)
             self.amqp_setup = True
-
-    

@@ -3,6 +3,7 @@ from .base import BaseResource
 from twisted.python.failure import Failure
 from twisted.internet.defer import DeferredList
 
+
 class InterfaceResource(BaseResource):
 
     isLeaf = True
@@ -60,6 +61,5 @@ class InterfaceResource(BaseResource):
             if data[i][0] == True:
                 response[uuids[i]] = data[i][1]
             else:
-                response[uuids[i]] = {"error":str(data[i][1].value)}
+                response[uuids[i]] = {"error": str(data[i][1].value)}
         return response
-
