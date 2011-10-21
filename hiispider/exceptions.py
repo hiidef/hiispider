@@ -26,3 +26,6 @@ class JobGetterShutdownException(Exception):
 
 class NotRunningException(Exception):
 	pass
+
+class ComponentException(Exception):
+    pass

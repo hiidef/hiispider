@@ -154,6 +154,9 @@ class JobGetter(Component):
                 if job.function_name not in self.server.functions:
                     LOGGER.error("Unknown service type %s" % job.function_name)
                     continue
+                if not isinstance(job, Job):
+                    self.uncached_uuid_queue.append(row[0])
+                    continue
                 self.fast_cache_queue.append(job)
             else:
                 LOGGER.debug('Could not find uuids %s in Redis.' % row[0])

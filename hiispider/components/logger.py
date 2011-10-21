@@ -1,5 +1,3 @@
-
-
 from .base import Component, shared
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy

@@ -8,6 +8,7 @@ from .unicodeconverter import convertToUTF8
 from OpenSSL import SSL
 import logging
 from .exceptions import QueueTimeoutException
+from copy import copy
 
 logger = logging.getLogger(__name__)
 
@@ -339,7 +340,7 @@ class RequestQueuer(object):
     def _getPageComplete(self, response, factory):
         return {
                     "response":response,
-                    "headers":factory.response_headers,
+                    "headers":copy(factory.response_headers),
                     "status":int(factory.status),
                     "message":factory.message
                 }
@@ -347,5 +348,5 @@ class RequestQueuer(object):
     def _getPageError(self, error, factory):
         if hasattr(factory, "response_headers") \
             and factory.response_headers is not None:
-            error.value.headers = factory.response_headers
+            error.value.headers = copy(factory.response_headers)
         return error

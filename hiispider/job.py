@@ -1,11 +1,11 @@
 import pprint
 import logging
+from twisted.spread import pb
 
 
 LOGGER = logging.getLogger(__name__)
 
-
-class Job(object):
+class Job(object, pb.Copyable, pb.RemoteCopy):
 
     mapped = False
     fast_cache = None
@@ -28,9 +28,18 @@ class Job(object):
         self.subservice = function_name
         self.uuid = uuid
         self.user_account = user_account
+        self.dotted_name = function_name.replace("/", ".")
 
     def __repr__(self):
         return '<job: %s(%s)>' % (self.function_name, self.uuid)
 
     def __str__(self):
         return 'Job %s: \n%s' % (self.uuid, pprint.pformat(self.__dict__))
+
+#class Job(BaseJob, pb.Copyable):
+#    pass
+#
+#class JobRemoteCopy(pb.RemoteCopy, BaseJob):
+#    pass
+
+pb.setUnjellyableForClass(Job, Job) 

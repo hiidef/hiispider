@@ -1,30 +1,99 @@
 from twisted.internet.defer import Deferred, maybeDeferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 import logging
+import inspect
+import types
+from random import choice
+from twisted.spread import pb
+from ..exceptions import ComponentException
+from ..sleep import Sleep
+from twisted.python.failure import Failure
+from cPickle import dumps, loads
+import twisted.spread.banana
+
+twisted.spread.banana.SIZE_LIMIT = 5 * 1024 * 1024
 
 
 LOGGER = logging.getLogger(__name__)
-BROADCASTED = []
+SHARED = {}
+INVERSE_SHARED = {}
 
 
-def broadcasted(func):
-    """
-    Fanout Proxying decorator. If the component is in server_mode, field the
-    request. If not, send the request to all members of the component pool.
-    """
-    BROADCASTED.append(func)
-    def decorator(self, *args, **kwargs):
-        LOGGER.critical("Broadcasted proxying not implemented.")
-    return decorator
-
-
-def shared(func):
+def broadcasted(f):
     """
     Proxying decorator. If the component is in server_mode, field the
     request. If not, send the request to the component pool.
     """
     def decorator(self, *args, **kwargs):
-        return maybeDeferred(func, self, *args, **kwargs)
+        if not self.initialized:
+            LOGGER.debug("Delaying execution of %s "
+                "until initialization." % self.server_methods[id(f)])
+            reactor.callLater(1, INVERSE_SHARED[id(f)], self, *args, **kwargs)
+            return
+        if self.server_mode:
+            maybeDeferred(f, self, *args, **kwargs)
+        for remote_obj in self.remote_objs.values():
+            try:
+                d = remote_obj.callRemote(
+                    self.server_methods[id(f)], 
+                    *args,
+                    **kwargs)
+            except pb.DeadReferenceError:
+                self.server.disconnect_by_remote_obj(remote_obj)
+                pass
+            d.addErrback( self.trap_broadcasted_disconnect, remote_obj)
+    SHARED[id(decorator)] = (f, id(f))
+    INVERSE_SHARED[id(f)] = decorator
+    return decorator
+
+
+def check_response(data):
+    if isinstance(data, dict) and "_pb_failure" in data:
+        return loads(data["_pb_failure"])
+    return data
+
+
+def shared(f):
+    """
+    Proxying decorator. If the component is in server_mode, field the
+    request. If not, send the request to the component pool.
+    """
+    def decorator(self, *args, **kwargs):
+        if not self.initialized:
+            LOGGER.debug("Delaying execution of %s "
+                "until initialization." % self.server_methods[id(f)])
+            reactor.callLater(1, INVERSE_SHARED[id(f)], self, *args, **kwargs)
+            return
+        if self.server_mode:
+            if "_remote_call" in kwargs:
+                del kwargs["_remote_call"]
+                d = maybeDeferred(f, self, *args, **kwargs)
+                d.addErrback(lambda x:{"_pb_failure":dumps(x)})
+                return d
+            return maybeDeferred(f, self, *args, **kwargs)
+        try:
+            remote_obj = choice(self.remote_objs.values())
+        except IndexError:
+            d = Deferred()
+            d.errback(ComponentException("No active %s "
+                "connections." % self.__class__.__name__))
+            return d
+        kwargs["_remote_call"] = True
+        try:
+            d = remote_obj.callRemote(self.server_methods[id(f)], *args, **kwargs)
+        except pb.DeadReferenceError:
+            self.server.disconnect_by_remote_obj(remote_obj)
+            return INVERSE_SHARED[id(f)](self, *args, **kwargs)
+        d.addCallback(check_response)
+        d.addErrback(
+            self.trap_shared_disconnect, 
+            remote_obj, 
+            INVERSE_SHARED[id(f)], 
+            *args, 
+            **kwargs)
+        return d
+    SHARED[id(decorator)] = (f, id(f))
+    INVERSE_SHARED[id(f)] = decorator
     return decorator
 
 
@@ -39,17 +108,41 @@ class Component(object):
     requires = None
 
     def __init__(self, server, server_mode):
-        if not self.requires:
-            self.requires = []
         self.server = server
         self.server_mode = server_mode
+        name = self.__class__.__name__.lower()
+        self.remote_objs = self.server.component_servers[name]
+        self.server_methods = {}
+        check_method = lambda x: isinstance(x[1], types.MethodType)
+        instance_methods = filter(check_method, inspect.getmembers(self))
+        for instance_method in instance_methods:
+            func = instance_method[1]
+            func_id = id(func.__func__)
+            if func_id in SHARED:
+                name = "%s_%s" % (func.im_class.__name__, SHARED[func_id][0].__name__)
+                setattr(server, "remote_%s" % name, func)
+                self.server_methods[SHARED[func_id][1]] = name
+        if not self.requires:
+            self.requires = []
         # Shutdown before the reactor.
         reactor.addSystemEventTrigger(
             'before',
             'shutdown',
             self._shutdown)
-        for func in BROADCASTED:
-            self.server.expose(func)
+    
+    def trap_broadcasted_disconnect(self, failure, remote_obj):
+        failure.trap(pb.PBConnectionLost)
+        if self.running:
+            LOGGER.error(failure)
+        self.server.disconnect_by_remote_obj(remote_obj)
+        return None
+
+    def trap_shared_disconnect(self, failure, remote_obj, f, *args, **kwargs):
+        failure.trap(pb.PBConnectionLost)
+        if self.running:
+            LOGGER.error(failure)
+        self.server.disconnect_by_remote_obj(remote_obj)
+        return f(self, *args, **kwargs)
 
     @inlineCallbacks
     def _initialize(self):
@@ -57,7 +150,7 @@ class Component(object):
             yield maybeDeferred(self.initialize)
             self.initialized = True
         else:
-            if self.__class__ not in self.server.requires:
+            if self.__class__.__name__.lower() not in self.server.requires:
                 self.initialized = True
         returnValue(None)
 
@@ -80,6 +173,9 @@ class Component(object):
     @inlineCallbacks
     def _shutdown(self):
         self.running = False
+        while self.server.worker.active_workers > 0:
+            LOGGER.debug("%s active jobs." % self.server.worker.active_workers)
+            yield Sleep(1)
         if self.server_mode:
             yield maybeDeferred(self.shutdown)
         returnValue(None)

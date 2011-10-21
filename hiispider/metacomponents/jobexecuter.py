@@ -20,24 +20,15 @@ from ..components import Stats, MySQL, JobHistoryRedis, PageCacheQueue, Cassandr
 from jobgetter import JobGetter 
 from pagegetter import PageGetter
 from ..job import Job
+from ..components.base import ComponentException
 
 
 LOGGER = logging.getLogger(__name__)
-DOTTED_FUNCTION_NAMES = {}
 
 
 def invert(d):
     """Invert a dictionary."""
     return dict([(v, k) for (k, v) in d.iteritems()])
-
-
-def dotted(job):
-    try:
-        return DOTTED_FUNCTION_NAMES[job.function_name]
-    except Exception, e:
-        pass
-    DOTTED_FUNCTION_NAMES[job.function_name] = job.function_name.replace("/", ".")
-    return DOTTED_FUNCTION_NAMES[job.function_name]
 
 
 class JobExecuter(Component):
@@ -64,7 +55,7 @@ class JobExecuter(Component):
         self.mysql = self.server.mysql # For legacy plugins.
 
     def executeJob(self, job):
-        timer = 'job.%s.duration' % dotted(job)
+        timer = 'job.%s.duration' % job.dotted_name
         self.server.stats.timer.start(timer, 0.5)
         self.server.stats.timer.start('job.time', 0.1)
         if not job.mapped:
@@ -82,17 +73,23 @@ class JobExecuter(Component):
         return d
 
     def _executeJobCallback(self, data, job, timer):
+        try:
+            del self.active_jobs[job.uuid]
+        except:
+            pass
         self.server.jobhistoryredis.save(job, True)
         self.jobs_complete += 1
         self.server.pagecachequeue.clear(job)
-        self.server.stats.increment('job.%s.success' % dotted(job))
+        self.server.stats.increment('job.%s.success' % job.dotted_name)
         self.server.stats.timer.stop(timer)
         self.server.stats.timer.stop('job.time')
         return data      
 
     def _executeJobErrback(self, error, job, timer):
-        if job.uuid in self.active_jobs:
+        try:
             del self.active_jobs[job.uuid]
+        except:
+            pass
         try:
             error.raiseException()
         except DeleteReservationException:
@@ -104,19 +101,19 @@ class JobExecuter(Component):
             self.jobs_complete += 1
         except QueueTimeoutException, e:
             self.job_failures += 1
-            self.server.stats.increment('job.%s.queuetimeout' % dotted(job))
+            self.server.stats.increment('job.%s.queuetimeout' % job.dotted_name)
             self.server.stats.increment('pg.queuetimeout.hit', 0.05)
             self.server.jobhistoryredis.save(job, False)
         except NegativeCacheException, e:
             self.jobs_complete += 1
             if isinstance(e, NegativeReqCacheException):
-                self.server.stats.increment('job.%s.negreqcache' % dotted(job))
+                self.server.stats.increment('job.%s.negreqcache' % job.dotted_name)
             else:
-                self.server.stats.increment('job.%s.negcache' % dotted(job))
+                self.server.stats.increment('job.%s.negcache' % job.dotted_name)
             self.server.jobhistoryredis.save(job, False)
         except Exception, e:
             self.job_failures += 1
-            self.server.stats.increment('job.%s.failure' % dotted(job))
+            self.server.stats.increment('job.%s.failure' % job.dotted_name)
             self.server.stats.timer.stop(timer)
             self.server.stats.timer.stop('job.time')
             plugin = job.function_name.split('/')[0]
@@ -202,6 +199,7 @@ class JobExecuter(Component):
                 job.function_name,
                 self.service_mapping[job.function_name]))
             job.function_name = self.service_mapping[job.function_name]
+            job.dotted_name = job.function_name.replace("/", ".")
         service_name = job.function_name.split('/')[0]
         if service_name in self.inverted_args_mapping:
             kwargs = {}

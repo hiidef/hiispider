@@ -6,10 +6,13 @@ from twisted.internet import reactor
 from traceback import format_exc
 from ..sleep import Sleep
 from random import random
+import time
+
 LOGGER = logging.getLogger(__name__)
 
 class Worker(JobExecuter):
 
+    active_workers = 0
     simultaneous_jobs = 30
 
     def __init__(self, server, config, server_mode, **kwargs):
@@ -19,26 +22,16 @@ class Worker(JobExecuter):
         self.delta_enabled = config.get('delta_enabled', False)
         self.delta_sample_rate = config.get('delta_sample_rate', 1.0)
     
-    @inlineCallbacks
     def start(self):
         super(Worker, self).start()
-        #for i in range(0, self.simultaneous_jobs):
-        #    yield Sleep(1)
-        #    self.ping()
-
-    def shutdown(self):
-        self.running = False
-
-    @inlineCallbacks
-    def ping(self):
-        while True:
-            LOGGER.debug("PING")
-            d = yield self.server.pagegetter.ping()
-            LOGGER.debug(d)
+        for i in range(0, self.simultaneous_jobs):
+            self.work()
+            self.active_workers += 1
 
     @inlineCallbacks
     def work(self):
         if not self.running:
+            self.active_workers -= 1
             return
         try:
             job = yield self.server.jobgetter.getJob()
@@ -60,7 +53,8 @@ class Worker(JobExecuter):
         except:
             LOGGER.error(format_exc())
         reactor.callLater(0, self.work)
- 
+
+
     def _deltas(self):
         if self.delta_enabled:
             return random.random() <= self.delta_sample_rate
