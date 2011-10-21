@@ -82,7 +82,8 @@ class SchedulerServer(BaseServer, MySQLMixin, JobQueueMixin, IdentityQueueMixin)
             start += 100000
             data = yield self.mysql.runQuery(sql)
             for row in data:
-                self.addToJobsHeap(row["uuid"], row["type"])
+                if not 'tumblr/' in row["type"]:
+                    self.addToJobsHeap(row["uuid"], row["type"])
         if not self.identity_enabled:
             return
         data = []
