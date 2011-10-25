@@ -30,7 +30,7 @@ class PageGetter(Component):
     @shared
     def getPage(self, *args, **kwargs):
         return self.pg.getPage(*args, **kwargs)
-    
+
     @broadcasted
     def setHostMaxRequestsPerSecond(self, *args, **kwargs):
         return self.server.rq.setHostMaxRequestsPerSecond(*args, **kwargs)

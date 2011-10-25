@@ -7,6 +7,7 @@ import logging
 from twisted.internet import task
 from txamqp.client import Closed
 from traceback import format_exc
+from twisted.spread import pb
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ class Queue(Component):
 
     def basic_ack(self, msg):
         self.chan.basic_ack(msg.delivery_tag)
-        return msg
+        return msg.content.body
     
     @inlineCallbacks
     def status_check(self):

@@ -95,7 +95,7 @@ class JobGetter(Component):
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(5)
         super(JobGetter, self).start()
-        
+
     @inlineCallbacks
     def shutdown(self):
         for req in self.job_requests:
@@ -132,8 +132,8 @@ class JobGetter(Component):
         else:
             self.uuid_dequeueing = False
 
-    def _dequeuejobsCallback(self, msg):
-        self.uuid_queue.append(UUID(bytes=msg.content.body).hex)
+    def _dequeuejobsCallback(self, content):
+        self.uuid_queue.append(UUID(bytes=content).hex)
         if len(self.uuid_queue) > self.uuid_queue_size / 2:
             uuids, self.uuid_queue = self.uuid_queue, []
             d = self.server.redis.mget(*uuids)

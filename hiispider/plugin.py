@@ -62,39 +62,46 @@ class HiiSpiderPlugin(object):
         for instance_method in instance_methods:
             instance_id = id(instance_method[1].__func__)
             if instance_id in DELTA_FUNCTIONS:
-                self.spider.delta(
+                self.spider.server.delta(
                     instance_method[1],
                     DELTA_FUNCTIONS[instance_id])
             if instance_id in EXPOSED_FUNCTIONS:
-                self.spider.expose(
+                self.spider.server.expose(
                     instance_method[1],
                     interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
                     name=EXPOSED_FUNCTIONS[instance_id]["name"],
                     category=EXPOSED_FUNCTIONS[instance_id]["category"])
                 if instance_id in FUNCTION_ALIASES:
                     for name in FUNCTION_ALIASES[instance_id]:
-                        self.spider.expose(
+                        self.spider.server.expose(
                             instance_method[1],
                             interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
                             name=name)
             if instance_id in CALLABLE_FUNCTIONS:
-                self.spider.expose(
+                self.spider.server.expose(
                     instance_method[1],
                     interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                     name=CALLABLE_FUNCTIONS[instance_id]["name"],
                     category=CALLABLE_FUNCTIONS[instance_id]["category"])
                 if instance_id in FUNCTION_ALIASES:
                     for name in CALLABLE_FUNCTIONS[instance_id]:
-                        self.spider.expose(
+                        self.spider.server.expose(
                             instance_method[1],
                             interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                             name=name)
 
     def setFastCache(self, uuid, data):
-        return self.spider.setFastCache(uuid, data)
+        return self.spider.server.jobgetter.setFastCache(uuid, data)
 
     def getPage(self, *args, **kwargs):
-        return self.spider.getPage(*args, **kwargs)
+        return self.spider.server.pagegetter.getPage(*args, **kwargs)
+
+    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+        return self.spider.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
+
+    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+        return self.spider.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
+        
 
     @make_callable
     def _getIdentity(self, *args, **kwargs):

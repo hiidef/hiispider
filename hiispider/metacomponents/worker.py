@@ -14,6 +14,7 @@ class Worker(JobExecuter):
 
     active_workers = 0
     simultaneous_jobs = 30
+    jobs = set([])
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Worker, self).__init__(server, config, server_mode, **kwargs)
@@ -26,21 +27,27 @@ class Worker(JobExecuter):
         super(Worker, self).start()
         for i in range(0, self.simultaneous_jobs):
             self.work()
-            self.active_workers += 1
 
     @inlineCallbacks
     def work(self):
         if not self.running:
-            self.active_workers -= 1
             return
         try:
             job = yield self.server.jobgetter.getJob()
-            data = yield self.executeJob(job)
-        except Exception, e:
+        except:
             LOGGER.error(format_exc())
+            reactor.callLater(0, self.work)
+            return         
+        self.jobs.add(job)
+        try:
+            data = yield self.executeJob(job)
+        except:
+            self.jobs.remove(job)
+            LOGGER.error("Job: %s\n%s" % (job.function_name, format_exc()))
             reactor.callLater(0, self.work)
             return
         if data is None:
+            self.jobs.remove(job)
             reactor.callLater(0, self.work)
             return
         if self.deltas:
@@ -49,9 +56,10 @@ class Worker(JobExecuter):
             except:
                 LOGGER.error(format_exc())
         try:
-            self.setData(data, job)
+            self.server.cassandra.setData(data, job)
         except:
-            LOGGER.error(format_exc())
+            LOGGER.error("Job: %s\n%s" % (job.function_name, format_exc()))
+        self.jobs.remove(job)
         reactor.callLater(0, self.work)
 
 

@@ -50,7 +50,7 @@ class JobExecuter(Component):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
-        self.cassandra_cf_content = config["cassandra_cf_content"]            
+                    
         self.delta_debug = config.get('delta_debug', False)
         self.mysql = self.server.mysql # For legacy plugins.
 
@@ -119,34 +119,16 @@ class JobExecuter(Component):
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             tb = '\n'.join(format_tb(error.getTracebackObject()))
-            plugl.error("Error executing job:\n%s\n%s\n%s" % (job, tb, format_exc()))
+            plugl.error("Error executing job:%s\n%s\n%s" % (job.function_name, tb, format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
 
-    @inlineCallbacks
-    def getData(self, job):
-        try:
-            data = yield self.server.cassandra.get(
-                key=str(job.user_account["user_id"]),
-                column_family=self.cassandra_cf_content,
-                column=job.uuid)
-            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
-        except NotFoundException:
-            return
-    
-    def setData(self, data, job):
-        return self.server.cassandra.insert(
-            str(job.user_account["user_id"]),
-            self.cassandra_cf_content,
-            zlib.compress(simplejson.dumps(data)),
-            column=job.uuid)
-    
     @inlineCallbacks
     def generate_deltas(self, new_data, job):
         delta_func = self.server.functions[job.function_name]["delta"]
         if not delta_func:
             return
-        old_data = yield self.getData(job)
+        old_data = yield self.server.cassandra.getData(job)
         if not old_data:
             return
         deltas = delta_func(new_data, old_data)
@@ -195,9 +177,6 @@ class JobExecuter(Component):
     
     def mapJob(self, job):
         if job.function_name in self.service_mapping:
-            LOGGER.debug('Remapping resource %s to %s' % (
-                job.function_name,
-                self.service_mapping[job.function_name]))
             job.function_name = self.service_mapping[job.function_name]
             job.dotted_name = job.function_name.replace("/", ".")
         service_name = job.function_name.split('/')[0]
@@ -241,23 +220,24 @@ class JobExecuter(Component):
         job.mapped = True
         return job
 
-    def expose(self, *args, **kwargs):
-        return self.server.expose(*args, **kwargs)
-
-    def make_callable(self, *args, **kwargs):
-        return self.server.make_callable(*args, **kwargs)
-
-    def delta(self, *args, **kwargs):
-        return self.server.delta(*args, **kwargs)
-
-    def getPage(self, *args, **kwargs):
-        return self.server.pagegetter.getPage(*args, **kwargs)
-
-    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
-        return self.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
-
-    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
-        return self.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
-    
-    def setFastCache(self, *args, **kwargs):
-        return self.server.jobgetter.setFastCache(*args, **kwargs)
+#    def expose(self, *args, **kwargs):
+#        return self.server.expose(*args, **kwargs)
+#
+#    def make_callable(self, *args, **kwargs):
+#        return self.server.make_callable(*args, **kwargs)
+#
+#    def delta(self, *args, **kwargs):
+#        return self.server.delta(*args, **kwargs)
+#
+#    def getPage(self, *args, **kwargs):
+#        return self.server.pagegetter.getPage(*args, **kwargs)
+#
+#    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+#        return self.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
+#
+#    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+#        return self.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
+#    
+#    def setFastCache(self, *args, **kwargs):
+#        return self.server.jobgetter.setFastCache(*args, **kwargs)
+#

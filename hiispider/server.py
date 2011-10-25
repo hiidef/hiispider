@@ -22,6 +22,9 @@ from sleep import Sleep
 from twisted.spread import pb
 from decorators import SHARED, BROADCASTED
 from twisted.internet.error import ConnectionRefusedError
+import twisted.spread.banana
+
+twisted.spread.banana.SIZE_LIMIT = 10 * 1024 * 1024
 
 LOGGER = logging.getLogger(__name__)
 # Factory to make ZmqConnections
@@ -267,8 +270,8 @@ class Server(pb.Root):
     def shutdown(self):
         if self.connectionsloop:
             self.connectionsloop.stop()
-        while self.worker.active_workers > 0:
-            LOGGER.debug("%s active jobs." % self.worker.active_workers)
+        while len(self.worker.jobs) > 0:
+            LOGGER.debug("Active jobs: %s" % (self.worker.jobs))
             yield Sleep(1)
         if self.http:
             self.http.stopListening()
@@ -370,5 +373,8 @@ class Server(pb.Root):
 
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
+
+
+
 
 
