@@ -43,9 +43,10 @@ class Worker(JobExecuter):
     def _job_speed_report(self):
         jps = self.jobs_complete / (time.time() - self.job_speed_start)
         fps = self.job_failures / (time.time() - self.job_speed_start)
-        LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
         LOGGER.info("Total times:\n %s" % pformat(sorted(self.timer.items(), key=lambda x:x[1])))
         LOGGER.info("Average times:\n %s" % pformat(sorted([(x, float(self.timer[x])/self.timer_count[x]) for x in self.timer], key=lambda x:x[1])))
+        LOGGER.info("Active jobs:\n %s" % self.jobs)
+        LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
         self.job_speed_start = time.time()
         self.jobs_complete = 0
         self.job_failures = 0
