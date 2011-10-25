@@ -14,7 +14,8 @@ from pprint import pformat
 LOGGER = logging.getLogger(__name__)  
 
 class Worker(JobExecuter):
-
+ 
+    delta_enabled = False
     active_workers = 0
     simultaneous_jobs = 25
     jobs = set([])
