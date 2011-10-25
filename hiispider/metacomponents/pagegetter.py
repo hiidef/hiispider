@@ -22,7 +22,7 @@ class PageGetter(Component):
     def initialize(self):
         LOGGER.info('Initializing %s' % self.__class__.__name__) 
         self.pg = pg(
-            self.server.cassandra.client,
+            self.server.cassandra,
             redis_client=self.server.redis,
             rq=self.server.rq)
         LOGGER.info('%s initialized.' % self.__class__.__name__)
