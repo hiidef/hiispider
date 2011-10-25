@@ -8,6 +8,7 @@ from twisted.internet import task
 from txamqp.client import Closed
 from traceback import format_exc
 from twisted.spread import pb
+from logger import Logger
 
 LOGGER = logging.getLogger(__name__)
 

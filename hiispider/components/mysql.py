@@ -4,7 +4,7 @@ from copy import copy
 from MySQLdb.cursors import DictCursor
 from twisted.enterprise import adbapi
 import logging
-
+from logger import Logger
 
 LOGGER = logging.getLogger(__name__)
 

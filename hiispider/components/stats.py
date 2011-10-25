@@ -7,8 +7,11 @@ from pylogd.twisted import socket
 from random import random
 import logging
 import msgpack
+from logger import Logger
+
 
 LOGGER = logging.getLogger(__name__)
+
 
 class Stats(Component, Logd):
 

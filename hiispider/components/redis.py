@@ -3,7 +3,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from txredisapi import RedisShardingConnection
 import logging
-
+from logger import Logger
 
 LOGGER = logging.getLogger(__name__)
 

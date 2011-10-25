@@ -26,18 +26,17 @@ class Logger(Component, PylogdHandler):
         self.logger = config.get('base_logger', logging.getLogger())
         self.sock = None
         logging.Handler.__init__(self)
+        if self.__class__ not in (x.__class__ for x in self.logger.handlers):
+            self.logger.addHandler(self)
 
     def initialize(self):
         self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
-        if self.__class__ not in (x.__class__ for x in self.logger.handlers):
-            self.logger.addHandler(self)
 
     # make sure this stuff isn't done
     def makeSocket(self): return None
     def createSocket(self): return None
     def closeOnError(self):
         import ipdb; ipdb.set_trace();
-
 
     @shared
     def send(self, s):

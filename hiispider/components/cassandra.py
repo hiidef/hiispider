@@ -7,8 +7,18 @@ import zlib
 import simplejson
 from telephus.cassandra.c08.ttypes import NotFoundException
 from twisted.internet.defer import inlineCallbacks, returnValue
+from logger import Logger
+from twisted.internet import threads
 
 LOGGER = logging.getLogger(__name__)
+
+
+def compress(obj):
+    return zlib.compress(simplejson.dumps(obj))
+
+
+def decompress(s):
+    return simplejson.loads(zlib.decompress(s))
 
 
 class Cassandra(Component):
@@ -57,9 +67,10 @@ class Cassandra(Component):
                 key=str(user_id),
                 column_family=self.cf_content,
                 column=uuid)
-            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
         except NotFoundException:
             return
+        obj = yield threads.deferToThread(decompress, data.column.value)
+        returnValue(obj)
 
     @shared
     @inlineCallbacks
@@ -69,17 +80,21 @@ class Cassandra(Component):
                 key=str(job.user_account["user_id"]),
                 column_family=self.cf_content,
                 column=job.uuid)
-            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
         except NotFoundException:
             return
+        obj = yield threads.deferToThread(decompress, data.column.value)
+        returnValue(obj)
 
     @shared
+    @inlineCallbacks
     def setData(self, data, job):
-        return self.client.insert(
+        s = yield threads.deferToThread(compress, data)
+        result = yield self.client.insert(
             str(job.user_account["user_id"]),
             self.cf_content,
-            zlib.compress(simplejson.dumps(data)),
+            s,
             column=job.uuid)
+        returnValue(result)
 
 #    @shared
 #    def get(self, *args, **kwargs):

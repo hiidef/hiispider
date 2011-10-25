@@ -3,7 +3,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from ..pagegetter import PageGetter as pg
 import logging
-from ..components import Redis, Cassandra
+from ..components import Redis, Cassandra, Logger
 from twisted.internet import reactor
 from random import random
 
@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 class PageGetter(Component):
 
-    requires = [Redis, Cassandra]
+    requires = [Redis, Cassandra, Logger]
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(PageGetter, self).__init__(server, server_mode)

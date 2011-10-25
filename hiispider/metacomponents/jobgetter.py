@@ -11,7 +11,7 @@ import logging
 from traceback import format_exc
 import urllib
 from ..exceptions import *
-from ..components import Redis, MySQL, JobQueue
+from ..components import Redis, MySQL, JobQueue, Logger
 from ..job import Job
 
 
@@ -30,7 +30,7 @@ class JobGetter(Component):
     uuid_queue_size = 50
     job_queue_size = 50
     job_requests = []
-    requires = [Redis, MySQL, JobQueue]
+    requires = [Redis, MySQL, JobQueue, Logger]
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(JobGetter, self).__init__(server, server_mode)

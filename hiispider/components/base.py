@@ -57,9 +57,7 @@ def shared(f):
     """
     def decorator(self, *args, **kwargs):
         if not self.initialized:
-            LOGGER.debug("Delaying execution of %s "
-                "until initialization." % self.server_methods[id(f)])
-            reactor.callLater(1, INVERSE_SHARED[id(f)], self, *args, **kwargs)
+            reactor.callLater(5, INVERSE_SHARED[id(f)], self, *args, **kwargs)
             return
         if self.server_mode:
             if "_remote_call" in kwargs:
