@@ -15,13 +15,13 @@ LOGGER = logging.getLogger(__name__)
 
 class Worker(JobExecuter):
 
-    delta_enabled = False
     active_workers = 0
     simultaneous_jobs = 25
     jobs = set([])
     job_speed_start = time.time()
     job_speed_report_loop = None
     timer = defaultdict(lambda:0)
+    timer_count = defaultdict(lambda:0)
     timer_starts = {}
 
     def __init__(self, server, config, server_mode, **kwargs):
@@ -37,13 +37,14 @@ class Worker(JobExecuter):
         self.job_speed_report_loop.start(60, False)
         for i in range(0, self.simultaneous_jobs):
             self.work()
-        self._job_speed_report(pformat(self.timer))
+        self._job_speed_report()
 
     def _job_speed_report(self):
         jps = self.jobs_complete / (time.time() - self.job_speed_start)
         fps = self.job_failures / (time.time() - self.job_speed_start)
         LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
-        LOGGER.info()
+        LOGGER.info("Total times:\n %s" % pformat(sorted(self.timer.items(), key=lambda x:x[1])))
+        LOGGER.info("Average times:\n %s" % pformat(sorted([(x, float(self.timer[x])/self.timer_count[x]) for x in self.timer], key=lambda x:x[1])))
         self.job_speed_start = time.time()
         self.jobs_complete = 0
         self.job_failures = 0
@@ -56,6 +57,7 @@ class Worker(JobExecuter):
         self.timer_starts[task_id] = time.time()
 
     def time_end(self, task_id, task):
+        self.timer_count[task] += 1
         self.timer[task] += time.time() - self.timer_starts[task_id]
         del self.timer_starts[task_id]
 
