@@ -194,6 +194,7 @@ class Server(pb.Root):
         for x in self.components:
             while not x.initialized:
                 LOGGER.info("Waiting for %s" % x.__class__.__name__)
+                yield self.getConnections()
                 yield Sleep(1)
             LOGGER.info("%s initialized." % x.__class__.__name__)
         yield Sleep(1)      

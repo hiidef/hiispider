@@ -7,14 +7,17 @@ from traceback import format_exc
 from ..sleep import Sleep
 from random import random
 import time
+from twisted.internet import task
 
 LOGGER = logging.getLogger(__name__)
 
 class Worker(JobExecuter):
 
     active_workers = 0
-    simultaneous_jobs = 30
+    simultaneous_jobs = 25
     jobs = set([])
+    job_speed_start = time.time()
+    job_speed_report_loop = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Worker, self).__init__(server, config, server_mode, **kwargs)
@@ -25,8 +28,23 @@ class Worker(JobExecuter):
     
     def start(self):
         super(Worker, self).start()
+        self.job_speed_report_loop = task.LoopingCall(self._job_speed_report)
+        self.job_speed_report_loop.start(60, False)
         for i in range(0, self.simultaneous_jobs):
             self.work()
+        self._job_speed_report()
+
+    def _job_speed_report(self):
+        jps = self.jobs_complete / (time.time() - self.job_speed_start)
+        fps = self.job_failures / (time.time() - self.job_speed_start)
+        LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
+        self.job_speed_start = time.time()
+        self.jobs_complete = 0
+        self.job_failures = 0
+
+    def shutdown(self):
+        if self.job_speed_report_loop:
+            self.job_speed_report_loop.stop()
 
     @inlineCallbacks
     def work(self):

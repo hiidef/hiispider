@@ -6,6 +6,7 @@ import logging
 import zlib
 import simplejson
 from telephus.cassandra.c08.ttypes import NotFoundException
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 LOGGER = logging.getLogger(__name__)
 

@@ -119,7 +119,7 @@ class JobExecuter(Component):
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             tb = '\n'.join(format_tb(error.getTracebackObject()))
-            plugl.error("Error executing job:%s\n%s\n%s" % (job.function_name, tb, format_exc()))
+            plugl.error("Error executing job:%s - %s\n%s\n%s" % (job.function_name, job.uuid, tb, format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
 

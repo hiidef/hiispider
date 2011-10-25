@@ -9,9 +9,6 @@ from ..exceptions import ComponentException
 from ..sleep import Sleep
 from twisted.python.failure import Failure
 from cPickle import dumps, loads
-import twisted.spread.banana
-
-twisted.spread.banana.SIZE_LIMIT = 5 * 1024 * 1024
 
 
 LOGGER = logging.getLogger(__name__)
