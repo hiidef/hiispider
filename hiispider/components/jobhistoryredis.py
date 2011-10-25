@@ -1,5 +1,6 @@
 from .redis import Redis
 from .base import shared
+import time
 
 class JobHistoryRedis(Redis):
 
@@ -19,6 +20,8 @@ class JobHistoryRedis(Redis):
         if not self.enabled or not job.uuid:
             return
         key = "job:%s:%s" % (job.uuid, 'good' if success else 'bad')
-        self.client._send('LPUSH', key, time.time())
-        self.client._send('LTRIM', key, 0, 9)
+	self.client.ltrim(key, 1, 9)
+        self.client.push(key, time.time())
+        #self.client._send('LPUSH', key, time.time())
+        #self.client._send('LTRIM', key, 0, 9)
 
