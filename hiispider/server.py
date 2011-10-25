@@ -20,7 +20,6 @@ from requestqueuer import RequestQueuer
 from collections import defaultdict
 from sleep import Sleep
 from twisted.spread import pb
-from decorators import SHARED, BROADCASTED
 from twisted.internet.error import ConnectionRefusedError
 import twisted.spread.banana
 
