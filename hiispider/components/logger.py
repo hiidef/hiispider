@@ -35,8 +35,7 @@ class Logger(Component, PylogdHandler):
     # make sure this stuff isn't done
     def makeSocket(self): return None
     def createSocket(self): return None
-    def closeOnError(self):
-        import ipdb; ipdb.set_trace();
+    def closeOnError(self): return None
 
     @shared
     def send(self, s):
