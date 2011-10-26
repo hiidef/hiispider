@@ -1,19 +1,31 @@
-from .redis import Redis
-from .base import shared
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Jobhistory Component."""
+
 import time
 
-class JobHistoryRedis(Redis):
+from twisted.internet.defer import inlineCallbacks, returnValue
+from txredisapi import RedisConnectionPool
 
-    enabled = False
+from hiispider.components.base import shared, Component
+
+class JobHistoryRedis(Component):
+    enabled = True
 
     def __init__(self, server, config, server_mode, **kwargs):
+        super(JobHistoryRedis, self).__init__(server, server_mode)
         conf = config.get('jobhistory', {})
-        if conf and conf.get('enabled', False):
-            self.enabled = True
-            kwargs["redis_hosts"] = [conf["host"]]
-        else:
-            kwargs["redis_hosts"] = []
-        super(JobHistoryRedis, self).__init__(server, config, server_mode, **kwargs)
+        if not conf or not conf.get('enabled', False):
+            self.enabled = False
+            return
+        self.host, self.port = conf['host'].split(':')
+        self.port = int(self.port)
+
+    @inlineCallbacks
+    def initialize(self):
+        if self.enabled:
+            self.client = yield RedisConnectionPool(self.host, self.port)
 
     @shared
     def save(self, job, success):
