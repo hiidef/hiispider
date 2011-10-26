@@ -25,6 +25,7 @@ class JobHistoryRedis(Component):
     @inlineCallbacks
     def initialize(self):
         if self.enabled:
+            # this uses a single redis server; do not use a sharding connection
             self.client = yield RedisConnectionPool(self.host, self.port)
 
     @shared
