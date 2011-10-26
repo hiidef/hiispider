@@ -18,11 +18,12 @@ class Stats(Component, Logd):
     def __init__(self, server, config, server_mode, **kwargs):
         super(Stats, self).__init__(server, server_mode)
         config = copy(config)
-        config.update(kwargs)
-        self.logd_host = config.get('logd_host', 'localhost')
-        self.logd_port = config.get('logd_port', 8126)
+        conf = config.get('logd', {})
+        conf.update(kwargs)
+        self.logd_host = conf.get('host', 'localhost')
+        self.logd_port = conf.get('port', 8126)
         self.addr = (self.logd_host, self.logd_port)
-        self.prefix = config.get('logd_prefix', '')
+        self.prefix = conf.get('prefix', '')
         self.timer = Timer(self)
 
     def initialize(self):
