@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 class Logger(Component, PylogdHandler):
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(Logger, self).__init__(server, server_mode)
+        Component.__init__(self, server, server_mode)
         config = copy(config)
-        config.update(kwargs)
-        try:
-            self.path = config['logd_path']
-        except KeyError:
-            raise Exception("Logger component requires configuration option `logd_path`.")
-        self.logd_port = config.get('logd_port', 8126)
-        self.logd_host = config.get('logd_host', 'localhost')
+        conf = config.get('logd', {})
+        conf.update(kwargs)
+        if not conf or 'path' not in conf:
+            raise Exception("Logger component requires configuration option `logd.path`.")
+        self.path = conf['path']
+        self.logd_port = conf.get('port', 8126)
+        self.logd_host = conf.get('host', 'localhost')
         self.logger = config.get('base_logger', logging.getLogger())
         self.sock = None
         logging.Handler.__init__(self)
