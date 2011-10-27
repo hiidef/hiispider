@@ -52,9 +52,15 @@ class Worker(JobExecuter):
     def _job_speed_report(self):
         jps = self.jobs_complete / (time.time() - self.job_speed_start)
         fps = self.job_failures / (time.time() - self.job_speed_start)
-        LOGGER.info("Total times:\n %s" % pformat(sorted(self.timer.items(), key=lambda x:x[1])))
-        LOGGER.info("Average times:\n %s" % pformat(sorted([(x, float(self.timer[x])/self.timer_count[x]) for x in self.timer], key=lambda x:x[1])))
-        LOGGER.info("Active jobs:\n %s" % self.jobs)
+        total_time = sum(self.timer.values())
+        total_count = sum(self.timer_count.values())
+        mean_time = total_time / len(self.timer)
+        mean_time_per_call = sum([self.timer[x]/self.timer_count[x] for x in self.timer]) / len(self.timer)
+        total_times = [(x[0], x[1] / mean_time) for x in self.timer.items()]
+        average_times = [(x, self.timer[x]/(self.timer_count[x] * mean_time_per_call)) for x in self.timer]
+        LOGGER.info("Total times:\n %s" % pformat(sorted(total_times, key=lambda x:x[1])))
+        LOGGER.info("Average times:\n %s" % pformat(sorted(average_times, key=lambda x:x[1])))
+        LOGGER.info("Active jobs:\n %s" % pformat(sorted([(x.function_name, round(time.time() - x.start, 2), x.uuid) for x in self.jobs], key=lambda x:x[1])))
         LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
         LOGGER.info("Wait time by component:\n%s" % "\n".join(["%s:%s" % (x.__class__.__name__, x.wait_time) for x in self.server.components]))
         self.job_speed_start = time.time()
@@ -97,7 +103,8 @@ class Worker(JobExecuter):
         else:
             self.time_end(r, "get_jobs", add=.1)
             reactor.callLater(.1, self.work)
-            return            
+            return
+        job.start = time.time()
         self.jobs.add(job)
         try:
             self.time_start(job.uuid)

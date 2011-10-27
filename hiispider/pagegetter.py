@@ -188,7 +188,7 @@ class PageGetter:
             postdata=None,
             headers=None,
             agent="HiiSpider",
-            timeout=60,
+            timeout=5,
             cookies=None,
             follow_redirect=1,
             prioritize=False,

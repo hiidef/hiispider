@@ -31,7 +31,7 @@ class JobGetter(Component):
     fast_cache_queue = []
     job_queue = []
     uuid_dequeueing = False
-    min_size = 500
+    min_size = 1000
     job_requests = []
     requires = [Redis, MySQL, JobQueue, Logger]
 
@@ -42,13 +42,27 @@ class JobGetter(Component):
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]    
     
-
     def __len__(self):
         return sum([
             len(self.uuid_queue),
             len(self.uncached_uuid_queue),
             len(self.fast_cache_queue),
             len(self.job_queue)])
+
+    def start(self):
+        self.dequeueloop = task.LoopingCall(self.dequeue)
+        self.dequeueloop.start(2)
+        super(JobGetter, self).start()
+
+    @inlineCallbacks
+    def shutdown(self):
+        for req in self.job_requests:
+            req.errback(JobGetterShutdownException("JobGetter shut down."))
+        self.uuid_queue = []
+        self.uncached_uuid_queue = []
+        self.user_account_queue = []
+        yield super(JobGetter, self).shutdown()
+ 
 
     @inlineCallbacks
     def setJobCache(self, job):
@@ -103,21 +117,7 @@ class JobGetter(Component):
             d = Deferred()
             self.job_requests.append(d)
             return d
-
-    def start(self):
-        self.dequeueloop = task.LoopingCall(self.dequeue)
-        self.dequeueloop.start(5)
-        super(JobGetter, self).start()
-
-    @inlineCallbacks
-    def shutdown(self):
-        for req in self.job_requests:
-            req.errback(JobGetterShutdownException("JobGetter shut down."))
-        self.uuid_queue = []
-        self.uncached_uuid_queue = []
-        self.user_account_queue = []
-        yield super(JobGetter, self).shutdown()
-   
+  
     def dequeue(self):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
         while self.job_requests:
