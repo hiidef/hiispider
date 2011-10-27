@@ -6,7 +6,7 @@ Base component module. Implements decorators used for sharing and broadcasting
 methods via Perspective broker between the components.
 """
 
-
+import time
 import logging
 import inspect
 import types
@@ -23,6 +23,7 @@ from ..sleep import Sleep
 LOGGER = logging.getLogger(__name__)
 SHARED = {}
 INVERSE_SHARED = {}
+
 
 
 def broadcasted(f):
@@ -54,7 +55,8 @@ def broadcasted(f):
     return decorator
 
 
-def check_response(data):
+def check_response(data, obj, start):
+    obj.wait_time += time.time() - start
     if isinstance(data, dict) and "_pb_failure" in data:
         return loads(data["_pb_failure"])
     return data
@@ -92,7 +94,7 @@ def shared(f):
         except pb.DeadReferenceError:
             self.server.disconnect_by_remote_obj(remote_obj)
             return INVERSE_SHARED[id(f)](self, *args, **kwargs)
-        d.addCallback(check_response)
+        d.addCallback(check_response, self, time.time())
         d.addErrback(
             self.trap_shared_disconnect, 
             remote_obj, 
@@ -114,6 +116,7 @@ class Component(object):
     server_mode = False
     running = False 
     requires = None
+    wait_time = 0
 
     def __init__(self, server, server_mode):
         self.server = server

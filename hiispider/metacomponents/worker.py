@@ -55,6 +55,7 @@ class Worker(JobExecuter):
         LOGGER.info("Average times:\n %s" % pformat(sorted([(x, float(self.timer[x])/self.timer_count[x]) for x in self.timer], key=lambda x:x[1])))
         LOGGER.info("Active jobs:\n %s" % self.jobs)
         LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
+        LOGGER.info("Wait time by component:\n%s" % "\n".join(["%s:%s" % (x.__class__.__name__, x.wait_time) for x in self.server.components]))
         self.job_speed_start = time.time()
         self.jobs_complete = 0
         self.job_failures = 0
