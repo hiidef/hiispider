@@ -106,7 +106,7 @@ class ExposedFunctionResource(Resource):
 
 class Server(pb.Root):
     """
-    Uses metadata servers and clients to tell components where to 
+    Uses metadata servers and clients to tell components where to
     look for peers.
     """
 

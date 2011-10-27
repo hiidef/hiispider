@@ -20,16 +20,15 @@ class Logger(Component, PylogdHandler):
     """Automatically attaches itself as a handler."""
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(Logger, self).__init__(server, server_mode)
+        Component.__init__(self, server, server_mode)
         config = copy(config)
-        config.update(kwargs)
-        try:
-            self.path = config['logd_path']
-        except KeyError:
-            raise Exception("Logger component requires "
-                "configuration option `logd_path`.")
-        self.logd_port = config.get('logd_port', 8126)
-        self.logd_host = config.get('logd_host', 'localhost')
+        conf = config.get('logd', {})
+        conf.update(kwargs)
+        if not conf or 'path' not in conf:
+            raise Exception("Logger component requires configuration option `logd.path`.")
+        self.path = conf['path']
+        self.logd_port = conf.get('port', 8126)
+        self.logd_host = conf.get('host', 'localhost')
         self.logger = config.get('base_logger', logging.getLogger())
         self.sock = None
         logging.Handler.__init__(self)
@@ -39,7 +38,6 @@ class Logger(Component, PylogdHandler):
         if self.__class__ not in (x.__class__ for x in self.logger.handlers):
             self.logger.addHandler(self)
 
-    # make sure this stuff isn't done
     def makeSocket(self): 
         return None
 
@@ -47,9 +45,7 @@ class Logger(Component, PylogdHandler):
         return None
 
     def closeOnError(self):
-        pass
-        #TODO: What's ipdb?
-        #ipdb.set_trace()
+        return None
 
     @shared
     def send(self, s):
