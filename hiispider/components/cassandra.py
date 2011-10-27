@@ -1,27 +1,42 @@
-from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
-from copy import copy
-from telephus.pool import CassandraClusterPool
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Communicates with Cassandra.
+"""
+
 import logging
 import zlib
 import simplejson
+from copy import copy
+from telephus.pool import CassandraClusterPool
 from telephus.cassandra.c08.ttypes import NotFoundException
-from twisted.internet.defer import inlineCallbacks, returnValue
-from logger import Logger
 from twisted.internet import threads
+from twisted.internet.defer import inlineCallbacks, returnValue
+from .base import Component, shared
+from .logger import Logger
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 def compress(obj):
+    """Dump obj to JSON, then compress with gzip."""
     return zlib.compress(simplejson.dumps(obj))
 
 
 def decompress(s):
+    """Decompress with gzip, then load obj from JSON string"""
     return simplejson.loads(zlib.decompress(s))
 
 
 class Cassandra(Component):
+    """
+    Implements basic Cassandra operations as well as more complex job-based
+    methods.
+    """
+
+    client = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Cassandra, self).__init__(server, server_mode)

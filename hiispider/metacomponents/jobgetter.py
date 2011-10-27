@@ -150,7 +150,11 @@ class JobGetter(Component):
         results = zip(uuids, data)
         for row in results:
             if row[1]:
-                job = cPickle.loads(decompress(row[1]))
+                try:
+                    job = cPickle.loads(decompress(row[1]))
+                except:
+                    self.uncached_uuid_queue.append(row[0])
+                    continue
                 if job.function_name not in self.server.functions:
                     LOGGER.error("Unknown service type %s" % job.function_name)
                     continue

@@ -1,15 +1,26 @@
-from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Communicates with MySQL
+"""
+
+import logging
 from copy import copy
 from MySQLdb.cursors import DictCursor
 from twisted.enterprise import adbapi
-import logging
-from logger import Logger
+from .logger import Logger
+from .base import Component, shared
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 class MySQL(Component):
+
+    """Implements MySQL's runquery method as an RPC."""
+
+    mysql = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(MySQL, self).__init__(server, server_mode)
@@ -37,4 +48,3 @@ class MySQL(Component):
     @shared
     def runQuery(self, *args, **kwargs):
         return self.mysql.runQuery(*args, **kwargs)
-

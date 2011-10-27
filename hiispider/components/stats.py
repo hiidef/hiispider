@@ -1,19 +1,27 @@
-from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
-from copy import copy
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-from pylogd.stats import Logd, Timer
-from pylogd.twisted import socket
-from random import random
+"""
+Communicates with Logd.
+"""
+
 import logging
 import msgpack
-from logger import Logger
+from random import random
+from copy import copy
+from pylogd.stats import Logd, Timer
+from pylogd.twisted import socket
+from .logger import Logger
+from .base import Component, shared
+from traceback import format_exc
 
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Stats(Component, Logd):
+
+    """Uses remote method _send to communicate with other servers."""
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Stats, self).__init__(server, server_mode)
@@ -29,16 +37,14 @@ class Stats(Component, Logd):
         self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
 
     def send(self, data, sample_rate=1):
+        """Sends data to Logd via the remote _send method."""
         if sample_rate < 1:
             if random() > sample_rate:
                 return
             data['rate'] = sample_rate
         if self.prefix:
             data['key'] = '%s:%s' % (self.prefix, data['key'])
-        try:
-            self._send(data)
-        except:
-            LOGGER.error("unexpected error:\n%s" % traceback.format_exc())
+        return self._send(data)
 
     @shared
     def _send(self, data):

@@ -8,7 +8,6 @@ import time
 from hiispider.components import *
 from hiispider.metacomponents import *
 import logging
-from .resources import ExposedResource
 import inspect
 from twisted.web import server
 from twisted.web.resource import Resource

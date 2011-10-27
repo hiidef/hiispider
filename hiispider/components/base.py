@@ -1,14 +1,23 @@
-from twisted.internet.defer import Deferred, maybeDeferred, inlineCallbacks, returnValue
-from twisted.internet import reactor
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Base component module. Implements decorators used for sharing and broadcasting
+methods via Perspective broker between the components.
+"""
+
+
 import logging
 import inspect
 import types
 from random import choice
+from cPickle import dumps, loads
 from twisted.spread import pb
+from twisted.internet.defer import Deferred, maybeDeferred
+from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet import reactor
 from ..exceptions import ComponentException
 from ..sleep import Sleep
-from twisted.python.failure import Failure
-from cPickle import dumps, loads
 
 
 LOGGER = logging.getLogger(__name__)
@@ -19,13 +28,15 @@ INVERSE_SHARED = {}
 def broadcasted(f):
     """
     Proxying decorator. If the component is in server_mode, field the
-    request. If not, send the request to the component pool.
+    request. If not, send the request to the all servers in the
+    component pool. Does not return a result.
     """
+
     def decorator(self, *args, **kwargs):
         if not self.initialized:
             LOGGER.debug("Delaying execution of %s "
                 "until initialization." % self.server_methods[id(f)])
-            reactor.callLater(1, INVERSE_SHARED[id(f)], self, *args, **kwargs)
+            reactor.callLater(5, INVERSE_SHARED[id(f)], self, *args, **kwargs)
             return
         if self.server_mode:
             maybeDeferred(f, self, *args, **kwargs)
@@ -37,7 +48,6 @@ def broadcasted(f):
                     **kwargs)
             except pb.DeadReferenceError:
                 self.server.disconnect_by_remote_obj(remote_obj)
-                pass
             d.addErrback( self.trap_broadcasted_disconnect, remote_obj)
     SHARED[id(decorator)] = (f, id(f))
     INVERSE_SHARED[id(f)] = decorator
@@ -75,7 +85,10 @@ def shared(f):
             return d
         kwargs["_remote_call"] = True
         try:
-            d = remote_obj.callRemote(self.server_methods[id(f)], *args, **kwargs)
+            d = remote_obj.callRemote(
+                self.server_methods[id(f)], 
+                *args, 
+                **kwargs)
         except pb.DeadReferenceError:
             self.server.disconnect_by_remote_obj(remote_obj)
             return INVERSE_SHARED[id(f)](self, *args, **kwargs)
@@ -114,7 +127,9 @@ class Component(object):
             func = instance_method[1]
             func_id = id(func.__func__)
             if func_id in SHARED:
-                name = "%s_%s" % (func.im_class.__name__, SHARED[func_id][0].__name__)
+                name = "%s_%s" % (
+                    func.im_class.__name__, 
+                    SHARED[func_id][0].__name__)
                 setattr(server, "remote_%s" % name, func)
                 self.server_methods[SHARED[func_id][1]] = name
         if not self.requires:
@@ -176,3 +191,4 @@ class Component(object):
 
     def shutdown(self):
         pass
+

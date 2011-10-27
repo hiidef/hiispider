@@ -21,8 +21,8 @@ from jobgetter import JobGetter
 from pagegetter import PageGetter
 from ..job import Job
 from ..components.base import ComponentException
-
-
+from twisted.internet.error import ConnectionRefusedError, TimeoutError
+from twisted.web.error import Error as TwistedWebError
 LOGGER = logging.getLogger(__name__)
 
 
@@ -111,17 +111,22 @@ class JobExecuter(Component):
             else:
                 self.server.stats.increment('job.%s.negcache' % job.dotted_name)
             self.server.jobhistoryredis.save(job, False)
+        except (TimeoutError, ConnectionRefusedError, TwistedWebError), e:
+            self.job_failures += 1
+            self.server.stats.increment('job.%s.failure' % job.dotted_name)
+            self.server.stats.increment('job.exceptions', 0.1)
+            self.server.jobhistoryredis.save(job, False)
         except Exception, e:
             self.job_failures += 1
             self.server.stats.increment('job.%s.failure' % job.dotted_name)
-            self.server.stats.timer.stop(timer)
-            self.server.stats.timer.stop('job.time')
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             tb = '\n'.join(format_tb(error.getTracebackObject()))
-            plugl.error("Error executing job:%s - %s\n%s\n%s" % (job.function_name, job.uuid, tb, format_exc()))
+            plugl.error("%s: Error executing job:%s - %s\n%s\n%s" % (e.__class__, job.function_name, job.uuid, tb, format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
+        self.server.stats.timer.stop(timer)
+        self.server.stats.timer.stop('job.time')
 
     @inlineCallbacks
     def generate_deltas(self, new_data, job):
