@@ -31,7 +31,7 @@ class JobGetter(Component):
     fast_cache_queue = []
     job_queue = []
     uuid_dequeueing = False
-    min_size = 250
+    min_size = 500
     job_requests = []
     requires = [Redis, MySQL, JobQueue, Logger]
 
@@ -97,7 +97,7 @@ class JobGetter(Component):
     @shared
     def getJobs(self):
         if self.job_queue:
-            jobs, self.job_queue = self.job_queue[0:10], self.job_queue[10:]
+            jobs, self.job_queue = self.job_queue[0:100], self.job_queue[100:]
             return jobs
         else:
             d = Deferred()
@@ -122,7 +122,7 @@ class JobGetter(Component):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
         while self.job_requests:
             if self.job_queue:
-                jobs, self.job_queue = self.job_queue[0:10], self.job_queue[10:]
+                jobs, self.job_queue = self.job_queue[0:100], self.job_queue[100:]
                 d = self.job_requests.pop(0)
                 d.callback(jobs)
             else:

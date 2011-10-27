@@ -32,6 +32,7 @@ class Worker(JobExecuter):
     timer_count = defaultdict(lambda:0)
     timer_starts = {}
     job_queue = []
+    getting_jobs = False
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Worker, self).__init__(server, config, server_mode, **kwargs)
@@ -67,10 +68,20 @@ class Worker(JobExecuter):
     def time_start(self, task_id):
         self.timer_starts[task_id] = time.time()
 
-    def time_end(self, task_id, task_name):
+    def time_end(self, task_id, task_name, add=0):
         self.timer_count[task_name] += 1
-        self.timer[task_name] += time.time() - self.timer_starts[task_id]
+        self.timer[task_name] += add + time.time() - self.timer_starts[task_id]
         del self.timer_starts[task_id]
+
+    @inlineCallbacks
+    def getJobs(self):
+        self.getting_jobs = True
+        try:
+            jobs = yield self.server.jobgetter.getJobs()
+            self.job_queue.extend(jobs)
+        except Exception:
+            LOGGER.error(format_exc())  
+        self.getting_jobs = False
 
     @inlineCallbacks
     def work(self):
@@ -78,17 +89,15 @@ class Worker(JobExecuter):
             return
         r = random()
         self.time_start(r)
-        if len(self.job_queue) < 10:
-            try:
-                jobs = yield self.server.jobgetter.getJobs()
-                self.job_queue.extend(jobs)
-            except Exception:
-                self.time_end(r, "job_wait")
-                LOGGER.error(format_exc())
-                reactor.callLater(0, self.work)
-                return
-        job = self.job_queue.pop()
-        self.time_end(r, "job_wait")
+        if len(self.job_queue) < 20 and not self.getting_jobs:
+            self.getJobs()
+        if self.job_queue:
+            job = self.job_queue.pop()
+            self.time_end(r, "get_jobs")
+        else:
+            self.time_end(r, "get_jobs", add=.1)
+            reactor.callLater(.1, self.work)
+            return            
         self.jobs.add(job)
         try:
             self.time_start(job.uuid)
