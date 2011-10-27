@@ -1,5 +1,8 @@
-from ..components.base import Component, shared
-from ..components import Queue
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Connects to various components to generate an internal queue of job objects."""
+
 from twisted.internet.defer import inlineCallbacks, Deferred
 from copy import copy
 from twisted.internet import task
@@ -10,9 +13,10 @@ from collections import defaultdict
 import logging
 from traceback import format_exc
 import urllib
-from ..exceptions import *
+from ..exceptions import JobGetterShutdownException
 from ..components import Redis, MySQL, JobQueue, Logger
 from ..job import Job
+from ..components import Component, shared, Queue
 
 
 LOGGER = logging.getLogger(__name__)
@@ -27,8 +31,7 @@ class JobGetter(Component):
     fast_cache_queue = []
     job_queue = []
     uuid_dequeueing = False
-    uuid_queue_size = 50
-    job_queue_size = 50
+    min_size = 250
     job_requests = []
     requires = [Redis, MySQL, JobQueue, Logger]
 
@@ -39,6 +42,14 @@ class JobGetter(Component):
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]    
     
+
+    def __len__(self):
+        return sum([
+            len(self.uuid_queue),
+            len(self.uncached_uuid_queue),
+            len(self.fast_cache_queue),
+            len(self.job_queue)])
+
     @inlineCallbacks
     def setJobCache(self, job):
         """Set job cache in redis. Expires at now + 7 days."""
@@ -68,7 +79,8 @@ class JobGetter(Component):
         """Delete a reservation by uuid."""
         uuid = job.uuid
         LOGGER.info('Deleting job: %s, %s' % (job.function_name, job.uuid))
-        yield self.server.mysql.runQuery('DELETE FROM spider_service WHERE uuid=%s', uuid)
+        yield self.server.mysql.runQuery("DELETE FROM spider_service "
+            "WHERE uuid=%s", uuid)
         url = 'http://%s:%s/function/schedulerserver/removefromjobsheap?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
@@ -83,9 +95,10 @@ class JobGetter(Component):
         returnValue({'success': True})
 
     @shared
-    def getJob(self):
+    def getJobs(self):
         if self.job_queue:
-            return self.job_queue.pop(0)
+            jobs, self.job_queue = self.job_queue[0:10], self.job_queue[10:]
+            return jobs
         else:
             d = Deferred()
             self.job_requests.append(d)
@@ -109,8 +122,9 @@ class JobGetter(Component):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
         while self.job_requests:
             if self.job_queue:
+                jobs, self.job_queue = self.job_queue[0:10], self.job_queue[10:]
                 d = self.job_requests.pop(0)
-                d.callback(self.job_queue.pop(0))
+                d.callback(jobs)
             else:
                 break
         if self.uncached_uuid_queue:
@@ -119,40 +133,36 @@ class JobGetter(Component):
             self.getFastCache()
         if self.uuid_dequeueing:
             return
-        if len(self.job_queue) > self.job_queue_size or len(self.uuid_queue) > self.uuid_queue_size:
+        if len(self) > self.min_size:
             return
-        self.uuid_dequeueing = True
         self._dequeuejobs()
-
+    
+    @inlineCallbacks
     def _dequeuejobs(self):
-        if len(self.uuid_queue) < self.uuid_queue_size * 4 and len(self.job_queue) < self.job_queue_size * 4:
-            d = self.server.jobqueue.get(timeout=5)
-            d.addCallback(self._dequeuejobsCallback)
-            d.addErrback(self._dequeuejobsErrback)
-        else:
-            self.uuid_dequeueing = False
-
-    def _dequeuejobsCallback(self, content):
-        self.uuid_queue.append(UUID(bytes=content).hex)
-        if len(self.uuid_queue) > self.uuid_queue_size / 2:
-            uuids, self.uuid_queue = self.uuid_queue, []
-            d = self.server.redis.mget(*uuids)
-            d.addCallback(self._dequeuejobsCallback2, uuids)
-            d.addErrback(self._dequeuejobsErrback)
-        else:
-            self._dequeuejobs()
-
-    def _dequeuejobsErrback(self, error):
-        LOGGER.error(str(error))
+        self.uuid_dequeueing = True
+        while len(self) < self.min_size * 4:
+            try:
+                content = yield self.server.jobqueue.get(timeout=5)
+            except Exception:
+                LOGGER.error(format_exc())
+                break
+            self.uuid_queue.append(UUID(bytes=content).hex)
+            if len(self.uuid_queue) > self.min_size / 2:
+                uuids, self.uuid_queue = self.uuid_queue, []
+                try:
+                    data = yield self.server.redis.mget(*uuids)
+                except Exception:
+                    LOGGER.error(format_exc())
+                    break
+                self.checkCachedJobs(zip(uuids, data))    
         self.uuid_dequeueing = False
 
-    def _dequeuejobsCallback2(self, data, uuids):
-        results = zip(uuids, data)
+    def checkCachedJobs(self, results):
         for row in results:
             if row[1]:
                 try:
                     job = cPickle.loads(decompress(row[1]))
-                except:
+                except Exception:
                     self.uncached_uuid_queue.append(row[0])
                     continue
                 if job.function_name not in self.server.functions:
@@ -165,7 +175,6 @@ class JobGetter(Component):
             else:
                 LOGGER.debug('Could not find uuids %s in Redis.' % row[0])
                 self.uncached_uuid_queue.append(row[0])
-        self._dequeuejobs()
 
     @inlineCallbacks
     def lookupjobs(self):
@@ -226,3 +235,5 @@ class JobGetter(Component):
                 if row[1]:
                     row[0].fast_cache = row[1]
                 self.job_queue.append(row[0])
+
+

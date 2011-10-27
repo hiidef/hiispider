@@ -25,7 +25,8 @@ class Logger(Component, PylogdHandler):
         conf = config.get('logd', {})
         conf.update(kwargs)
         if not conf or 'path' not in conf:
-            raise Exception("Logger component requires configuration option `logd.path`.")
+            raise Exception("Logger component requires "
+                "configuration option `logd.path`.")
         self.path = conf['path']
         self.logd_port = conf.get('port', 8126)
         self.logd_host = conf.get('host', 'localhost')

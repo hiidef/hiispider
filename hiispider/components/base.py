@@ -183,8 +183,6 @@ class Component(object):
     @inlineCallbacks
     def _shutdown(self):
         self.running = False
-        while len(self.server.worker.jobs) > 0:
-            yield Sleep(1)
         if self.server_mode:
             yield maybeDeferred(self.shutdown)
         returnValue(None)

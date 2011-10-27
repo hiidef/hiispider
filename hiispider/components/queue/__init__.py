@@ -20,29 +20,11 @@ from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from ..base import Component, shared
 from ..logger import Logger
-import .specs
+from .specs import v0_8
 
 
 LOGGER = logging.getLogger(__name__)
 
-
-#************* Module hiispider.components.queue.__init__
-#C: 51,0: Line too long (95/80)
-#C:107,0: Line too long (90/80)
-#************* Module hiispider.components.queue
-#C:  1,0: Missing docstring
-#W: 11,0: Relative import 'specs', should be 'hiispider.components.queue.specs'
-#R: 21,0:Queue: Too many instance attributes (13/7)
-#C: 21,0:Queue: Missing docstring
-#C: 91,4:Queue.get: Missing docstring
-#C: 92,8:Queue.get: Invalid name "d" (should match [a-z_][a-z0-9_]{2,30}$)
-#C: 96,4:Queue.basic_ack: Missing docstring
-#C:101,4:Queue.status_check: Missing docstring
-#W:109,12:Queue.status_check: No exception type(s) specified
-#C:113,4:Queue.reconnect: Missing docstring
-#W:117,12:Queue.reconnect: No exception type(s) specified
-#W:121,12:Queue.reconnect: No exception type(s) specified
-#W: 74,8:Queue.initialize: Attribute 'queue' defined outside __init__
 
 class Queue(Component):
 
@@ -75,7 +57,7 @@ class Queue(Component):
             AMQClient,
             delegate=TwistedDelegate(),
             vhost=self.amqp["vhost"],
-            spec=txamqp.spec.loadString(specs.v0_8),
+            spec=txamqp.spec.loadString(v0_8),
             heartbeat=0)
         self.conn = yield client.connectTCP(
             self.amqp["host"], 

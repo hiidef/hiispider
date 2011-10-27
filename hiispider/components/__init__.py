@@ -5,7 +5,7 @@
 Base level spider components. Each communicates with an external server.
 """
 
-from .base import Component
+from .base import Component, shared, broadcasted
 from .cassandra import Cassandra
 from .identityqueue import IdentityQueue
 from .jobhistoryredis import JobHistoryRedis

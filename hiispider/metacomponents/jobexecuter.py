@@ -1,28 +1,30 @@
-from ..components.base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred, returnValue, maybeDeferred
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Job execution base class."""
+
+
 from copy import copy
-from twisted.internet import task
 import time
 import logging
-from hiispider.exceptions import NegativeCacheException
 import zlib
 import os
 import time
 import pprint
 from decimal import Decimal
-from uuid import uuid4
-from MySQLdb import OperationalError
-from twisted.web.resource import Resource
 import simplejson
 from traceback import format_tb, format_exc
-from hiispider.exceptions import *
-from ..components import Stats, MySQL, JobHistoryRedis, PageCacheQueue, Cassandra, Logger
-from jobgetter import JobGetter 
-from pagegetter import PageGetter
-from ..job import Job
-from ..components.base import ComponentException
+from twisted.internet.defer import inlineCallbacks, maybeDeferred
 from twisted.internet.error import ConnectionRefusedError, TimeoutError
 from twisted.web.error import Error as TwistedWebError
+from .jobgetter import JobGetter 
+from .pagegetter import PageGetter
+from ..exceptions import *
+from ..components import Component, Stats, MySQL, JobHistoryRedis
+from ..components import Cassandra, Logger, PageCacheQueue
+from ..components.base import ComponentException
+
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -122,7 +124,12 @@ class JobExecuter(Component):
             plugin = job.function_name.split('/')[0]
             plugl = logging.getLogger(plugin)
             tb = '\n'.join(format_tb(error.getTracebackObject()))
-            plugl.error("%s: Error executing job:%s - %s\n%s\n%s" % (e.__class__, job.function_name, job.uuid, tb, format_exc()))
+            plugl.error("%s: Error executing job:%s - %s\n%s\n%s" % (
+                e.__class__, 
+                job.function_name, 
+                job.uuid, 
+                tb, 
+                format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
         self.server.stats.timer.stop(timer)
@@ -189,15 +196,16 @@ class JobExecuter(Component):
             kwargs = {}
             mapping = self.inverted_args_mapping[service_name]
             f = self.server.functions[job.function_name]
-            # add in support for completely variadic methods;  these are methods
-            # that accept *args, **kwargs in some fashion (usually because of a
-            # decorator like inlineCallbacks);  note that these will be called
-            # with the full amt of kwargs pulled in by the jobGetter and should
-            # therefore take **kwargs somewhere underneath and have all of its
-            # real positional args mapped in the inverted_args_mapping
+            # add in support for completely variadic methods;  these are
+            # methods that accept *args, **kwargs in some fashion (usually
+            # because of a decorator like inlineCallbacks);  note that these 
+            # will be called with the full amt of kwargs pulled in by the 
+            # jobGetter and should therefore take **kwargs somewhere underneath
+            # and have all of its real positional args mapped in the 
+            # inverted_args_mapping
             if f['variadic']:
                 kwargs = dict(job.kwargs)
-                for key,value in mapping.iteritems():
+                for key, value in mapping.iteritems():
                     if value in kwargs:
                         kwargs[key] = kwargs.pop(value)
             else:
@@ -206,15 +214,22 @@ class JobExecuter(Component):
                         kwargs[key] = job.kwargs[mapping[key]]
                     elif key in job.kwargs:
                         kwargs[key] = job.kwargs[key]
-                    # mimic the behavior of the old job mapper, mapping args (like 'type')
-                    # to the spider_service object itself in addition to the job kwargs
+                    # mimic the behavior of the old job mapper, 
+                    # mapping args (like 'type') to the spider_service object
+                    # itself in addition to the job kwargs
                     elif key in job.user_account:
                         kwargs[key] = job.user_account[key]
                     else:
-                        LOGGER.error('Could not find required argument %s for function %s in %s. Available: %s, %s' % (
-                            key, job.function_name, job, job.kwargs, job.user_account))
-                        # FIXME: we shouldn't except here because a log message and quiet
-                        # failure is enough;  we need some quiet error channel
+                        LOGGER.error("Could not find required argument %s for "
+                            " function %s in %s. Available: %s, %s" % (
+                            key, 
+                            job.function_name, 
+                            job, 
+                            job.kwargs, 
+                            job.user_account))
+                        # FIXME: we shouldn't except here because a 
+                        # log message and quiet failure is enough;  
+                        # we need some quiet error channel
                         raise Exception("Could not find argument: %s" % key)
                 for key in f['optional_arguments']:
                     if key in mapping and mapping[key] in job.kwargs:
@@ -225,24 +240,4 @@ class JobExecuter(Component):
         job.mapped = True
         return job
 
-#    def expose(self, *args, **kwargs):
-#        return self.server.expose(*args, **kwargs)
-#
-#    def make_callable(self, *args, **kwargs):
-#        return self.server.make_callable(*args, **kwargs)
-#
-#    def delta(self, *args, **kwargs):
-#        return self.server.delta(*args, **kwargs)
-#
-#    def getPage(self, *args, **kwargs):
-#        return self.server.pagegetter.getPage(*args, **kwargs)
-#
-#    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
-#        return self.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
-#
-#    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
-#        return self.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
-#    
-#    def setFastCache(self, *args, **kwargs):
-#        return self.server.jobgetter.setFastCache(*args, **kwargs)
-#
+

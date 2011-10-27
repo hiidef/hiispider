@@ -5,13 +5,11 @@
 Communicates with the Identity Queue.
 """
 
-
 from .queue import Queue
 
 
 class IdentityQueue(Queue):
-     """Connects to the identity vhost."""
-
+    """Connects to the identity vhost."""
 
     def __init__(self, server, config, server_mode, **kwargs):
         kwargs["amqp_vhost"] = config["amqp_identity_vhost"]

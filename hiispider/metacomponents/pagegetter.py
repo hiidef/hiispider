@@ -1,18 +1,23 @@
-from ..components.base import Component, shared, broadcasted
-from twisted.internet.defer import inlineCallbacks, Deferred
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Encapsulates the pagegetter. Responsible for cached HTTP calls."""
+
 from copy import copy
-from ..pagegetter import PageGetter as pg
 import logging
+from ..components.base import Component, shared, broadcasted
 from ..components import Redis, Cassandra, Logger
-from twisted.internet import reactor
-from random import random
+from ..pagegetter import PageGetter as pg
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 class PageGetter(Component):
+    """Implements the getPage RPC call."""
 
     requires = [Redis, Cassandra, Logger]
+    pg = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(PageGetter, self).__init__(server, server_mode)

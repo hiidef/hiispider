@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Jobhistory Component."""
+"""Communicates with the Job History Redis server."""
 
 import time
-
 from twisted.internet.defer import inlineCallbacks, returnValue
 from txredisapi import RedisConnectionPool
-
 from hiispider.components.base import shared, Component
 
+
 class JobHistoryRedis(Component):
+
+    """Implements 'save' which will record a Job's success or failure."""
+
     enabled = True
 
     def __init__(self, server, config, server_mode, **kwargs):
@@ -35,6 +37,4 @@ class JobHistoryRedis(Component):
         key = "job:%s:%s" % (job.uuid, 'good' if success else 'bad')
         self.client.ltrim(key, 1, 9)
         self.client.push(key, time.time())
-        #self.client._send('LPUSH', key, time.time())
-        #self.client._send('LTRIM', key, 0, 9)
 

@@ -1,33 +1,32 @@
-from components import Component
-from components import Queue, Logger, MySQL
-from twisted.internet import reactor
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks, returnValue
-from twisted.internet import task
-from cPickle import loads, dumps
-import time
-from hiispider.components import *
-from hiispider.metacomponents import *
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Main server object. Connects to other servers via Perspective Broker."""
+
+
+from cPickle import dumps
 import logging
 import inspect
-from twisted.web import server
-from twisted.web.resource import Resource
 import gzip
 from io import StringIO
 import simplejson
-from traceback import format_tb, format_exc
 from requestqueuer import RequestQueuer
 from collections import defaultdict
-from sleep import Sleep
+from traceback import format_exc
+from twisted.web import server
+from twisted.web.resource import Resource
+from twisted.internet import reactor, task
+from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inlineCallbacks, returnValue
 from twisted.spread import pb
 from twisted.internet.error import ConnectionRefusedError
 import twisted.spread.banana
+from .components import *
+from .metacomponents import *
+from .sleep import Sleep
+
 
 twisted.spread.banana.SIZE_LIMIT = 10 * 1024 * 1024
-
 LOGGER = logging.getLogger(__name__)
-# Factory to make ZmqConnections
-
-
 # The component class objects we intend to instantiate
 COMPONENTS = [
     Cassandra, 
@@ -44,7 +43,6 @@ COMPONENTS = [
     JobGetter]
 # The intra-server poll interval
 POLL_INTERVAL = 60
-
 
 
 def split_address(s):
@@ -85,7 +83,6 @@ class ExposedFunctionResource(Resource):
             "traceback":error.getTraceback()})
 
     def _immediateResponse(self, data, request):
-        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = StringIO()
@@ -106,8 +103,7 @@ class ExposedFunctionResource(Resource):
 
 class Server(pb.Root):
     """
-    Uses metadata servers and clients to tell components where to
-    look for peers.
+    Holds components, makes simple HTTP requests, and manages PB connections.
     """
 
     connectionsloop = None
@@ -126,8 +122,15 @@ class Server(pb.Root):
     components = [] # Component objects
     http = None
     pb = None
+    getting_connections = False
 
-    def __init__(self, config, address, components=None, provides=None, http_port=None, pb_port=None):
+    def __init__(self, 
+            config, 
+            address, 
+            components=None, 
+            provides=None, 
+            http_port=None, 
+            pb_port=None):
         if len(set(provides) - set(components)) > 0:
             raise ComponentServerException("Cannot provide a component not "
                 "running in server mode.")
@@ -196,13 +199,17 @@ class Server(pb.Root):
                 yield Sleep(1)
             LOGGER.info("%s initialized." % x.__class__.__name__)
         yield Sleep(1)      
-        active = ", ".join([x.__class__.__name__ for x in self.components if x.server_mode])
+        active = ", ".join([x.__class__.__name__ 
+            for x in self.components if x.server_mode])
         LOGGER.critical("Starting server with components: %s" % active)
         yield DeferredList([x._start() for x in self.components])
         start_deferred.callback(True)
     
     @inlineCallbacks
     def getConnections(self):
+        if self.getting_connections:
+            returnValue(None)
+        self.getting_connections = True
         for server in self.servers:
             try:
                 remote_obj = yield self.connect(server)
@@ -212,7 +219,11 @@ class Server(pb.Root):
                     del self.server_components[server][component]
                     del self.component_servers[component][server]                    
                 continue 
-            components = yield remote_obj.callRemote("components")
+            try:
+                components = yield remote_obj.callRemote("components")
+            except:
+                LOGGER.error(format_exc())
+                continue
             for component in components - set(self.server_components[server]):
                 if component in self.requires:
                     self.server_components[server][component] = remote_obj
@@ -225,7 +236,8 @@ class Server(pb.Root):
         for server in self.servers:
             if not self.server_components[server]:
                 self.disconnect(server)
-            
+        self.getting_connections = False
+
     @inlineCallbacks       
     def connect(self, server):
         if server in self.connections:
@@ -269,9 +281,6 @@ class Server(pb.Root):
     def shutdown(self):
         if self.connectionsloop:
             self.connectionsloop.stop()
-        while len(self.worker.jobs) > 0:
-            LOGGER.debug("Active jobs: %s" % (self.worker.jobs))
-            yield Sleep(1)
         if self.http:
             self.http.stopListening()
         if self.pb:
@@ -281,7 +290,12 @@ class Server(pb.Root):
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
-    def makeCallable(self, func, interval=0, name=None, expose=False, category=None):
+    def makeCallable(self, 
+            func, 
+            interval=0, 
+            name=None, 
+            expose=False, 
+            category=None):
         argspec = self._getArguments(func)
         required_arguments, optional_arguments = argspec[0], argspec[3]
         variadic = all(argspec[1:3])
@@ -372,8 +386,6 @@ class Server(pb.Root):
 
     def delta(self, func, handler):
         self.delta_functions[id(func)] = handler
-
-
 
 
 

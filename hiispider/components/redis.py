@@ -1,14 +1,26 @@
-from .base import Component, shared
-from twisted.internet.defer import inlineCallbacks, Deferred
-from copy import copy
-from txredisapi import RedisShardingConnection
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Communicates with Redis
+"""
+
 import logging
-from logger import Logger
+from copy import copy
+from twisted.internet.defer import inlineCallbacks
+from txredisapi import RedisShardingConnection
+from .base import Component, shared
+from .logger import Logger
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Redis(Component):
+
+    """
+    Implements basic Redis functions as RPC calls.
+    """
 
     client = None
 
@@ -58,3 +70,6 @@ class Redis(Component):
     @shared
     def delete(self, *args, **kwargs):
         return self.client.delete(*args, **kwargs)
+
+
+
