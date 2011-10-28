@@ -1,14 +1,45 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Hiispider plugin class and plugin utilities."""
+
 import inspect
 import types
-from .delta import Autogenerator
+import time
+from hiispider.delta import Autogenerator
 
-__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
+__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta", "Stopwatch"]
+
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
 FUNCTION_ALIASES = {}
 DELTA_FUNCTIONS = {}
 
+class Stopwatch(object):
+    """A timer that allows you to make named ticks and can print a simple
+    breakdown of the time between ticks after it's stopped."""
+    def __init__(self, name='Stopwatch'):
+        self.name = name
+        self.start = time.time()
+        self.ticks = []
+
+    def tick(self, name):
+        self.ticks.append((name, time.time()))
+
+    def stop(self):
+        self.stop = time.time()
+
+    def summary(self):
+        """Return a summary of timing information."""
+        total = self.stop - self.start
+        s = "%s duration: %0.2f\n" % (self.name, total)
+        prev = ("start", self.start)
+        for tick in self.ticks:
+            s += ("   %s => %s" % (prev[0], tick[0])).ljust(30) + "... %0.2fs\n" % (tick[1] - prev[1])
+            prev = tick
+        s += ("   %s => end" % (tick[0])).ljust(30) + "... %0.2fs" % (self.stop - tick[1])
+        return s
 
 def aliases(*args):
     def decorator(f):
