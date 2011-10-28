@@ -488,6 +488,8 @@ class PageGetter:
         return d
 
     def setNegativeReqCache(self, error, request_hash):
+        if self.disable_negative_cache:
+            return
         negative_req_cache_key = 'negative_req_cache:%s' % request_hash
         d = self.redis_client.get(negative_req_cache_key)
         d.addCallback(self._setNegativeReqCacheCallback, error, negative_req_cache_key)
@@ -519,6 +521,8 @@ class PageGetter:
         return d
 
     def setNegativeCache(self, error, host):
+        if self.disable_negative_cache:
+            return
         negative_cache_key = 'negative_cache:%s' % host
         d = self.redis_client.get(negative_cache_key)
         d.addCallback(self._setNegativeCacheCallback, error, host, negative_cache_key)
