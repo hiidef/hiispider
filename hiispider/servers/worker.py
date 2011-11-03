@@ -44,11 +44,13 @@ class WorkerServer(CassandraServer, JobQueueMixin, PageCacheQueueMixin, JobGette
         self.scheduler_server_port = config["scheduler_server_port"]
         self.config = config
         # setup manhole
-        manhole_namespace = {
-            'service': self,
-            'globals': globals(),
-        }
-        reactor.listenTCP(config["manhole_worker_port"], self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
+        if config.get("manhole_worker_port", 0) > 0:
+            manhole_namespace = {
+                'service': self,
+                'globals': globals(),
+            }
+            reactor.listenTCP(config["manhole_worker_port"],
+                self.getManholeFactory(manhole_namespace, admin=config["manhole_password"]))
 
     def start(self):
         start_deferred = super(WorkerServer, self).start()
