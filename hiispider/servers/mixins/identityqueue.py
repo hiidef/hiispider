@@ -1,13 +1,17 @@
-from uuid import UUID
-import simplejson
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Itendity queue"""
+
+import ujson as json
 import logging
+from uuid import UUID
 from hashlib import sha256
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import task
 from txamqp.content import Content
-from ...amqp import amqp as AMQP
-from .amqp import AMQPMixin
-
+from hiispider.amqp import amqp as AMQP
+from hiispider.servers.mixins.amqp import AMQPMixin
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@
 """Resources for the workerserver."""
 
 import time
-import simplejson
+import ujson as json
 from hiispider.resources.base import BaseResource
 
 class WorkerResource(BaseResource):
@@ -21,5 +21,5 @@ class WorkerResource(BaseResource):
                 'active': len(self.workerserver.active_jobs),
                 'age': (time.time() - self.workerserver.t0),
                }
-        return simplejson.dumps(data)
+        return json.dumps(data)
 

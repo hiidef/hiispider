@@ -8,7 +8,6 @@ from hiispider import delta
 from pprint import pprint
 import os
 import random
-import simplejson
 import time
 from datetime import datetime
 from hiiguid import HiiGUID

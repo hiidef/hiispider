@@ -1,8 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Base resources."""
+
 from twisted.python.failure import Failure
 from twisted.web.resource import Resource
 import cStringIO, gzip
 import traceback
-import simplejson
+import ujson as json
 import logging
 import pprint
 
@@ -16,7 +21,7 @@ class BaseResource(Resource):
     def _successResponse(self, data):
         # if isinstance(data, str):
         #      return data
-        return simplejson.dumps(data)
+        return json.dumps(data)
 
     def _errorResponse(self, error):
         reason = str(error.value)
@@ -27,10 +32,10 @@ class BaseResource(Resource):
         tbs.sort(key=lambda x: len(x), reverse=True)
         tb = tbs[0]
         logger.error("%s\n%s" % (reason, tb))
-        return simplejson.dumps({"error":reason, "traceback":tb})
+        return json.dumps({"error":reason, "traceback":tb})
 
     def _immediateResponse(self, data, request):
-        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(simplejson.loads(data))))
+        # logger.debug("received data for request (%s):\n%s" % (request, pprint.pformat(json.loads(data))))
         encoding = request.getHeader("accept-encoding")
         if encoding and "gzip" in encoding:
             zbuf = cStringIO.StringIO()
