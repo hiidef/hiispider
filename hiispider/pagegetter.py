@@ -1,6 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Pagegetter."""
 
 import sys
-import simplejson
+import ujson as json
 import cPickle as pickle
 import datetime
 import dateutil.parser
@@ -269,7 +273,7 @@ class PageGetter:
                 hash_items.append(repr(oauth_headers))
         if cookies:
             hash_items.append(repr(cookies))
-        request_hash = sha1(simplejson.dumps(hash_items)).hexdigest()
+        request_hash = sha1(json.dumps(hash_items)).hexdigest()
         if not disable_negative_cache and not self.disable_negative_cache:
             negative_req_cache_key = 'negative_req_cache:%s' % request_hash
             negative_cache_host_key = 'negative_cache:%s' % host
@@ -299,11 +303,11 @@ class PageGetter:
         return d
 
     def _getCachedDataCallback(self, cached_data):
-        response = simplejson.loads(decompress(cached_data[1][1]))
+        response = json.loads(decompress(cached_data[1][1]))
         if len(response) == 0:
             raise Exception("Empty cached data.")
         data = {
-            "headers": simplejson.loads(decompress(cached_data[0][1])),
+            "headers": json.loads(decompress(cached_data[0][1])),
             "response": response,
         }
         return data
@@ -581,8 +585,8 @@ class PageGetter:
         headers_key = 'headers:%s' % request_hash
         http_key = 'http:%s' % request_hash
         deferreds = []
-        deferreds.append(self.redis_client.set(headers_key, compress(simplejson.dumps(headers), 1)))
-        deferreds.append(self.redis_client.delete(http_key, compress(simplejson.dumps(""), 1)))
+        deferreds.append(self.redis_client.set(headers_key, compress(json.dumps(headers), 1)))
+        deferreds.append(self.redis_client.delete(http_key, compress(json.dumps(""), 1)))
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._requestWithNoCacheHeadersErrbackCallback, error)
@@ -641,7 +645,7 @@ class PageGetter:
             headers = {}
             headers["request-failures"] = ",".join(http_history["request-failures"])
             headers_key = 'headers:%s' % request_hash
-            d = self.redis_client.set(headers_key, compress(simplejson.dumps(headers), 1))
+            d = self.redis_client.set(headers_key, compress(json.dumps(headers), 1))
             if confirm_cache_write:
                 d.addCallback(self._handleRequestWithCacheHeadersErrorCallback, error)
                 return d
@@ -723,8 +727,8 @@ class PageGetter:
         http_key = 'http:%s' % request_hash
         logger.debug("Writing data for request %s to redis." % request_hash)
         deferreds = []
-        deferreds.append(self.redis_client.set(headers_key, compress(simplejson.dumps(headers), 1)))
-        deferreds.append(self.redis_client.set(http_key, compress(simplejson.dumps(data["response"]), 1)))
+        deferreds.append(self.redis_client.set(headers_key, compress(json.dumps(headers), 1)))
+        deferreds.append(self.redis_client.set(http_key, compress(json.dumps(data["response"]), 1)))
         d = DeferredList(deferreds, consumeErrors=True)
         if confirm_cache_write:
             d.addCallback(self._storeDataCallback, data)

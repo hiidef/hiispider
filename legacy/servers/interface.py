@@ -1,7 +1,12 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Interface server."""
+
 import pprint
 import urllib
 import zlib
-import simplejson
+import ujson as json
 import traceback
 import logging
 
@@ -10,10 +15,11 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web.resource import Resource
 from twisted.internet import reactor
 from twisted.web import server
-from .mixins import JobGetterMixin
-from .cassandra import CassandraServer
-from .base import Job
-from ..resources import InterfaceResource
+
+from hiispider.servers.mixins import JobGetterMixin
+from hiispider.servers.cassandra import CassandraServer
+from hiispider.servers.base import Job
+from hiispider.resources import InterfaceResource
 
 
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
@@ -89,8 +95,8 @@ class InterfaceServer(CassandraServer):
         returnValue(None)
 
     @inlineCallbacks
-    def executeJobByUUID(self, uuid):    
-        logger.info("Getting job:\n%s" % uuid)
+    def executeJobByUUID(self, uuid):
+        logger.error("Getting job:\n%s" % uuid)
         try:
             job = yield self.getJob(uuid)
         except Exception, e:
@@ -108,17 +114,17 @@ class InterfaceServer(CassandraServer):
         user_id = kwargs.get('site_user_id', None)
         if uuid is not None and self.cassandra_cf_content is not None and data is not None:
             logger.debug("Putting result for %s, %s for user_id %s on Cassandra." % (function_name, uuid, user_id))
-            encoded_data = zlib.compress(simplejson.dumps(data))
+            encoded_data = zlib.compress(json.dumps(data))
             yield self.insertData(encoded_data, uuid, user_id)
         if not uuid:
             returnValue(data)
         else:
             returnValue({uuid: data})
-    
+
     def updateIdentity(self, user_id, service_name):
         reactor.callLater(0, self._updateIdentity, user_id, service_name)
         return {"success":True, "message":"Update identity started."}
-    
+
     @inlineCallbacks
     def _updateIdentity(self, user_id, service_name):
         data = yield self._accountData(user_id, service_name)
@@ -128,10 +134,10 @@ class InterfaceServer(CassandraServer):
                 service_id = yield self.executeFunction(function_key, **kwargs)
             except NotImplementedError:
                 logger.info("%s not implemented." % function_key)
-                return 
+                return
             yield self.cassandra_client.insert(
-                "%s|%s" % (service_name, service_id), 
+                "%s|%s" % (service_name, service_id),
                 self.cassandra_cf_identity,
-                user_id, 
+                user_id,
                 column="user_id")
 

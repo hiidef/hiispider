@@ -1,16 +1,20 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Jobqueue."""
+
 from uuid import UUID
-import simplejson
 import logging
 from hashlib import sha256
+
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import task
 from txamqp.content import Content
-from ...amqp import amqp as AMQP
-from .amqp import AMQPMixin
 
+from hiispider.amqp import amqp as AMQP
+from hiispider.servers.mixins.amqp import AMQPMixin
 
 logger = logging.getLogger(__name__)
-
 
 class JobQueueMixin(AMQPMixin):
 
