@@ -16,11 +16,10 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 PRETTYPRINTER = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
-from ..requestqueuer import RequestQueuer
-from ..pagegetterlite import PageGetter
-from ..resources import ExposedResource
-
 from hiispider import stats
+from hiispider.requestqueuer import RequestQueuer
+from hiispider.pagegetterlite import PageGetter
+from hiispider.resources import ExposedResource
 from hiispider.exceptions import NegativeCacheException
 from hiispider.requestqueuer import QueueTimeoutException
 

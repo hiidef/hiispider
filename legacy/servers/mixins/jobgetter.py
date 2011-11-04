@@ -1,11 +1,15 @@
-import copy
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Jobgetter mixin."""
+
 import cPickle
 import logging
 
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from zlib import compress, decompress
-from .mysql import MySQLMixin
-from ..base import Job
+from hiispider.servers.mixins.mysql import MySQLMixin
+from hiispider.servers.base import Job
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +28,14 @@ class JobGetterMixin(MySQLMixin):
         d = self._getCachedJob(uuid)
         d.addErrback(self._batchGetJobErrback, uuid)
         return d
-    
+
     def _batchGetJobErrback(self, error, uuid):
         d = Deferred()
         self.request_queue[uuid] = d
         if len(self.request_queue) >= self.batch_size:
-            self._execute_batch() 
+            self._execute_batch()
         return d
-    
+
     @inlineCallbacks
     def _execute_batch(self):
         request_queue, self.request_queue = self.request_queue, {}

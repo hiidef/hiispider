@@ -1,10 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Request queue"""
+
 import urllib
 import time
 from twisted.internet.defer import Deferred
 from twisted.internet import reactor, ssl
 from twisted.web.client import HTTPClientFactory, _parse
 import dateutil.parser
-from .unicodeconverter import convertToUTF8
+from hiispider.unicodeconverter import convertToUTF8
 from OpenSSL import SSL
 import logging
 from .exceptions import QueueTimeoutException

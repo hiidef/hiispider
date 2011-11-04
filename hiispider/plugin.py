@@ -10,6 +10,7 @@ from hiispider.delta import Autogenerator
 
 __all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta", "Stopwatch"]
 
+
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}

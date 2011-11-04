@@ -13,8 +13,9 @@ from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks
 from txamqp.content import Content
-from .base import BaseServer
-from .mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
+
+from hiispider.servers.base import BaseServer
+from hiispider.servers.mixins import MySQLMixin, JobQueueMixin, IdentityQueueMixin
 
 logger = logging.getLogger(__name__)
 

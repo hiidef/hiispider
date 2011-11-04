@@ -15,8 +15,9 @@ import copy
 from zlib import compress, decompress
 from twisted.internet.defer import maybeDeferred, DeferredList
 from twisted.internet.error import ConnectionDone
-from .requestqueuer import RequestQueuer
-from .unicodeconverter import convertToUTF8
+
+from hiispider.requestqueuer import RequestQueuer
+from hiispider.unicodeconverter import convertToUTF8
 
 from twisted.web.client import _parse
 from twisted.python.failure import Failure

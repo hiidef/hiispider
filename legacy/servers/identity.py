@@ -1,12 +1,20 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Hiispider Identity server."""
+
+import logging
 from uuid import uuid4
 from pprint import pformat
+
 from twisted.web.resource import Resource
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
-import logging
-from .mixins import MySQLMixin, IdentityQueueMixin
-from .base import BaseServer
+
+from hiispider.servers.mixins import MySQLMixin, IdentityQueueMixin
+from hiispider.servers.base import BaseServer
+
 from telephus.pool import CassandraClusterPool
 
 
