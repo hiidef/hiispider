@@ -1,5 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Interface resource."""
+
 from twisted.web import server
-from .base import BaseResource
+from hiispider.resources.base import BaseResource
 from twisted.python.failure import Failure
 from twisted.internet.defer import DeferredList
 

@@ -1,6 +1,12 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Plugin helpers."""
+
 import inspect
 import types
-from .delta import Autogenerator
+
+from hiispider.delta import Autogenerator
 
 __all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
 EXPOSED_FUNCTIONS = {}

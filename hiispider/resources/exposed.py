@@ -1,7 +1,12 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Exposed resource."""
+
 import sys
 from twisted.web import server
 from twisted.internet.defer import maybeDeferred
-from .base import BaseResource
+from hiispider.resources.base import BaseResource
 
 class ExposedResource(BaseResource):
 
