@@ -7,9 +7,11 @@ of writing results to both MySQL and Cassandra and features a """
 
 VERSION = (0, 10, 2, 9)
 
-from servers import *
+#from servers import *
 from plugin import HiiSpiderPlugin
 
-__all__ = ['SchedulerServer', 'InterfaceServer', 'WorkerServer', 'TestingServer',
-    'CassandraServer', 'IdentityServer', 'HiiSpiderPlugin', 'VERSION']
+__all__ = ['VERSION']
+
+#__all__ = ['SchedulerServer', 'InterfaceServer', 'WorkerServer', 'TestingServer',
+#    'CassandraServer', 'IdentityServer', 'HiiSpiderPlugin', 'VERSION']
 
