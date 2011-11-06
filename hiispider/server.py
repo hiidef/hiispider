@@ -345,7 +345,7 @@ class Server(pb.Root):
             "delta":self.delta_functions.get(id(func), None),
             "category":category,
         }
-        LOGGER.info("Function %s is now callable." % function_name)
+        #LOGGER.debug("Function %s is now callable." % function_name)
         if expose and self.resource is not None:
             self.exposed_functions.append(function_name)
             er = ExposedFunctionResource(self, function_name)
@@ -360,7 +360,7 @@ class Server(pb.Root):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.resource.putChild(function_name_parts[0], er)
-            LOGGER.info("%s is now available via HTTP." % function_name)
+            #LOGGER.info("%s is now available via HTTP." % function_name)
         return function_name
     
     def _getArguments(self, func):
