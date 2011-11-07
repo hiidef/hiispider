@@ -3,20 +3,22 @@
 
 """Connects to various components to generate an internal queue of job objects."""
 
-from twisted.internet.defer import inlineCallbacks, Deferred
-from copy import copy
-from twisted.internet import task
+import urllib
+import logging
 import cPickle
 from zlib import decompress, compress
 from uuid import UUID
 from collections import defaultdict
-import logging
 from traceback import format_exc
-import urllib
-from ..exceptions import JobGetterShutdownException
-from ..components import Redis, MySQL, JobQueue, Logger
-from ..job import Job
-from ..components import Component, shared, Queue
+from copy import copy
+
+from twisted.internet import task
+from twisted.internet.defer import inlineCallbacks, Deferred
+
+from hiispider.exceptions import JobGetterShutdownException
+from hiispider.components import Redis, MySQL, JobQueue, Logger, Component,\
+        shared, Queue
+from hiispider.job import Job
 
 
 LOGGER = logging.getLogger(__name__)
@@ -40,8 +42,8 @@ class JobGetter(Component):
         config = copy(config)
         config.update(kwargs)
         self.scheduler_server = config["scheduler_server"]
-        self.scheduler_server_port = config["scheduler_server_port"]    
-    
+        self.scheduler_server_port = config["scheduler_server_port"]
+
     def __len__(self):
         return sum([
             len(self.uuid_queue),
@@ -62,7 +64,7 @@ class JobGetter(Component):
         self.uncached_uuid_queue = []
         self.user_account_queue = []
         yield super(JobGetter, self).shutdown()
- 
+
 
     @inlineCallbacks
     def setJobCache(self, job):
@@ -82,11 +84,11 @@ class JobGetter(Component):
             raise Exception("FastCache must be a string.")
         if uuid is None:
             return
-        try:    
+        try:
             data = yield self.server.redis.set("fastcache:%s" % uuid, data)
         except Exception, e:
             LOGGER.error(format_exc())
-        
+
     @shared
     @inlineCallbacks
     def deleteReservation(self, job):
@@ -117,7 +119,7 @@ class JobGetter(Component):
             d = Deferred()
             self.job_requests.append(d)
             return d
-  
+
     def dequeue(self):
         LOGGER.debug("%s queued jobs." % len(self.job_queue))
         while self.job_requests:
@@ -136,7 +138,7 @@ class JobGetter(Component):
         if len(self) > self.min_size:
             return
         self._dequeuejobs()
-    
+
     @inlineCallbacks
     def _dequeuejobs(self):
         self.uuid_dequeueing = True
@@ -154,7 +156,7 @@ class JobGetter(Component):
                 except Exception:
                     LOGGER.error(format_exc())
                     break
-                self.checkCachedJobs(zip(uuids, data))    
+                self.checkCachedJobs(zip(uuids, data))
         self.uuid_dequeueing = False
 
     def checkCachedJobs(self, results):
@@ -218,7 +220,7 @@ class JobGetter(Component):
                 self.server.worker.mapJob(job) # Do this now so mapped values are cached.
                 self.setJobCache(job)
                 self.fast_cache_queue.append(job)
-        
+
     @inlineCallbacks
     def getFastCache(self):
         fast_cache_jobs = []

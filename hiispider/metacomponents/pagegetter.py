@@ -3,11 +3,12 @@
 
 """Encapsulates the pagegetter. Responsible for cached HTTP calls."""
 
-from copy import copy
 import logging
-from ..components.base import Component, shared, broadcasted
-from ..components import Redis, Cassandra, Logger
-from ..pagegetter import PageGetter as pg
+from copy import copy
+
+from hiispider.components.base import Component, shared, broadcasted
+from hiispider.components import Redis, Cassandra, Logger
+from hiispider.pagegetter import PageGetter as pg
 
 
 LOGGER = logging.getLogger(__name__)

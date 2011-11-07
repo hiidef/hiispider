@@ -4,22 +4,27 @@
 """Executes jobs, reports results to a number of components."""
 
 import time
+import logging
 from pprint import pformat
 from copy import copy
-import logging
 from collections import defaultdict
 from traceback import format_exc
 from random import random
+
 from twisted.internet import task, reactor
 from twisted.internet.defer import inlineCallbacks
-from .jobexecuter import JobExecuter
+
+from hiispider.metacomponents.jobexecuter import JobExecuter
+from hiispider.metacomponents.jobgetter import JobGetter
+from hiispider.metacomponents.pagegetter import PageGetter
+from hiispider.components import *
 
 
-LOGGER = logging.getLogger(__name__)  
+LOGGER = logging.getLogger(__name__)
 
 
 class Worker(JobExecuter):
-    
+
     """Initializes workers that communicate with external components."""
 
     delta_enabled = False
@@ -33,6 +38,7 @@ class Worker(JobExecuter):
     timer_starts = {}
     job_queue = []
     getting_jobs = False
+    requires = [Logger, Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra]
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Worker, self).__init__(server, config, server_mode, **kwargs)
@@ -86,7 +92,7 @@ class Worker(JobExecuter):
             jobs = yield self.server.jobgetter.getJobs()
             self.job_queue.extend(jobs)
         except Exception:
-            LOGGER.error(format_exc())  
+            LOGGER.error(format_exc())
         self.getting_jobs = False
 
     @inlineCallbacks
