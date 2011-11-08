@@ -13,7 +13,8 @@ from datetime import datetime
 from hiiguid import HiiGUID
 
 srt = lambda l: list(sorted(l))
-datapath = os.path.join(os.path.dirname(__file__), 'deltas')
+
+DATAPATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
 
 def read(path):
     """Read a file and return its contents, cleaning up after file handles."""
@@ -165,3 +166,8 @@ class TestAutogenerate(TestCase):
             srt([{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']]),
         )
     
+    def test_goodreads(self):
+        from simplejson import loads
+        old = loads(read("%s/goodreads/old.json" % DATAPATH))
+        new = loads(read("%s/goodreads/old.json" % DATAPATH))
+        self.assertEqual(autogenerate(old, new), [])
