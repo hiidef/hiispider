@@ -167,7 +167,10 @@ class TestAutogenerate(TestCase):
         )
     
     def test_goodreads(self):
-        from simplejson import loads
-        old = loads(read("%s/goodreads/old.json" % DATAPATH))
-        new = loads(read("%s/goodreads/old.json" % DATAPATH))
-        self.assertEqual(autogenerate(old, new), [])
+        def autogenerate_goodreads(*args, **kwargs):
+            autogenerator = delta.Autogenerator(paths="books", includes="books/id")
+            return [x.data for x in autogenerator(*args, **kwargs)]
+        from ujson import decode
+        old = decode(read("%s/goodreads/old.json" % DATAPATH))
+        new = decode(read("%s/goodreads/new.json" % DATAPATH))
+        self.assertEqual(autogenerate_goodreads(old, new), [])
