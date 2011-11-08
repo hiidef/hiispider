@@ -131,7 +131,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 old_data = yield self.getData(user_id, job.uuid)
                 # TODO: make sure we check that old_data exists
                 deltas = delta_func(new_data, old_data)
-                logger.debug("Got %s deltas" % len(deltas))
+                logger.debug("Got %s deltas for %s: %s(%s)" % (len(deltas), user_id, job.subservice, job.uuid))
                 for delta in deltas:
                     # FIXME why is category not always set?
                     category = 'unknown'
