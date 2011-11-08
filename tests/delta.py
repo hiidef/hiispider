@@ -13,7 +13,8 @@ from datetime import datetime
 from hiiguid import HiiGUID
 
 srt = lambda l: list(sorted(l))
-datapath = os.path.join(os.path.dirname(__file__), 'deltas')
+
+DATAPATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
 
 def read(path):
     """Read a file and return its contents, cleaning up after file handles."""
@@ -165,3 +166,11 @@ class TestAutogenerate(TestCase):
             srt([{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']]),
         )
     
+    def test_goodreads(self):
+        def autogenerate_goodreads(*args, **kwargs):
+            autogenerator = delta.Autogenerator(paths="books", includes="books/id")
+            return [x.data for x in autogenerator(*args, **kwargs)]
+        from ujson import decode
+        old = decode(read("%s/goodreads/old.json" % DATAPATH))
+        new = decode(read("%s/goodreads/new.json" % DATAPATH))
+        self.assertEqual(autogenerate_goodreads(old, new), [])
