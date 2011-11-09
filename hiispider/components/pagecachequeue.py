@@ -6,7 +6,7 @@ Communicates with Page Cache Queue
 """
 
 import logging
-import simplejson
+import ujson as json
 from hashlib import sha256
 from txamqp.content import Content
 from twisted.internet.defer import inlineCallbacks
@@ -25,11 +25,7 @@ class PageCacheQueue(Queue):
 
     def __init__(self, server, config, server_mode, **kwargs):
         kwargs["amqp_vhost"] = config["amqp_pagecache_vhost"]
-        super(PageCacheQueue, self).__init__(
-            server, 
-            config, 
-            server_mode, 
-            **kwargs)
+        super(PageCacheQueue, self).__init__(server, config, server_mode, **kwargs)
         self.pagecache_web_server_host = config["pagecache_web_server_host"]
 
     @shared
@@ -51,7 +47,7 @@ class PageCacheQueue(Queue):
                 job.user_account['username'])
         pagecache_msg['username'] = job.user_account['username']
         pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
-        msg = Content(simplejson.dumps(pagecache_msg))
+        msg = Content(json.dumps(pagecache_msg))
         try:
             yield self.chan.basic_publish(
                 exchange=self.amqp["exchange"],

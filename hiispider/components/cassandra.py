@@ -7,7 +7,7 @@ Communicates with Cassandra.
 
 import logging
 import zlib
-import simplejson
+import ujson as json
 from copy import copy
 from telephus.pool import CassandraClusterPool
 from telephus.cassandra.c08.ttypes import NotFoundException
@@ -22,12 +22,12 @@ LOGGER = logging.getLogger(__name__)
 
 def compress(obj):
     """Dump obj to JSON, then compress with gzip."""
-    return zlib.compress(simplejson.dumps(obj))
+    return zlib.compress(json.dumps(obj))
 
 
 def decompress(s):
     """Decompress with gzip, then load obj from JSON string"""
-    return simplejson.loads(zlib.decompress(s))
+    return json.loads(zlib.decompress(s))
 
 
 class Cassandra(Component):
