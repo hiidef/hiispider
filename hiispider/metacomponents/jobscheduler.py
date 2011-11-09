@@ -48,14 +48,14 @@ class JobScheduler(Scheduler):
         self.queue.publish(get_uuid_bytes(uuid))
 
     @shared
-    def add_uuid(self, uuid, job_type):
-        return self._add_uuid(uuid, job_type)
+    def add_uuid(self, uuid, type):
+        return self._add_uuid(uuid, type)
 
-    def _add_uuid(self, uuid, job_type):
-        if job_type in self.service_mapping:
-            job_type = self.service_mapping[job_type]
-        if job_type in self.server.functions:
-            interval = self.server.functions[job_type]['interval']
+    def _add_uuid(self, uuid, type):
+        if type in self.service_mapping:
+            type = self.service_mapping[type]
+        if type in self.server.functions:
+            interval = self.server.functions[type]['interval']
             bytes = get_uuid_bytes(uuid)
             if bytes:
                 self.add(bytes, int(interval))
