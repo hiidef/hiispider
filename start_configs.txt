@@ -1,3 +1,5 @@
+python componentserver.py --components=interface,mysql,pagegetter,cassandra,logger,redis --http_port=8000 verbose
+
 python componentserver.py --components=worker --servers=127.0.0.1:5001 verbose
 python componentserver.py --components=stats,mysql,jobhistoryredis,jobgetter,pagegetter,pagecachequeue,jobqueue,cassandra,redis,logger --provides=stats,mysql,jobhistoryredis,jobgetter,pagegetter,pagecachequeue,cassandra,logger --pb_port=5001 verbose
 

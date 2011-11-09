@@ -8,7 +8,7 @@ from cPickle import dumps
 import logging
 import inspect
 import gzip
-from io import StringIO
+from cStringIO import StringIO
 import simplejson
 from requestqueuer import RequestQueuer
 from collections import defaultdict
@@ -40,7 +40,8 @@ COMPONENTS = [
     PageGetter,
     Worker,
     JobHistoryRedis,
-    JobGetter]
+    JobGetter,
+    Interface]
 # The intra-server poll interval
 POLL_INTERVAL = 60
 
@@ -69,6 +70,10 @@ class ExposedFunctionResource(Resource):
             kwargs[key.replace('.', '_')] = request.args[key][0]
         f = self._server.functions[self.function_name]
         d = maybeDeferred(f["function"], **kwargs)
+        if f["callback"]:
+            d.addCallback(f["callback"])
+        if f["errback"]:
+            d.addErrback(f["errback"])
         d.addCallback(self._successResponse)
         d.addErrback(self._errorResponse)
         d.addCallback(self._immediateResponse, request)
@@ -277,7 +282,6 @@ class Server(pb.Root):
         del self.connections_by_id[id(remote_obj)]
         del self.connections[server]
 
-    @inlineCallbacks
     def shutdown(self):
         if self.connectionsloop:
             self.connectionsloop.stop()
@@ -285,7 +289,12 @@ class Server(pb.Root):
             self.http.stopListening()
         if self.pb:
             self.pb.stopListening()
-        returnValue(None)
+
+    def add_callback(self, function_name, callback):
+        self.functions[function_name]["callback"] = callback
+
+    def add_errback(self, function_name, errback):
+        self.functions[function_name]["errback"] = errback
 
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
@@ -344,6 +353,8 @@ class Server(pb.Root):
             "get_job_uuid":get_job_uuid,
             "delta":self.delta_functions.get(id(func), None),
             "category":category,
+            "callback":None,
+            "errback":None
         }
         #LOGGER.debug("Function %s is now callable." % function_name)
         if expose and self.resource is not None:

@@ -136,7 +136,7 @@ class Worker(JobExecuter):
                 LOGGER.error(format_exc())
         try:
             self.time_start(job.uuid)
-            self.server.cassandra.setData(data, job)
+            self.server.cassandra.setData(data, job.uuid)
             self.time_end(job.uuid, "%s.cassandra" % job.function_name)
         except Exception:
             self.time_end(job.uuid, "%s.cassandra" % job.function_name)

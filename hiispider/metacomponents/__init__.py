@@ -8,7 +8,8 @@ sub-components.
 
 from pagegetter import PageGetter
 from worker import Worker
+from interface import Interface
 from jobgetter import JobGetter
 
-__all__ = ['PageGetter', 'Worker', 'JobGetter']
+__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface']
 
