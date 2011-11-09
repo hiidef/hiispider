@@ -75,7 +75,10 @@ class ExposedFunctionResource(Resource):
         f = self._server.functions[self.function_name]
         d = maybeDeferred(f["function"], **kwargs)
         if f["callback"]:
-            d.addCallback(f["callback"])
+            if f.get("pass_kwargs_to_callback", False):
+                d.addCallback(f["callback"], kwargs)
+            else:
+                d.addCallback(f["callback"])
         if f["errback"]:
             d.addErrback(f["errback"])
         d.addCallback(self._successResponse)
