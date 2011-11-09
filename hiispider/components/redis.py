@@ -29,7 +29,7 @@ class Redis(Component):
         config = copy(config)
         config.update(kwargs)
         self.hosts = config["redis_hosts"]
-    
+
     @inlineCallbacks
     def initialize(self):
         LOGGER.info("Initializing %s" % self.__class__.__name__)
@@ -40,11 +40,11 @@ class Redis(Component):
             self.server.shutdown()
             raise Exception("Could not connect to Redis.")
         LOGGER.info("%s initialized." % self.__class__.__name__)
-    
+
     @inlineCallbacks
     def shutdown(self):
         LOGGER.info("Disconnecting %s" % self.__class__.__name__)
-        yield self.client.disconnect()      
+        yield self.client.disconnect()
         LOGGER.info("%s disconnected." % self.__class__.__name__)
 
     @shared
