@@ -79,5 +79,6 @@ class JobScheduler(Scheduler):
             data = yield self.server.mysql.runQuery(sql)
             for row in data:
                 self._add_uuid(row["uuid"], row["type"])
-            LOGGER.debug("Added %s jobs to heap." % len(data))
+            if len(data):
+                LOGGER.debug("Added %s jobs to heap." % len(data))
 
