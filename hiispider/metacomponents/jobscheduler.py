@@ -30,7 +30,7 @@ class JobScheduler(Scheduler):
     requires = [Logger, MySQL, JobQueue]
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(JobScheduler, self).__init__(server, config, server_mode, 
+        super(JobScheduler, self).__init__(server, config, server_mode,
             server.jobqueue, **kwargs)
         self.service_mapping = config["service_mapping"]
         self.server.expose(self.enqueue_uuid)
@@ -49,7 +49,7 @@ class JobScheduler(Scheduler):
 
     @shared
     def add_uuid(self, uuid, job_type):
-        return _add_uuid(self, uuid, job_type)
+        return self._add_uuid(self, uuid, job_type)
 
     def _add_uuid(self, uuid, job_type):
         if job_type in self.service_mapping:
@@ -80,4 +80,4 @@ class JobScheduler(Scheduler):
             for row in data:
                 self._add_uuid(row["uuid"], row["type"])
             LOGGER.debug("Added %s jobs to heap." % len(data))
-        
+
