@@ -41,6 +41,8 @@ class Interface(Component):
         user_id = kwargs.get('site_user_id', '')
         if user_id:
             yield self.server.cassandra.setData(user_id, data, uuid)
+        else:
+            LOGGER.warn("Unable to save cassandra data for uuid %s kwargs %r" % (uuid, kwargs))
         returnValue({uuid:data})
 
     def _execute_errback(self, error):
