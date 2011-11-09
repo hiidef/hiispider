@@ -40,7 +40,7 @@ class Interface(Component):
         uuid = uuid4().hex
         # FIXME: what should we do if there's no site_user_id?
         user_id = kwargs.get('site_user_id', '')
-        yield self.server.cassandra.setData(data, uuid)
+        yield self.server.cassandra.setData(user_id, data, uuid)
         returnValue({uuid:data})
 
     def _execute_errback(self, error):
