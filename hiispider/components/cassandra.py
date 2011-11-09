@@ -103,10 +103,10 @@ class Cassandra(Component):
 
     @shared
     @inlineCallbacks
-    def setData(self, data, uuid):
+    def setData(self, user_id, data, uuid):
         s = yield threads.deferToThread(compress, data)
         result = yield self.client.insert(
-            str(job.user_account["user_id"]),
+            str(user_id),
             self.cf_content,
             s,
             column=uuid)
