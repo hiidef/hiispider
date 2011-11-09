@@ -379,7 +379,7 @@ class Server(pb.Root):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.resource.putChild(function_name_parts[0], er)
-            LOGGER.info("endpoint \"%s\: is now available via HTTP." % function_name)
+            LOGGER.info("endpoint \"%s\": is now available via HTTP." % function_name)
         return function_name
 
     def _getArguments(self, func):

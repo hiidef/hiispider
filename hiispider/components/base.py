@@ -12,6 +12,8 @@ import inspect
 import types
 from random import choice
 from cPickle import dumps, loads
+from functools import wraps
+
 from twisted.spread import pb
 from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -67,6 +69,7 @@ def shared(f):
     Proxying decorator. If the component is in server_mode, field the
     request. If not, send the request to the component pool.
     """
+    @wraps(f)
     def decorator(self, *args, **kwargs):
         if not self.initialized:
             reactor.callLater(5, INVERSE_SHARED[id(f)], self, *args, **kwargs)
