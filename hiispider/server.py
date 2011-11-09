@@ -146,6 +146,7 @@ class Server(pb.Root):
         if len(set(provides) - set(components)) > 0:
             raise ComponentServerException("Cannot provide a component not "
                 "running in server mode.")
+        self.config = config
         self.provides = set([x.__name__.lower() for x in provides])
         self.address = address
         self.servers = config.get("servers", [])

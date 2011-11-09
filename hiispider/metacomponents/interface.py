@@ -24,16 +24,15 @@ class Interface(Component):
 
     def initialize(self):
         exposed = [x for x in self.server.functions.items() if x[1]["interval"] > 0]
-        try:
-            for f in self.server.functions.values():
-                f["pass_kwargs_to_callback"] = True
-        except:
-            import traceback
-            traceback.print_exc()
+        for f in self.server.functions.values():
+            f["pass_kwargs_to_callback"] = True
         for function_name, func in exposed:
             self.server.add_callback(function_name, self._execute_callback)
             self.server.add_errback(function_name, self._execute_errback)
             LOGGER.debug("Added %s callback and errback." % function_name)
+
+        # disable fast cache on the interface server
+        self.server.config['enable_fast_cache'] = False
 
     @inlineCallbacks
     def _execute_callback(self, data, kwargs):
