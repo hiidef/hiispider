@@ -49,7 +49,7 @@ class JobScheduler(Scheduler):
 
     @shared
     def add_uuid(self, uuid, job_type):
-        return self._add_uuid(self, uuid, job_type)
+        return self._add_uuid(uuid, job_type)
 
     def _add_uuid(self, uuid, job_type):
         if job_type in self.service_mapping:
