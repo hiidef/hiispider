@@ -39,6 +39,8 @@ class Interface(Component):
         uuid = uuid4().hex
         # FIXME: what should we do if there's no site_user_id?
         user_id = kwargs.get('site_user_id', '')
+        if not user_id:
+            raise Exception("site_user_id is a required keyword argument.")
         yield self.server.cassandra.setData(user_id, data, uuid)
         returnValue({uuid:data})
 
