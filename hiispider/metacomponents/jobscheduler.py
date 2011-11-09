@@ -18,9 +18,10 @@ def get_uuid_bytes(uuid):
     try:
         # Make sure the uuid is in bytes
         uuid_bytes = UUID(uuid).bytes
+        return uuid_bytes
     except ValueError:
         LOGGER.error("Could not turn UUID into bytes: %s" % uuid)
-    return uuid_bytes
+        return None
 
 
 class JobScheduler(Scheduler):
@@ -45,7 +46,7 @@ class JobScheduler(Scheduler):
             self.removed_jobs.remove(item)
             return False
         return True
-    
+
     @shared
     def enqueue_uuid(self, uuid):
         self.queue.publish(get_uuid_bytes(uuid))
@@ -58,9 +59,10 @@ class JobScheduler(Scheduler):
         if job_type in self.service_mapping:
             job_type = self.service_mapping[job_type]
         if job_type in self.server.functions:
-            self.add(
-                get_uuid_bytes(uuid), 
-                int(self.server.functions[job_type]['interval']))
+            interval = self.server.functions[job_type]['interval']
+            bytes = get_uuid_bytes(uuid)
+            if bytes:
+                self.add(bytes, int(interval))
 
     @shared
     def remove_uuid(self, uuid):
