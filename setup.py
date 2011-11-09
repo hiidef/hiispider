@@ -1,6 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Hiispider setup script."""
+
 from setuptools import setup, find_packages
 from hiispider import VERSION
+
 # Also requires python-dev and python-openssl
+
 version = '.'.join(map(str, VERSION))
 
 setup(

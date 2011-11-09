@@ -24,6 +24,7 @@ from twisted.python.failure import Failure
 
 from hiispider.exceptions import StaleContentException, NegativeHostCacheException,\
     NegativeReqCacheException
+
 from hiispider import stats
 
 def negative_cache_hit(error, cls):
@@ -57,7 +58,7 @@ UTC = CoordinatedUniversalTime()
 logger = logging.getLogger(__name__)
 
 
-class PageGetter:
+class PageGetter(object):
 
 
     def __init__(self,
