@@ -5,8 +5,8 @@
 
 import logging
 from uuid import UUID
-from .scheduler import Scheduler
-from ..components import Logger, MySQL, JobQueue
+from hiispider.metacomponents.scheduler import Scheduler
+from hiispider.components import Logger, MySQL, JobQueue
 from twisted.internet.defer import inlineCallbacks
 from hiispider.components.base import shared
 
@@ -30,12 +30,8 @@ class JobScheduler(Scheduler):
     requires = [Logger, MySQL, JobQueue]
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(JobScheduler, self).__init__(
-            server, 
-            config, 
-            server_mode, 
-            server.jobqueue, 
-            **kwargs)
+        super(JobScheduler, self).__init__(server, config, server_mode, 
+            server.jobqueue, **kwargs)
         self.service_mapping = config["service_mapping"]
         self.server.expose(self.enqueue_uuid)
         self.server.expose(self.add_uuid)
