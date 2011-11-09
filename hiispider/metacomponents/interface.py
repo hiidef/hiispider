@@ -25,7 +25,7 @@ class Interface(Component):
     def initialize(self):
         exposed = [x for x in self.server.functions.items() if x[1]["interval"] > 0]
         try:
-            for f in self.server.functions:
+            for f in self.server.functions.values():
                 f["pass_kwargs_to_callback"] = True
         except:
             import traceback
