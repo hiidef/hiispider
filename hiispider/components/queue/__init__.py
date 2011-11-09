@@ -13,6 +13,7 @@ from twisted.internet import task
 from txamqp.client import Closed
 from txamqp.client import TwistedDelegate
 from txamqp.protocol import AMQClient
+from txamqp.content import Content
 import txamqp.spec
 from twisted.spread import pb
 from twisted.internet import reactor
@@ -91,6 +92,12 @@ class Queue(Component):
         self.statusloop = task.LoopingCall(self.status_check)
         self.statusloop.start(60)
         LOGGER.info('%s initialized.' % self.__class__.__name__)
+
+    @shared
+    def publish(self, item):
+        self.chan.basic_publish(
+            exchange=self.amqp["exchange"],
+            content=Content(item))
 
     @inlineCallbacks
     def shutdown(self):

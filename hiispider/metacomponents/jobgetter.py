@@ -97,7 +97,7 @@ class JobGetter(Component):
         LOGGER.info('Deleting job: %s, %s' % (job.function_name, job.uuid))
         yield self.server.mysql.runQuery("DELETE FROM spider_service "
             "WHERE uuid=%s", uuid)
-        url = 'http://%s:%s/function/schedulerserver/removefromjobsheap?%s' % (
+        url = 'http://%s:%s/jobscheduler/remove_uuid?%s' % (
             self.scheduler_server,
             self.scheduler_server_port,
             urllib.urlencode({'uuid': uuid}))

@@ -10,6 +10,9 @@ from pagegetter import PageGetter
 from worker import Worker
 from interface import Interface
 from jobgetter import JobGetter
+from jobscheduler import JobScheduler
+from identityscheduler import IdentityScheduler
 
-__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface']
+
+__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", "IdentityScheduler"]
 

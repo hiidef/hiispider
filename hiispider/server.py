@@ -41,7 +41,9 @@ COMPONENTS = [
     Worker,
     JobHistoryRedis,
     JobGetter,
-    Interface]
+    Interface,
+    JobScheduler,
+    IdentityScheduler]
 # The intra-server poll interval
 POLL_INTERVAL = 60
 
