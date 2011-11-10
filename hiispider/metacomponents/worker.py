@@ -147,7 +147,7 @@ class Worker(JobExecuter):
 
     def _deltas(self):
         if self.delta_enabled:
-            return random.random() <= self.delta_sample_rate
+            return random() <= self.delta_sample_rate
         return False
 
     deltas = property(_deltas)
