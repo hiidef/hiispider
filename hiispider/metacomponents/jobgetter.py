@@ -145,7 +145,7 @@ class JobGetter(Component):
         while len(self) < self.min_size * 4:
             try:
                 content = yield self.server.jobqueue.get(timeout=5)
-            except Exception:
+            except Exception, e:
                 LOGGER.error(format_exc())
                 break
             self.uuid_queue.append(UUID(bytes=content).hex)
