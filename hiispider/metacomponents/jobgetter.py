@@ -42,6 +42,8 @@ class JobGetter(Component):
         super(JobGetter, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
+        # add the ability to configure min_size
+        self.min_size = config.get('jobgetter_min_size', JobGetter.min_size)
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
 
