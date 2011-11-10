@@ -14,6 +14,7 @@ from copy import copy
 
 from twisted.internet import task
 from twisted.internet.defer import inlineCallbacks, Deferred
+from txamqp.queue import Empty
 
 from hiispider.exceptions import JobGetterShutdownException
 from hiispider.components import Redis, MySQL, JobQueue, Logger, Component,\
@@ -145,6 +146,8 @@ class JobGetter(Component):
         while len(self) < self.min_size * 4:
             try:
                 content = yield self.server.jobqueue.get(timeout=5)
+            except Empty:
+                pass
             except Exception, e:
                 LOGGER.error(format_exc())
                 break

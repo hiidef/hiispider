@@ -5,7 +5,7 @@
 Communicates with the Job Queue.
 """
 
-from .queue import Queue
+from hiispider.components.queue import Queue
 
 
 class JobQueue(Queue):
