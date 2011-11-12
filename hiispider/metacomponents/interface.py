@@ -20,7 +20,7 @@ class Interface(Component):
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Interface, self).__init__(server, server_mode)
-        self.mysql = self.server.mysql # For legacy plugins.
+        self.mysql = self.server.mysql  # For legacy plugins.
 
     def initialize(self):
         exposed = self.server.functions.items()
@@ -35,15 +35,14 @@ class Interface(Component):
 
     @inlineCallbacks
     def _execute_callback(self, data, kwargs):
-        uuid = uuid4().hex
-        # FIXME: what should we do if there's no site_user_id?
         user_id = kwargs.get('site_user_id', '')
         if user_id:
+            uuid = uuid4().hex
             yield self.server.cassandra.setData(user_id, data, uuid)
+            returnValue({uuid: data})
         else:
             LOGGER.warn("Unable to save cassandra data for uuid %s kwargs %r" % (uuid, kwargs))
-        returnValue({uuid:data})
+            returnValue(data)
 
     def _execute_errback(self, error):
         return error
-
