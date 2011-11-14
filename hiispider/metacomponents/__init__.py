@@ -12,7 +12,7 @@ from interface import Interface
 from jobgetter import JobGetter
 from jobscheduler import JobScheduler
 from identityscheduler import IdentityScheduler
+from testing import Testing
 
-
-__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", "IdentityScheduler"]
+__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", "IdentityScheduler", "Testing"]
 
