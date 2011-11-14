@@ -82,8 +82,10 @@ class Worker(JobExecuter):
 
     def time_end(self, task_id, task_name, add=0):
         self.timer_count[task_name] += 1
-        self.timer[task_name] += add + time.time() - self.timer_starts[task_id]
-        del self.timer_starts[task_id]
+        self.timer[task_name] += add + time.time()
+        if task_id in self.timer_starts:
+            self.timer[task_name] -= self.timer_starts[task_id]
+            del self.timer_starts[task_id]
 
     @inlineCallbacks
     def getJobs(self):
