@@ -147,6 +147,9 @@ class JobExecuter(Component):
             return
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
+            # FIXME: Debug Set Trace
+            import ipdb
+            ipdb.set_trace()
             category = self.server.functions[job.function_name].get('category', 'unknown')
             user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
             mapping = {
