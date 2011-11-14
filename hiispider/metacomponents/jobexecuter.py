@@ -53,7 +53,6 @@ class JobExecuter(Component):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
-
         self.delta_debug = config.get('delta_debug', False)
         self.mysql = self.server.mysql # For legacy plugins.
 

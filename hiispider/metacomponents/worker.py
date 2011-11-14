@@ -38,7 +38,7 @@ class Worker(JobExecuter):
     timer_starts = {}
     job_queue = []
     getting_jobs = False
-    requires = [Logger, Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra]
+    requires = [Logger, Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra, Redis]
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(Worker, self).__init__(server, config, server_mode, **kwargs)

@@ -1,6 +1,9 @@
 # Job Scheduler
 python componentserver.py --components=jobscheduler,mysql,jobqueue,logger --http_port=8000 verbose
 
+# Testing server
+python componentserver.py --components=testing,mysql,pagegetter,cassandra,redis --http_port=8000 verbose
+
 # Interface server
 python componentserver.py --components=interface,mysql,pagegetter,cassandra,logger,redis --http_port=8000 verbose
 
