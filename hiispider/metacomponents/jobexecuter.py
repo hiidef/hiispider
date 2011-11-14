@@ -146,14 +146,12 @@ class JobExecuter(Component):
             return
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
-            # FIXME: Debug Set Trace
-            import ipdb
-            ipdb.set_trace()
             category = self.server.functions[job.function_name].get('category', 'unknown')
             user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
+            user_id = str(job.user_account['user_id'])
             mapping = {
                 'data': zlib.compress(json.dumps(delta.data)),
-                'user_id': str(job.user_account['user_id']),
+                'user_id': user_id,
                 'category': category,
                 'service': job.subservice.split('/')[0],
                 'subservice': job.subservice,
@@ -171,7 +169,7 @@ class JobExecuter(Component):
                 column_family=self.server.cassandra.cf_delta,
                 mapping=mapping)
             yield self.server.cassandra.insert(
-                key=str(user_id),
+                key=user_id,
                 column_family=self.server.cassandra.cf_delta_user,
                 column=user_column,
                 value='')
