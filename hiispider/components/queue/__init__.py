@@ -19,9 +19,10 @@ from twisted.spread import pb
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
-from ..base import Component, shared
-from ..logger import Logger
-from .specs import v0_8
+
+from hiispider.components.base import Component, shared
+from hiispider.components.logger import Logger
+from specs import v0_8
 
 
 LOGGER = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class Queue(Component):
             "exchange":config["amqp_exchange"],
             "prefetch_count":config["amqp_prefetch_count"],
             "vhost":config["amqp_vhost"]}
-    
+
     @inlineCallbacks
     def initialize(self):
         LOGGER.info("Initializing %s" % self.__class__.__name__)
@@ -61,11 +62,11 @@ class Queue(Component):
             spec=txamqp.spec.loadString(v0_8),
             heartbeat=0)
         self.conn = yield client.connectTCP(
-            self.amqp["host"], 
-            self.amqp["port"], 
+            self.amqp["host"],
+            self.amqp["port"],
             timeout=sys.maxint)
         yield self.conn.authenticate(
-            self.amqp["username"], 
+            self.amqp["username"],
             self.amqp["password"])
         self.chan = yield self.conn.channel(2)
         yield self.chan.channel_open()
@@ -116,7 +117,7 @@ class Queue(Component):
         msg = yield self.queue.get(*args, **kwargs)
         self.chan.basic_ack(msg.delivery_tag)
         returnValue(msg.content.body)
-    
+
     @inlineCallbacks
     def status_check(self):
         try:
@@ -129,7 +130,7 @@ class Queue(Component):
         except:
             LOGGER.error(format_exc())
             self.reconnect()
-    
+
     @inlineCallbacks
     def reconnect(self):
         try:

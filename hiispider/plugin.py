@@ -123,7 +123,8 @@ class HiiSpiderPlugin(object):
                             name=name)
 
     def setFastCache(self, uuid, data):
-        return self.spider.server.jobgetter.setFastCache(uuid, data)
+        if self.spider.server.config.get('enable_fast_cache', True):
+            return self.spider.server.jobgetter.setFastCache(uuid, data)
 
     def getPage(self, *args, **kwargs):
         return self.spider.server.pagegetter.getPage(*args, **kwargs)

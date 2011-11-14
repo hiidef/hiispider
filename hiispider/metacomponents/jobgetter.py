@@ -14,6 +14,7 @@ from copy import copy
 
 from twisted.internet import task
 from twisted.internet.defer import inlineCallbacks, Deferred
+from txamqp.queue import Empty
 
 from hiispider.exceptions import JobGetterShutdownException
 from hiispider.components import Redis, MySQL, JobQueue, Logger, Component,\
@@ -41,6 +42,8 @@ class JobGetter(Component):
         super(JobGetter, self).__init__(server, server_mode)
         config = copy(config)
         config.update(kwargs)
+        # add the ability to configure min_size
+        self.min_size = config.get('jobgetter_min_size', JobGetter.min_size)
         self.scheduler_server = config["scheduler_server"]
         self.scheduler_server_port = config["scheduler_server_port"]
 
@@ -145,7 +148,9 @@ class JobGetter(Component):
         while len(self) < self.min_size * 4:
             try:
                 content = yield self.server.jobqueue.get(timeout=5)
-            except Exception:
+            except Empty:
+                pass
+            except Exception, e:
                 LOGGER.error(format_exc())
                 break
             self.uuid_queue.append(UUID(bytes=content).hex)

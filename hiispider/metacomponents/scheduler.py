@@ -24,7 +24,7 @@ class Scheduler(Component):
     def __init__(self, server, config, server_mode, queue, **kwargs):
         self.queue = queue
         super(Scheduler, self).__init__(server, server_mode)
-    
+
     def start(self):
         self.enqueueloop = task.LoopingCall(self.enqueue)
         self.enqueueloop.start(1)
@@ -49,7 +49,7 @@ class Scheduler(Component):
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         if self.queue.queue_size < 100000:
-            LOGGER.debug("%s : %s" % (self.__class__.__name__, now))
+            # LOGGER.debug("%s : %s" % (self.__class__.__name__, now))
             i = 0
             while self.heap and self.heap[0][0] < now:
                 x = heappop(self.heap) # x is (enqueue_time, (item, interval))
@@ -57,8 +57,9 @@ class Scheduler(Component):
                 if self.is_valid(x[1][0]): # Check for valid item
                     self.queue.publish(x[1][0]) # Publish if valid
                     # push item/interval back on heap
-                    heappush(self.heap, (now + x[1][1], x[1])) 
-            LOGGER.debug("Added %s items to the queue." % i)
+                    heappush(self.heap, (now + x[1][1], x[1]))
+            if i:
+                LOGGER.debug("Added %s items to the queue." % i)
         elif self.heap:
             x = heappop(self.heap)
             distribution = random.randint(-1 * x[1][1] / 2, x[1][1] / 2)

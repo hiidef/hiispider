@@ -9,20 +9,21 @@ import time
 import logging
 import zlib
 import os
-import time
 import pprint
 from decimal import Decimal
-import simplejson
+import ujson as json
 from traceback import format_tb, format_exc
+
 from twisted.internet.defer import inlineCallbacks, maybeDeferred
 from twisted.internet.error import ConnectionRefusedError, TimeoutError
 from twisted.web.error import Error as TwistedWebError
-from .jobgetter import JobGetter 
-from .pagegetter import PageGetter
-from ..exceptions import *
-from ..components import Component, Stats, MySQL, JobHistoryRedis
-from ..components import Cassandra, Logger, PageCacheQueue
-from ..components.base import ComponentException
+
+from hiispider.metacomponents.jobgetter import JobGetter
+from hiispider.metacomponents.pagegetter import PageGetter
+from hiispider.exceptions import *
+from hiispider.components import Component, Stats, MySQL, JobHistoryRedis
+from hiispider.components import Cassandra, Logger, PageCacheQueue
+from hiispider.components.base import ComponentException
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class JobExecuter(Component):
         self.service_args_mapping = config["service_args_mapping"]
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
-                    
+
         self.delta_debug = config.get('delta_debug', False)
         self.mysql = self.server.mysql # For legacy plugins.
 
@@ -85,7 +86,7 @@ class JobExecuter(Component):
         self.server.stats.increment('job.%s.success' % job.dotted_name)
         self.server.stats.timer.stop(timer)
         self.server.stats.timer.stop('job.time')
-        return data      
+        return data
 
     def _executeJobErrback(self, error, job, timer):
         try:
@@ -125,10 +126,10 @@ class JobExecuter(Component):
             plugl = logging.getLogger(plugin)
             tb = '\n'.join(format_tb(error.getTracebackObject()))
             plugl.error("%s: Error executing job:%s - %s\n%s\n%s" % (
-                e.__class__, 
-                job.function_name, 
-                job.uuid, 
-                tb, 
+                e.__class__,
+                job.function_name,
+                job.uuid,
+                tb,
                 format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
@@ -145,11 +146,12 @@ class JobExecuter(Component):
             return
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
-            category = self.functions[job.function_name].get('category', 'unknown')
+            category = self.server.functions[job.function_name].get('category', 'unknown')
             user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
+            user_id = str(job.user_account['user_id'])
             mapping = {
-                'data': zlib.compress(simplejson.dumps(delta.data)),
-                'user_id': str(user_id),
+                'data': zlib.compress(json.dumps(delta.data)),
+                'user_id': user_id,
                 'category': category,
                 'service': job.subservice.split('/')[0],
                 'subservice': job.subservice,
@@ -158,17 +160,17 @@ class JobExecuter(Component):
             if self.delta_debug:
                 ts = str(time.time())
                 mapping.update({
-                    'old_data': zlib.compress(simplejson.dumps(old_data)),
-                    'new_data': zlib.compress(simplejson.dumps(new_data)),
+                    'old_data': zlib.compress(json.dumps(old_data)),
+                    'new_data': zlib.compress(json.dumps(new_data)),
                     'generated': ts,
                     'updated': ts})
             yield self.server.cassandra.batch_insert(
                 key=str(delta.id),
-                column_family=self.cassandra_cf_delta,
+                column_family=self.server.cassandra.cf_delta,
                 mapping=mapping)
             yield self.server.cassandra.insert(
-                key=str(user_id),
-                column_family=self.cassandra_cf_delta_user,
+                key=user_id,
+                column_family=self.server.cassandra.cf_delta_user,
                 column=user_column,
                 value='')
 
@@ -186,7 +188,7 @@ class JobExecuter(Component):
         }
         LOGGER.debug("Got server data:\n%s" % pprint.pformat(data))
         return data
-    
+
     def mapJob(self, job):
         if job.function_name in self.service_mapping:
             job.function_name = self.service_mapping[job.function_name]
@@ -198,10 +200,10 @@ class JobExecuter(Component):
             f = self.server.functions[job.function_name]
             # add in support for completely variadic methods;  these are
             # methods that accept *args, **kwargs in some fashion (usually
-            # because of a decorator like inlineCallbacks);  note that these 
-            # will be called with the full amt of kwargs pulled in by the 
+            # because of a decorator like inlineCallbacks);  note that these
+            # will be called with the full amt of kwargs pulled in by the
             # jobGetter and should therefore take **kwargs somewhere underneath
-            # and have all of its real positional args mapped in the 
+            # and have all of its real positional args mapped in the
             # inverted_args_mapping
             if f['variadic']:
                 kwargs = dict(job.kwargs)
@@ -214,7 +216,7 @@ class JobExecuter(Component):
                         kwargs[key] = job.kwargs[mapping[key]]
                     elif key in job.kwargs:
                         kwargs[key] = job.kwargs[key]
-                    # mimic the behavior of the old job mapper, 
+                    # mimic the behavior of the old job mapper,
                     # mapping args (like 'type') to the spider_service object
                     # itself in addition to the job kwargs
                     elif key in job.user_account:
@@ -222,13 +224,13 @@ class JobExecuter(Component):
                     else:
                         LOGGER.error("Could not find required argument %s for "
                             " function %s in %s. Available: %s, %s" % (
-                            key, 
-                            job.function_name, 
-                            job, 
-                            job.kwargs, 
+                            key,
+                            job.function_name,
+                            job,
+                            job.kwargs,
                             job.user_account))
-                        # FIXME: we shouldn't except here because a 
-                        # log message and quiet failure is enough;  
+                        # FIXME: we shouldn't except here because a
+                        # log message and quiet failure is enough;
                         # we need some quiet error channel
                         raise Exception("Could not find argument: %s" % key)
                 for key in f['optional_arguments']:

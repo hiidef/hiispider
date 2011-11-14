@@ -12,12 +12,14 @@ import inspect
 import types
 from random import choice
 from cPickle import dumps, loads
+from functools import wraps
+
 from twisted.spread import pb
 from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
-from ..exceptions import ComponentException
-from ..sleep import Sleep
+
+from hiispider.exceptions import ComponentException
 
 
 LOGGER = logging.getLogger(__name__)
@@ -44,7 +46,7 @@ def broadcasted(f):
         for remote_obj in self.remote_objs.values():
             try:
                 d = remote_obj.callRemote(
-                    self.server_methods[id(f)], 
+                    self.server_methods[id(f)],
                     *args,
                     **kwargs)
             except pb.DeadReferenceError:
@@ -67,6 +69,7 @@ def shared(f):
     Proxying decorator. If the component is in server_mode, field the
     request. If not, send the request to the component pool.
     """
+    @wraps(f)
     def decorator(self, *args, **kwargs):
         if not self.initialized:
             reactor.callLater(5, INVERSE_SHARED[id(f)], self, *args, **kwargs)
@@ -88,18 +91,18 @@ def shared(f):
         kwargs["_remote_call"] = True
         try:
             d = remote_obj.callRemote(
-                self.server_methods[id(f)], 
-                *args, 
+                self.server_methods[id(f)],
+                *args,
                 **kwargs)
         except pb.DeadReferenceError:
             self.server.disconnect_by_remote_obj(remote_obj)
             return INVERSE_SHARED[id(f)](self, *args, **kwargs)
         d.addCallback(check_response, self, time.time())
         d.addErrback(
-            self.trap_shared_disconnect, 
-            remote_obj, 
-            INVERSE_SHARED[id(f)], 
-            *args, 
+            self.trap_shared_disconnect,
+            remote_obj,
+            INVERSE_SHARED[id(f)],
+            *args,
             **kwargs)
         return d
     SHARED[id(decorator)] = (f, id(f))
@@ -114,7 +117,7 @@ class Component(object):
 
     initialized = False
     server_mode = False
-    running = False 
+    running = False
     requires = None
     wait_time = 0
 
@@ -131,7 +134,7 @@ class Component(object):
             func_id = id(func.__func__)
             if func_id in SHARED:
                 name = "%s_%s" % (
-                    func.im_class.__name__, 
+                    func.im_class.__name__,
                     SHARED[func_id][0].__name__)
                 setattr(server, "remote_%s" % name, func)
                 self.server_methods[SHARED[func_id][1]] = name
@@ -142,7 +145,7 @@ class Component(object):
             'before',
             'shutdown',
             self._shutdown)
-    
+
     def trap_broadcasted_disconnect(self, failure, remote_obj):
         failure.trap(pb.PBConnectionLost)
         if self.running:
@@ -172,13 +175,13 @@ class Component(object):
         """Abstract initialization method."""
         self.running = True
         if self.server_mode:
-            yield maybeDeferred(self.start)       
+            yield maybeDeferred(self.start)
         returnValue(None)
 
     def initialize(self):
         """Abstract initialization method."""
         pass
-    
+
     def start(self):
         """Abstract start method."""
         pass

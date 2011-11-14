@@ -9,10 +9,11 @@ import logging
 import inspect
 import gzip
 from cStringIO import StringIO
-import simplejson
+import ujson as json
 from requestqueuer import RequestQueuer
 from collections import defaultdict
 from traceback import format_exc
+
 from twisted.web import server
 from twisted.web.resource import Resource
 from twisted.internet import reactor, task
@@ -20,22 +21,23 @@ from twisted.internet.defer import Deferred, DeferredList, maybeDeferred, inline
 from twisted.spread import pb
 from twisted.internet.error import ConnectionRefusedError
 import twisted.spread.banana
-from .components import *
-from .metacomponents import *
-from .sleep import Sleep
+
+from hiispider.components import *
+from hiispider.metacomponents import *
+from hiispider.sleep import Sleep
 
 
 twisted.spread.banana.SIZE_LIMIT = 10 * 1024 * 1024
 LOGGER = logging.getLogger(__name__)
 # The component class objects we intend to instantiate
 COMPONENTS = [
-    Cassandra, 
-    Logger, 
-    MySQL,  
+    Cassandra,
+    Logger,
+    MySQL,
     Stats,
     Redis,
     JobQueue,
-    PageCacheQueue, 
+    PageCacheQueue,
     IdentityQueue,
     PageGetter,
     Worker,
@@ -66,7 +68,7 @@ class ExposedFunctionResource(Resource):
         Resource.__init__(self)
         self._server = server
         self.function_name = function_name
-    
+
     def render(self, request):
         request.setHeader('Content-type', 'text/javascript; charset=UTF-8')
         kwargs = {}
@@ -75,7 +77,10 @@ class ExposedFunctionResource(Resource):
         f = self._server.functions[self.function_name]
         d = maybeDeferred(f["function"], **kwargs)
         if f["callback"]:
-            d.addCallback(f["callback"])
+            if f.get("pass_kwargs_to_callback", False):
+                d.addCallback(f["callback"], kwargs)
+            else:
+                d.addCallback(f["callback"])
         if f["errback"]:
             d.addErrback(f["errback"])
         d.addCallback(self._successResponse)
@@ -84,11 +89,11 @@ class ExposedFunctionResource(Resource):
         return server.NOT_DONE_YET
 
     def _successResponse(self, data):
-        return simplejson.dumps(data)
+        return json.dumps(data)
 
     def _errorResponse(self, error):
-        return simplejson.dumps({
-            "error":str(error.value), 
+        return json.dumps({
+            "error":str(error.value),
             "traceback":error.getTraceback()})
 
     def _immediateResponse(self, data, request):
@@ -133,16 +138,17 @@ class Server(pb.Root):
     pb = None
     getting_connections = False
 
-    def __init__(self, 
-            config, 
-            address, 
-            components=None, 
-            provides=None, 
-            http_port=None, 
+    def __init__(self,
+            config,
+            address,
+            components=None,
+            provides=None,
+            http_port=None,
             pb_port=None):
         if len(set(provides) - set(components)) > 0:
             raise ComponentServerException("Cannot provide a component not "
                 "running in server mode.")
+        self.config = config
         self.provides = set([x.__name__.lower() for x in provides])
         self.address = address
         self.servers = config.get("servers", [])
@@ -163,7 +169,7 @@ class Server(pb.Root):
                 component = cls(self, config, False) # Instantiate as inactive
             self.components.append(component)
             setattr(self, name, component) # Attach component as property
-        # Set up connections 
+        # Set up connections
         if http_port:
             self.http = reactor.listenTCP(http_port, server.Site(self.resource))
         if pb_port:
@@ -189,7 +195,7 @@ class Server(pb.Root):
         start_deferred = Deferred()
         reactor.callWhenRunning(self._start, start_deferred)
         return start_deferred
-    
+
     @inlineCallbacks
     def _start(self, start_deferred):
         # After one interval, attempt to communicate with the servers.
@@ -199,7 +205,7 @@ class Server(pb.Root):
         self.connectionsloop.start(POLL_INTERVAL)
         # Initialize components, but don't have them do anything yet.
         yield DeferredList([x._initialize() for x in self.components])
-        # Make sure the component is initialized or connected to a 
+        # Make sure the component is initialized or connected to a
         # proxy component.
         for x in self.components:
             while not x.initialized:
@@ -207,13 +213,13 @@ class Server(pb.Root):
                 yield self.getConnections()
                 yield Sleep(1)
             LOGGER.info("%s initialized." % x.__class__.__name__)
-        yield Sleep(1)      
-        active = ", ".join([x.__class__.__name__ 
+        yield Sleep(1)
+        active = ", ".join([x.__class__.__name__
             for x in self.components if x.server_mode])
         LOGGER.critical("Starting server with components: %s" % active)
         yield DeferredList([x._start() for x in self.components])
         start_deferred.callback(True)
-    
+
     @inlineCallbacks
     def getConnections(self):
         if self.getting_connections:
@@ -226,8 +232,8 @@ class Server(pb.Root):
                 LOGGER.error("Could not connect to %s" % server)
                 for component in set(self.server_components[server]):
                     del self.server_components[server][component]
-                    del self.component_servers[component][server]                    
-                continue 
+                    del self.component_servers[component][server]
+                continue
             try:
                 components = yield remote_obj.callRemote("components")
             except:
@@ -247,7 +253,7 @@ class Server(pb.Root):
                 self.disconnect(server)
         self.getting_connections = False
 
-    @inlineCallbacks       
+    @inlineCallbacks
     def connect(self, server):
         if server in self.connections:
             connection, remote_obj, factory = self.connections[server]
@@ -303,11 +309,11 @@ class Server(pb.Root):
     def expose(self, *args, **kwargs):
         return self.makeCallable(expose=True, *args, **kwargs)
 
-    def makeCallable(self, 
-            func, 
-            interval=0, 
-            name=None, 
-            expose=False, 
+    def makeCallable(self,
+            func,
+            interval=0,
+            name=None,
+            expose=False,
             category=None):
         argspec = self._getArguments(func)
         required_arguments, optional_arguments = argspec[0], argspec[3]
@@ -360,7 +366,6 @@ class Server(pb.Root):
             "callback":None,
             "errback":None
         }
-        #LOGGER.debug("Function %s is now callable." % function_name)
         if expose and self.resource is not None:
             self.exposed_functions.append(function_name)
             er = ExposedFunctionResource(self, function_name)
@@ -375,9 +380,9 @@ class Server(pb.Root):
                 r.putChild(function_name_parts[1], er)
             else:
                 self.resource.putChild(function_name_parts[0], er)
-            #LOGGER.info("%s is now available via HTTP." % function_name)
+            LOGGER.debug("endpoint \"%s\": is now available via HTTP." % function_name)
         return function_name
-    
+
     def _getArguments(self, func):
         """Get required or optional arguments for a plugin method.  This
         function returns a quadruple similar to inspect.getargspec (upon

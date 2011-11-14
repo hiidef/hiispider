@@ -82,8 +82,11 @@ class Worker(JobExecuter):
 
     def time_end(self, task_id, task_name, add=0):
         self.timer_count[task_name] += 1
-        self.timer[task_name] += add + time.time() - self.timer_starts[task_id]
-        del self.timer_starts[task_id]
+        self.timer[task_name] += add + time.time()
+        # FIXME: why isn't time_starts[task_id] available
+        if task_id in self.timer_starts:
+            self.timer[task_name] -= self.timer_starts[task_id]
+            del self.timer_starts[task_id]
 
     @inlineCallbacks
     def getJobs(self):
@@ -136,7 +139,7 @@ class Worker(JobExecuter):
                 LOGGER.error(format_exc())
         try:
             self.time_start(job.uuid)
-            self.server.cassandra.setData(data, job.uuid)
+            self.server.cassandra.setData(job.user_account["user_id"], data, job.uuid)
             self.time_end(job.uuid, "%s.cassandra" % job.function_name)
         except Exception:
             self.time_end(job.uuid, "%s.cassandra" % job.function_name)
@@ -147,7 +150,7 @@ class Worker(JobExecuter):
 
     def _deltas(self):
         if self.delta_enabled:
-            return random.random() <= self.delta_sample_rate
+            return random() <= self.delta_sample_rate
         return False
 
     deltas = property(_deltas)
