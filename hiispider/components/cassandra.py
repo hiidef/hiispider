@@ -47,6 +47,8 @@ class Cassandra(Component):
         self.keyspace = config["cassandra_keyspace"]
         self.pool_size = len(config["cassandra_servers"]) * 2
         self.cf_content = config["cassandra_cf_content"]
+        self.cf_delta = config["cassandra_cf_delta"]
+        self.cf_delta_user = config["cassandra_cf_user"]
 
     def initialize(self):
         LOGGER.info('Initializing %s' % self.__class__.__name__)

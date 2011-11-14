@@ -164,16 +164,13 @@ class JobExecuter(Component):
                     'new_data': zlib.compress(json.dumps(new_data)),
                     'generated': ts,
                     'updated': ts})
-            # FIXME: Debug Set Trace
-            import ipdb
-            ipdb.set_trace()
             yield self.server.cassandra.batch_insert(
                 key=str(delta.id),
-                column_family=self.cassandra_cf_delta,
+                column_family=self.server.cassandra.cf_delta,
                 mapping=mapping)
             yield self.server.cassandra.insert(
                 key=str(user_id),
-                column_family=self.cassandra_cf_delta_user,
+                column_family=self.server.cassandra.cf_delta_user,
                 column=user_column,
                 value='')
 
