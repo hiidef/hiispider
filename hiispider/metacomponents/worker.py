@@ -83,6 +83,7 @@ class Worker(JobExecuter):
     def time_end(self, task_id, task_name, add=0):
         self.timer_count[task_name] += 1
         self.timer[task_name] += add + time.time()
+        # FIXME: why isn't time_starts[task_id] available
         if task_id in self.timer_starts:
             self.timer[task_name] -= self.timer_starts[task_id]
             del self.timer_starts[task_id]
