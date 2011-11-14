@@ -147,7 +147,7 @@ class JobExecuter(Component):
             return
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
-            category = self.functions[job.function_name].get('category', 'unknown')
+            category = self.server.functions[job.function_name].get('category', 'unknown')
             user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
             mapping = {
                 'data': zlib.compress(json.dumps(delta.data)),
