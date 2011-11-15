@@ -148,6 +148,9 @@ def _narrow(a, b, path):
     indicated by the path.
     """
     if not b:
+        # FIXME: Debug Set Trace
+        import ipdb
+        ipdb.set_trace()
         if isinstance(a, dict):
             b = {}
         elif isinstance(a, list):
