@@ -17,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 class PageGetter(Component):
     """Implements the getPage RPC call."""
 
-    requires = [Redis, Cassandra, Logger]
+    requires = [Redis, Cassandra]
     pg = None
 
     def __init__(self, server, config, server_mode, **kwargs):
@@ -46,5 +46,5 @@ class PageGetter(Component):
         return self.server.rq.setHostMaxSimultaneousRequests(*args, **kwargs)
 
     @shared
-    def ping(self):
-        return "PONG"
+    def disableNegativeCache(self):
+        self.pg.disable_negative_cache = True 

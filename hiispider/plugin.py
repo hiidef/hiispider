@@ -123,6 +123,8 @@ class HiiSpiderPlugin(object):
                             name=name)
 
     def setFastCache(self, uuid, data):
+        if not self.spider.server.jobgetter.server_mode:
+            return
         if self.spider.server.config.get('enable_fast_cache', True):
             return self.spider.server.jobgetter.setFastCache(uuid, data)
 

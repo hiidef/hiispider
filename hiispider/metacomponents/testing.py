@@ -22,8 +22,10 @@ class Testing(Component):
     def __init__(self, server, config, server_mode, **kwargs):
         super(Testing, self).__init__(server, server_mode)
         self.server.expose(self.execute_by_uuid)
-        self.server.pagegetter.disable_negative_cache = True
-        
+
+    def initialize(self):
+        self.server.pagegetter.disableNegativeCache()
+
     @inlineCallbacks
     def execute_by_uuid(self, uuid):
         sql = """SELECT uuid, content_userprofile.user_id as user_id, 
@@ -60,6 +62,9 @@ class Testing(Component):
         try:
             data = yield maybeDeferred(f['function'], **job.kwargs)
         except Exception, e:
+            LOGGER.debug(job.kwargs)
+            if hasattr(e, "response"):
+                LOGGER.error(e.response)
             LOGGER.error("Error executing job:%s\n%s" % (
                 job,
                 format_exc()))

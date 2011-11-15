@@ -32,9 +32,10 @@ class Logger(Component, PylogdHandler):
         self.logd_host = conf.get('host', 'localhost')
         self.logger = config.get('base_logger', logging.getLogger())
         self.sock = None
-        logging.Handler.__init__(self)
-        if self.__class__ not in (x.__class__ for x in self.logger.handlers):
-            self.logger.addHandler(self)
+        if server_mode:
+            logging.Handler.__init__(self)
+            if self.__class__ not in (x.__class__ for x in self.logger.handlers):
+                self.logger.addHandler(self)
 
     def initialize(self):
         self.sock = socket.UDPSocket(self.logd_host, self.logd_port)

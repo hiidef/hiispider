@@ -119,6 +119,7 @@ class JobExecuter(Component):
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
         except Exception, e:
+            self.server.jobgetter.deleteJobCache(job.uuid)
             self.job_failures += 1
             self.server.stats.increment('job.%s.failure' % job.dotted_name)
             plugin = job.function_name.split('/')[0]

@@ -68,6 +68,10 @@ class JobGetter(Component):
         self.user_account_queue = []
         yield super(JobGetter, self).shutdown()
 
+    @shared
+    @inlineCallbacks
+    def deleteJobCache(self, uuid):
+        yield self.server.redis.delete(job.uuid)
 
     @inlineCallbacks
     def setJobCache(self, job):
@@ -94,10 +98,8 @@ class JobGetter(Component):
 
     @shared
     @inlineCallbacks
-    def deleteReservation(self, job):
+    def delete(self, uuid):
         """Delete a reservation by uuid."""
-        uuid = job.uuid
-        LOGGER.info('Deleting job: %s, %s' % (job.function_name, job.uuid))
         yield self.server.mysql.runQuery("DELETE FROM spider_service "
             "WHERE uuid=%s", uuid)
         url = 'http://%s:%s/jobscheduler/remove_uuid?%s' % (
