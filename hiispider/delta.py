@@ -161,7 +161,7 @@ def _narrow(a, b, path):
             a.__class__,
             b.__class__))
     key = path[0]
-    if type(a) is list:
+    if isinstance(a, list):
         a_dicts = [x[key] for x in a if type(x) is dict and key in x]
         b_dicts = [x[key] for x in b if type(x) is dict and key in x]
         if a_dicts or b_dicts:
@@ -252,10 +252,10 @@ class Autogenerator(object):
             raise TypeError("Cannot generate delta from %s to %s." % (
                 a.__class__,
                 b.__class__))
-        elif type(a) is list:
+        elif isinstance(a, list):
             values = _compare_lists(a, b, ignores, includes)
             return [Delta(pathstring, x, dates=dates) for x in values]
-        elif type(a) is dict:
+        elif isinstance(a, dict):
             if self.return_new_keys:
                 return [Delta(pathstring, {x:a[x]}, dates=dates) for x in set(a) - set(b)]
             elif _hash(a, ignores, includes) != _hash(b, ignores, includes):
