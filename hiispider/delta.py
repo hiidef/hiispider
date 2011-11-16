@@ -275,5 +275,5 @@ class Autogenerator(object):
         # Filters a list of paths split on '/' to remove empty strings.
         parsed_paths = [[x for x in path.split("/") if x] for path in paths]
         # merge list of lists
-        merged_parsed_paths = [item for sublist in parsed_paths for item in sublist]
-        return merged_parsed_paths
+        # merged_parsed_paths = [item for sublist in parsed_paths for item in sublist]
+        return parsed_paths
