@@ -147,14 +147,11 @@ def _narrow(a, b, path):
     Recursively remove keys not in path. Combine lists of lists if
     indicated by the path.
     """
-    # if not b:
-    #     # FIXME: Debug Set Trace
-    #     import ipdb
-    #     ipdb.set_trace()
-    #     if isinstance(a, dict):
-    #         b = {}
-    #     elif isinstance(a, list):
-    #         b = []
+    if not b:
+        if isinstance(a, dict):
+            b = {}
+        elif isinstance(a, list):
+            b = []
     # If the path is empty, no need to narrow any further.
     # If there is nothing to narrow, no need to narrow further.
     if not path or (not a and not b):
@@ -276,4 +273,7 @@ class Autogenerator(object):
         elif not isinstance(paths, list):
             raise TypeError("Parameter must be str, unicode, or list. '%s' is type: %s" % (paths, type(paths)))
         # Filters a list of paths split on '/' to remove empty strings.
-        return [[x for x in path.split("/") if x] for path in paths]
+        parsed_paths = [[x for x in path.split("/") if x] for path in paths]
+        # merge list of lists
+        merged_parsed_paths = [item for sublist in parsed_paths for item in sublist]
+        return merged_parsed_paths
