@@ -144,6 +144,9 @@ class JobExecuter(Component):
         old_data = yield self.server.cassandra.getData(job)
         if not old_data:
             return
+        # make sure old_data and new_data are similar (strings are all unicode, ect)
+        new_data = json.decode(json.encode(new_data))
+        # get deltas by comparing new and old data sets
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
             category = self.server.functions[job.function_name].get('category', 'unknown')
