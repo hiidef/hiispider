@@ -137,7 +137,7 @@ class JobExecuter(Component):
         self.server.stats.timer.stop('job.time')
 
     @inlineCallbacks
-    def generate_deltas(self, new_data, job):
+    def generate_deltas(self, new_data, job, save=True):
         delta_func = self.server.functions[job.function_name]["delta"]
         if not delta_func:
             return
@@ -164,15 +164,16 @@ class JobExecuter(Component):
                     'new_data': zlib.compress(json.dumps(new_data)),
                     'generated': ts,
                     'updated': ts})
-            yield self.server.cassandra.batch_insert(
-                key=str(delta.id),
-                column_family=self.server.cassandra.cf_delta,
-                mapping=mapping)
-            yield self.server.cassandra.insert(
-                key=user_id,
-                column_family=self.server.cassandra.cf_delta_user,
-                column=user_column,
-                value='')
+            if save:
+                yield self.server.cassandra.batch_insert(
+                    key=str(delta.id),
+                    column_family=self.server.cassandra.cf_delta,
+                    mapping=mapping)
+                yield self.server.cassandra.insert(
+                    key=user_id,
+                    column_family=self.server.cassandra.cf_delta_user,
+                    column=user_column,
+                    value='')
 
     def getServerData(self):
         running_time = time.time() - self.start_time
