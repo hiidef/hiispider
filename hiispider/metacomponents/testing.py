@@ -4,12 +4,11 @@
 """Executes jobs by UUID."""
 
 from traceback import format_exc
-from uuid import uuid4
 from twisted.internet.defer import inlineCallbacks, returnValue, maybeDeferred
-from ..components import *
-from ..metacomponents import *
+from hiispider.components import *
+from hiispider.metacomponents import *
 import logging
-from ..job import Job
+from hiispider.job import Job
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class Testing(Component):
 
     @inlineCallbacks
     def execute_by_uuid(self, uuid):
-        sql = """SELECT uuid, content_userprofile.user_id as user_id, 
+        sql = """SELECT uuid, content_userprofile.user_id as user_id,
                 username, host, account_id, type
             FROM spider_service, auth_user, content_userprofile
             WHERE uuid IN ('%s')
@@ -42,13 +41,13 @@ class Testing(Component):
             raise
         user_account = data[0]
         sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (
-            user_account["type"].split("/")[0], 
+            user_account["type"].split("/")[0],
             user_account["account_id"])
         try:
             data = yield self.server.mysql.runQuery(sql)
         except Exception, e:
             LOGGER.error("Could not find service %s, %s: %s" % (
-                user_account["type"], 
+                user_account["type"],
                 sql, e))
             raise
         service_credentials = data[0]
@@ -70,4 +69,3 @@ class Testing(Component):
                 format_exc()))
             raise
         returnValue(data)
-
