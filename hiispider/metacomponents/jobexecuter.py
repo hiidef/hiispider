@@ -141,7 +141,7 @@ class JobExecuter(Component):
         delta_func = self.server.functions[job.function_name]["delta"]
         if not delta_func:
             return
-        old_data = yield self.server.cassandra.getData(job)
+        old_data = yield self.server.cassandra.getData(job, consistency=2)
         if not old_data:
             return
         # make sure old_data and new_data are similar (strings are all unicode, ect)

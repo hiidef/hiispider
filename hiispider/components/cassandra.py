@@ -92,12 +92,13 @@ class Cassandra(Component):
 
     @shared
     @inlineCallbacks
-    def getData(self, job):
+    def getData(self, job, consistency=1):
         try:
             data = yield self.client.get(
                 key=str(job.user_account["user_id"]),
                 column_family=self.cf_content,
-                column=job.uuid)
+                column=job.uuid,
+                consistency=consistency)
         except NotFoundException:
             return
         obj = yield threads.deferToThread(decompress, data.column.value)
