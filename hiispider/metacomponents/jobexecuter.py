@@ -150,6 +150,8 @@ class JobExecuter(Component):
         deltas = delta_func(new_data, old_data)
         for delta in deltas:
             category = self.server.functions[job.function_name].get('category', 'unknown')
+            if not category:
+                category = 'unknown'
             user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
             user_id = str(job.user_account['user_id'])
             mapping = {
