@@ -152,8 +152,8 @@ class JobExecuter(Component):
             category = self.server.functions[job.function_name].get('category', 'unknown')
             if not category:
                 category = 'unknown'
-            user_column = b'%s:%s:%s' % (delta.id, category, job.subservice)
             user_id = str(job.user_account['user_id'])
+            user_column = b'%s||%s||%s||%s' % (delta.id, category, job.subservice, user_id)
             mapping = {
                 'data': zlib.compress(json.dumps(delta.data)),
                 'user_id': user_id,
@@ -185,12 +185,12 @@ class JobExecuter(Component):
         active_requests_by_host = self.rq.getActiveRequestsByHost()
         pending_requests_by_host = self.rq.getPendingRequestsByHost()
         data = {
-            "load_avg":[str(Decimal(str(x), 2)) for x in os.getloadavg()],
-            "running_time":running_time,
-            "active_requests_by_host":active_requests_by_host,
-            "pending_requests_by_host":pending_requests_by_host,
-            "active_requests":self.rq.getActive(),
-            "pending_requests":self.rq.getPending()
+            "load_avg": [str(Decimal(str(x), 2)) for x in os.getloadavg()],
+            "running_time": running_time,
+            "active_requests_by_host": active_requests_by_host,
+            "pending_requests_by_host": pending_requests_by_host,
+            "active_requests": self.rq.getActive(),
+            "pending_requests": self.rq.getPending()
         }
         LOGGER.debug("Got server data:\n%s" % pprint.pformat(data))
         return data
