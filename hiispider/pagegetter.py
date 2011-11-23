@@ -167,10 +167,10 @@ class PageGetter(object):
             hash_items.append(repr(cookies))
         request_hash = sha1(json.dumps(hash_items)).hexdigest()
         logger.info("%s : %s : checking negative cache" % (host, time.time() - start))
-        if not disable_negative_cache and not self.disable_negative_cache:
-            yield self.checkNegativeCache(
-                    'negative_cache:%s' % host,
-                    'negative_req_cache:%s' % request_hash)
+        #if not disable_negative_cache and not self.disable_negative_cache:
+        #    yield self.checkNegativeCache(
+        #            'negative_cache:%s' % host,
+        #            'negative_req_cache:%s' % request_hash)
         logger.info("%s : %s : getting page from RQ" % (host, time.time() - start))
         if request_kwargs["method"] != "GET":
             data = yield self.rq.getPage(url, **request_kwargs)
