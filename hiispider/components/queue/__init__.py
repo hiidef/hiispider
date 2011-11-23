@@ -87,7 +87,7 @@ class Queue(Component):
             queue=self.amqp["queue"],
             exchange=self.amqp["exchange"])
         yield self.chan.basic_consume(queue=self.amqp["queue"],
-            no_ack=True,
+            no_ack=False,
             consumer_tag="hiispider_consumer")
         self.queue = yield self.conn.queue("hiispider_consumer")
         self.statusloop = task.LoopingCall(self.status_check)
@@ -115,6 +115,7 @@ class Queue(Component):
     @inlineCallbacks
     def get(self, *args, **kwargs):
         msg = yield self.queue.get(*args, **kwargs)
+        self.chan.basic_ack(msg.delivery_tag)
         returnValue(msg.content.body)
 
     @inlineCallbacks
