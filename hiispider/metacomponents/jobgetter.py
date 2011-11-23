@@ -155,15 +155,16 @@ class JobGetter(Component):
             except Exception, e:
                 LOGGER.error(format_exc())
                 break
-            self.uuid_queue.append(UUID(bytes=content).hex)
-            if len(self.uuid_queue) > self.min_size / 2:
-                uuids, self.uuid_queue = self.uuid_queue, []
-                try:
-                    data = yield self.server.redis.mget(*uuids)
-                except Exception:
-                    LOGGER.error(format_exc())
-                    break
-                self.checkCachedJobs(zip(uuids, data))
+            if content:
+                self.uuid_queue.append(UUID(bytes=content).hex)
+                if len(self.uuid_queue) > self.min_size / 2:
+                    uuids, self.uuid_queue = self.uuid_queue, []
+                    try:
+                        data = yield self.server.redis.mget(*uuids)
+                    except Exception:
+                        LOGGER.error(format_exc())
+                        break
+                    self.checkCachedJobs(zip(uuids, data))
         self.uuid_dequeueing = False
 
     def checkCachedJobs(self, results):
