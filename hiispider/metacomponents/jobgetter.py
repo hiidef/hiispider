@@ -37,7 +37,6 @@ class JobGetter(Component):
     min_size = 1000
     job_requests = []
     requires = [Redis, MySQL, JobQueue, Logger]
-    previous_uuids = set([])
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(JobGetter, self).__init__(server, server_mode)
