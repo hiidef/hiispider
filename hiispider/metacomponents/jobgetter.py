@@ -148,6 +148,7 @@ class JobGetter(Component):
     def _dequeuejobs(self):
         self.uuid_dequeueing = True
         while len(self) < self.min_size * 4:
+            content = None
             try:
                 content = yield self.server.jobqueue.get(timeout=5)
             except Empty:
