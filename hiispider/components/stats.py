@@ -31,7 +31,7 @@ class Stats(Component, Logd):
         self.logd_host = conf.get('host', 'localhost')
         self.logd_port = conf.get('port', 8126)
         self.addr = (self.logd_host, self.logd_port)
-        self.prefix = conf.get('prefix', '')
+        self.prefix = conf.get('prefix', 'workerserver')
         self.timer = Timer(self)
 
     def initialize(self):
@@ -49,5 +49,7 @@ class Stats(Component, Logd):
 
     @shared
     def _send(self, data):
-        return self.sock.sendto(msgpack.dumps(data), self.addr)
+        self.sock.sendto(msgpack.dumps(data), self.addr)
+        return True
+
 
