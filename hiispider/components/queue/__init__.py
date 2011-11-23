@@ -115,7 +115,7 @@ class Queue(Component):
     @inlineCallbacks
     def get(self, *args, **kwargs):
         msg = yield self.queue.get(*args, **kwargs)
-        self.chan.basic_ack(msg.delivery_tag)
+        yield self.chan.basic_ack(msg.delivery_tag)
         returnValue(msg.content.body)
 
     @inlineCallbacks
