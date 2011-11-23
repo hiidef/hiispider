@@ -144,8 +144,16 @@ class JobExecuter(Component):
         old_data = yield self.server.cassandra.getData(job, consistency=2)
         if not old_data:
             return
+
         # make sure old_data and new_data are similar (strings are all unicode, ect)
-        new_data = json.decode(json.encode(new_data))
+        
+        # Taking this out as encoding and decoding should be done by the same 
+        # module (now ujson) and encoding / decoding is CPU intensive. 
+        # Note that the autodelta now compensates for unicode / str differences
+        # - JDW
+
+        # # new_data = json.decode(json.encode(new_data))
+
         # get deltas by comparing new and old data sets
         deltas = delta_func(new_data, old_data)
         for delta in deltas:

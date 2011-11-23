@@ -62,9 +62,6 @@ class Testing(Component):
         f = self.server.functions[job.function_name]
         try:
             data = yield maybeDeferred(f['function'], **job.kwargs)
-            delta_enabled = self.config.get('delta_enabled', False)
-            if delta_enabled:
-                yield self.server.worker.generate_deltas(data, job, save=False)
         except Exception, e:
             LOGGER.debug(job.kwargs)
             if hasattr(e, "response"):

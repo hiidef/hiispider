@@ -16,7 +16,7 @@ from twisted.internet import threads
 from twisted.internet.defer import inlineCallbacks, returnValue
 from hiispider.components.base import Component, shared
 from hiispider.components.logger import Logger
-
+import binascii
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class Cassandra(Component):
             keyspace=self.keyspace,
             pool_size=self.pool_size)
         self.client.startService()
-        LOGGER.info('%s initialized.' % self.__class__.__name__)
+        LOGGER.info('%s initialized, connected to: %s.' % (self.__class__.__name__, self.servers))
 
     def shutdown(self):
         LOGGER.info("Stopping %s" % self.__class__.__name__)
@@ -77,6 +77,37 @@ class Cassandra(Component):
         return self.client.remove(*args, **kwargs)
 
     @shared
+    def get(self, *args, **kwargs):
+        return self.client.get(*args, **kwargs)
+
+    @shared
+    def get_key_range(self, *args, **kwargs):
+        return self.client.get_key_range(*args, **kwargs)
+
+    @shared
+    def get_slice(self, *args, **kwargs):
+        return self.client.get_slice(*args, **kwargs)
+
+    @shared
+    @inlineCallbacks
+    def get_delta(self, delta_id):
+        """Get data from cassandra by user delta_id."""
+        try:
+            columns = yield self.client.get_slice(
+                key=binascii.unhexlify(delta_id),
+                column_family=self.cf_delta)
+        except NotFoundException:
+            LOGGER.error("%s not found." % delta_id)
+            return
+        results = dict([(x.column.name, x.column.value) for x in columns])
+        results["data"] = decompress(results["data"])
+        if "old_data" in results:
+            results["old_data"] = decompress(results["old_data"])
+        if "new_data" in results:
+            results["new_data"] = decompress(results["new_data"])
+        returnValue(results)     
+
+    @shared
     @inlineCallbacks
     def getDataByIDAndUUID(self, user_id, uuid):
         """Get data from cassandra by user id and uuid."""
@@ -88,7 +119,7 @@ class Cassandra(Component):
         except NotFoundException:
             return
         obj = yield threads.deferToThread(decompress, data.column.value)
-        returnValue(obj)
+        returnValue(obj)      
 
     @shared
     @inlineCallbacks

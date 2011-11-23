@@ -73,9 +73,11 @@ def _shift(a):
 
 def _simplesort(a):
     if type(a) is dict:
-        return [(x, _simplesort(a[x])) for x in sorted(a)]
+        return [(unicode(x), _simplesort(a[x])) for x in sorted(a)]
     elif type(a) is list:
         return sorted([_simplesort(x) for x in a])
+    elif type(a) is str:
+        return unicode(a)
     return a
 
 
@@ -86,20 +88,21 @@ def _sort(a, ignores, includes):
         # If there are include paths, iterate through keys in these paths.
         included_keys = _included(includes)
         if included_keys:
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(unicode(x), _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(included_keys) if x in a]
         else:
             # Disregard keys at the top level of the ignore paths.
             ignored_keys = _ignored(ignores)
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(unicode(x), _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(a) if x not in ignored_keys]
     elif type(a) is list:
         try:
             return sorted([_sort(x, ignores, includes) for x in a])
         except ValueError:
             return a
+    elif type(a) is str:
+        return unicode(a)
     return a
-
 
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
@@ -148,9 +151,9 @@ def _narrow(a, b, path):
     indicated by the path.
     """
     if not b:
-        if isinstance(a, dict):
+        if type(a) is dict:
             b = {}
-        elif isinstance(a, list):
+        elif type(a) is list:
             b = []
     # If the path is empty, no need to narrow any further.
     # If there is nothing to narrow, no need to narrow further.
@@ -161,7 +164,7 @@ def _narrow(a, b, path):
             a.__class__,
             b.__class__))
     key = path[0]
-    if isinstance(a, list):
+    if type(a) is list:
         a_dicts = [x[key] for x in a if type(x) is dict and key in x]
         b_dicts = [x[key] for x in b if type(x) is dict and key in x]
         if a_dicts or b_dicts:
@@ -252,10 +255,10 @@ class Autogenerator(object):
             raise TypeError("Cannot generate delta from %s to %s." % (
                 a.__class__,
                 b.__class__))
-        elif isinstance(a, list):
+        elif type(a) is list:
             values = _compare_lists(a, b, ignores, includes)
             return [Delta(pathstring, x, dates=dates) for x in values]
-        elif isinstance(a, dict):
+        elif type(a) is dict:
             if self.return_new_keys:
                 return [Delta(pathstring, {x:a[x]}, dates=dates) for x in set(a) - set(b)]
             elif _hash(a, ignores, includes) != _hash(b, ignores, includes):

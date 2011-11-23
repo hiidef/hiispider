@@ -13,6 +13,7 @@ from jobgetter import JobGetter
 from jobscheduler import JobScheduler
 from identityscheduler import IdentityScheduler
 from testing import Testing
+from deltatesting import DeltaTesting
 
-__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", "IdentityScheduler", "Testing"]
+__all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", "IdentityScheduler", "Testing", "DeltaTesting"]
 

@@ -59,15 +59,21 @@ class TestAutogenerate(TestCase):
         # 'a' and 'b' have the included key, and it changes.
         a = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
         b = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]        
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":1}])
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)), 
+            sorted([{"x":3, "y":2, "z":1}]))
         # 'a' and 'b' have the included key, and it changes.
         a = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
         b = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)), 
+            sorted([{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]))
         # 'a' and 'b' have the included key, and it changes.
         a = [{"x":1, "y":1, "z":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
         b = [{"x":4, "y":5, "z":1}]
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)), 
+            sorted([{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]))
         # Nested, multiple includes
         autogenerator = delta.Autogenerator(includes=["example/y", "example/z"], paths="example")
         a = {"example":[{"x":1, "y":2, "z":3}]}
@@ -174,3 +180,15 @@ class TestAutogenerate(TestCase):
         old = decode(read("%s/goodreads/old.json" % DATAPATH))
         new = decode(read("%s/goodreads/new.json" % DATAPATH))
         self.assertEqual(autogenerate_goodreads(old, new), [])
+
+    def test_unicode(self):
+        a = {"x":["y", 1, 2]}
+        b = {"x":[1, u"y", 2]}
+        self.assertEqual(autogenerate(a, b), [])
+        a = {"x":["y", 1, 2]}
+        b = {u"x":[1, u"y", 2]}
+        self.assertEqual(autogenerate(a, b), [])
+        a = [{"z":1}, {"x":["y", 1, 2]}]
+        b = [{u"x":[1, u"y", 2]}, {u"z":1}]
+        self.assertEqual(autogenerate(a, b), [])
+
