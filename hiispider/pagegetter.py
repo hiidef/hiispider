@@ -166,12 +166,12 @@ class PageGetter(object):
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(json.dumps(hash_items)).hexdigest()
-        logger.info("%s:%s:checking negative cache" % (url, time.time() - start))
+        logger.info("%s : %s : checking negative cache" % (host, time.time() - start))
         if not disable_negative_cache and not self.disable_negative_cache:
             yield self.checkNegativeCache(
                     'negative_cache:%s' % host,
                     'negative_req_cache:%s' % request_hash)
-        logger.info("%s:%s:getting page from RQ" % (url, time.time() - start))
+        logger.info("%s : %s : getting page from RQ" % (host, time.time() - start))
         if request_kwargs["method"] != "GET":
             data = yield self.rq.getPage(url, **request_kwargs)
         else:
@@ -183,7 +183,7 @@ class PageGetter(object):
                     content_sha1, 
                     confirm_cache_write, 
                     host)
-        logger.info("%s:%s:Checking for stale content" % (url, time.time() - start))
+        logger.info("%s : %s : Checking for stale content" % (host, time.time() - start))
         # Check for stale content
         if "content-sha1" not in data:
             data["content-sha1"] = sha1(data["response"]).hexdigest()
