@@ -240,7 +240,8 @@ class RequestQueuer(object):
             "timeout":timeout,
             "cookies":cookies,
             "follow_redirect":follow_redirect,
-            "deferred":Deferred()}
+            "deferred":Deferred(),
+            "start":time.time()}
         host = _parse(req["url"])[1]
         if host in self.max_reqs_per_hosts_per_sec and host in self.pending_reqs:
             if len(self.pending_reqs[host]) * self.max_reqs_per_hosts_per_sec[host] > queue_timeout:

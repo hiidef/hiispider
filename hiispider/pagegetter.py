@@ -127,6 +127,7 @@ class PageGetter(object):
          * *check_only_tld* -- for negative cache, check only the top level domain name
          * *disable_negative_cache* -- disable negative cache for this request
         """
+        start = time.time()
         request_kwargs = {
             "method":method.upper(),
             "postdata":postdata,
@@ -165,10 +166,12 @@ class PageGetter(object):
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(json.dumps(hash_items)).hexdigest()
+        logger.info("%s:%s:checking negative cache" % (url, time.time() - start))
         if not disable_negative_cache and not self.disable_negative_cache:
             yield self.checkNegativeCache(
                     'negative_cache:%s' % host,
                     'negative_req_cache:%s' % request_hash)
+        logger.info("%s:%s:getting page from RQ" % (url, time.time() - start))
         if request_kwargs["method"] != "GET":
             data = yield self.rq.getPage(url, **request_kwargs)
         else:
@@ -180,12 +183,14 @@ class PageGetter(object):
                     content_sha1, 
                     confirm_cache_write, 
                     host)
+        logger.info("%s:%s:Checking for stale content" % (url, time.time() - start))
         # Check for stale content
         if "content-sha1" not in data:
             data["content-sha1"] = sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
             logger.debug("Raising StaleContentException (4) on %s" % request_hash)
             raise StaleContentException(content_sha1)
+        logger.info("%s:%s:Returning" % (url, time.time() - start))
         returnValue(data)
 
     @inlineCallbacks
