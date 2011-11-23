@@ -11,6 +11,7 @@ import logging
 from copy import copy
 from hiispider.job import Job
 
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -59,15 +60,13 @@ class Testing(Component):
             user_account=user_account,
             uuid=user_account['uuid'])
         self.server.worker.mapJob(job)
+        LOGGER.debug(job)
         f = self.server.functions[job.function_name]
         try:
             data = yield maybeDeferred(f['function'], **job.kwargs)
         except Exception, e:
-            LOGGER.debug(job.kwargs)
             if hasattr(e, "response"):
                 LOGGER.error(e.response)
-            LOGGER.error("Error executing job:%s\n%s" % (
-                job,
-                format_exc()))
+            LOGGER.error("Error executing job: %s" % format_exc())
             raise
         returnValue(data)
