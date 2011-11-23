@@ -98,17 +98,22 @@ class HiiSpiderPlugin(object):
                     instance_method[1],
                     DELTA_FUNCTIONS[instance_id])
             if instance_id in EXPOSED_FUNCTIONS:
+                # Aliases for legacy support.
+                alias = ("function/%s/%s" % (instance_method[1].im_class.__name__, 
+                    instance_method[1].__name__)).lower()
                 self.spider.server.expose(
                     instance_method[1],
                     interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
                     name=EXPOSED_FUNCTIONS[instance_id]["name"],
-                    category=EXPOSED_FUNCTIONS[instance_id]["category"])
+                    category=EXPOSED_FUNCTIONS[instance_id]["category"],
+                    alias=alias)
                 if instance_id in FUNCTION_ALIASES:
                     for name in FUNCTION_ALIASES[instance_id]:
                         self.spider.server.expose(
                             instance_method[1],
                             interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
-                            name=name)
+                            name=name,
+                            alias="function/%s" % name)
             if instance_id in CALLABLE_FUNCTIONS:
                 self.spider.server.expose(
                     instance_method[1],
