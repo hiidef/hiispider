@@ -13,7 +13,7 @@ from traceback import format_exc
 from copy import copy
 
 from twisted.internet import task
-from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from txamqp.queue import Empty
 
 from hiispider.exceptions import JobGetterShutdownException
@@ -37,6 +37,7 @@ class JobGetter(Component):
     min_size = 1000
     job_requests = []
     requires = [Redis, MySQL, JobQueue, Logger]
+    previous_uuids = set([])
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(JobGetter, self).__init__(server, server_mode)
@@ -71,7 +72,7 @@ class JobGetter(Component):
     @shared
     @inlineCallbacks
     def deleteJobCache(self, uuid):
-        yield self.server.redis.delete(job.uuid)
+        yield self.server.redis.delete(uuid)
 
     @inlineCallbacks
     def setJobCache(self, job):
@@ -110,9 +111,9 @@ class JobGetter(Component):
             yield self.server.rq.getPage(url=url)
         except:
             LOGGER.error(format_exc())
-        yield self.self.cassandra.remove(
+        yield self.server.cassandra.remove(
             uuid,
-            self.cassandra_cf_content)
+            self.server.cassandra.cf_content)
         returnValue({'success': True})
 
     @shared

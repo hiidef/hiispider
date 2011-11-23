@@ -96,7 +96,7 @@ class JobExecuter(Component):
             error.raiseException()
         except DeleteReservationException:
             self.jobs_complete += 1
-            self.server.jobgetter.delete(job)
+            self.server.jobgetter.delete(job.uuid)
         except JobGetterShutdownException, e:
             LOGGER.info(e)
         except StaleContentException:

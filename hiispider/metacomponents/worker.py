@@ -107,7 +107,7 @@ class Worker(JobExecuter):
         if len(self.job_queue) < 20 and not self.getting_jobs:
             self.getJobs()
         if self.job_queue:
-            job = self.job_queue.pop()
+            job = self.job_queue.pop(0)
             self.time_end(r, "get_jobs")
         else:
             self.time_end(r, "get_jobs", add=.1)
