@@ -125,7 +125,7 @@ class Server(pb.Root):
     components_start_deferred = None
     shutdown_trigger = None
     exposed_functions = []
-    exposed_function_resources = {}
+    exposed_function_resources = defaultdict(Resource)
     function_resource = None
     functions = {}
     delta_functions = {}
@@ -315,7 +315,8 @@ class Server(pb.Root):
             interval=0,
             name=None,
             expose=False,
-            category=None):
+            category=None,
+            alias=None):
         argspec = self._getArguments(func)
         required_arguments, optional_arguments = argspec[0], argspec[3]
         variadic = all(argspec[1:3])
@@ -372,16 +373,22 @@ class Server(pb.Root):
             er = ExposedFunctionResource(self, function_name)
             function_name_parts = function_name.split("/")
             if len(function_name_parts) > 1:
-                if function_name_parts[0] in self.exposed_function_resources:
-                    r = self.exposed_function_resources[function_name_parts[0]]
-                else:
-                    r = Resource()
-                    self.exposed_function_resources[function_name_parts[0]] = r
+                r = self.exposed_function_resources[function_name_parts[0]]
                 self.resource.putChild(function_name_parts[0], r)
                 r.putChild(function_name_parts[1], er)
             else:
                 self.resource.putChild(function_name_parts[0], er)
             LOGGER.debug("endpoint \"%s\": is now available via HTTP." % function_name)
+            if alias:
+                alias_parts = alias.split("/")
+                leaf = alias_parts.pop()
+                resource = self.resource
+                for alias_part in alias_parts:  
+                    r = self.exposed_function_resources[alias_part]
+                    resource.putChild(alias_part, r)
+                    resource = r
+                resource.putChild(alias, er)
+                LOGGER.debug("endpoint alias \"%s\": is now available via HTTP." % alias)
         return function_name
 
     def _getArguments(self, func):
