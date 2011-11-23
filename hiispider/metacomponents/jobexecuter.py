@@ -54,7 +54,7 @@ class JobExecuter(Component):
         self.inverted_args_mapping = dict([(s[0], invert(s[1]))
             for s in self.service_args_mapping.items()])
         self.delta_debug = config.get('delta_debug', False)
-        self.mysql = self.server.mysql # For legacy plugins.
+        self.mysql = self.server.mysql  # For legacy plugins.
 
     def executeJob(self, job):
         timer = 'job.%s.duration' % job.dotted_name
@@ -146,9 +146,9 @@ class JobExecuter(Component):
             return
 
         # make sure old_data and new_data are similar (strings are all unicode, ect)
-        
-        # Taking this out as encoding and decoding should be done by the same 
-        # module (now ujson) and encoding / decoding is CPU intensive. 
+
+        # Taking this out as encoding and decoding should be done by the same
+        # module (now ujson) and encoding / decoding is CPU intensive.
         # Note that the autodelta now compensates for unicode / str differences
         # - JDW
 
@@ -161,7 +161,7 @@ class JobExecuter(Component):
             if not category:
                 category = 'unknown'
             user_id = str(job.user_account['user_id'])
-            user_column = b'%s||%s||%s||%s' % (delta.id, category, job.subservice, user_id)
+            user_column = b'%s||%s||%s||%s' % (delta.id, category, job.subservice, job.user_account['account_id'])
             mapping = {
                 'data': zlib.compress(json.dumps(delta.data)),
                 'user_id': user_id,
@@ -255,5 +255,3 @@ class JobExecuter(Component):
             job.kwargs = kwargs
         job.mapped = True
         return job
-
-
