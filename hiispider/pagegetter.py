@@ -166,7 +166,7 @@ class PageGetter(object):
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(json.dumps(hash_items)).hexdigest()
-        logger.info("%s : %s : checking negative cache" % (host, time.time() - start))
+        #logger.info("%s : %s : checking negative cache" % (host, time.time() - start))
         #if not disable_negative_cache and not self.disable_negative_cache:
         #    yield self.checkNegativeCache(
         #            'negative_cache:%s' % host,
