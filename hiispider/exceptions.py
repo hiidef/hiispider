@@ -29,3 +29,6 @@ class NotRunningException(Exception):
 
 class ComponentException(Exception):
     pass
+
+class RedisTimeoutException(Exception):
+    pass

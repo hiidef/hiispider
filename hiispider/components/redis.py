@@ -8,7 +8,7 @@ Communicates with Redis
 import logging
 from copy import copy
 from twisted.internet.defer import inlineCallbacks
-from txredisapi import RedisShardingConnection
+from txredisapi import RedisConnection
 from .base import Component, shared
 from .logger import Logger
 
@@ -34,11 +34,12 @@ class Redis(Component):
     def initialize(self):
         LOGGER.info("Initializing %s" % self.__class__.__name__)
         try:
-            self.client = yield RedisShardingConnection(self.hosts)
+            self.client = yield RedisConnection(self.hosts[0])
         except Exception, e:
             LOGGER.error("Could not connect to Redis: %s" % e)
             self.server.shutdown()
             raise Exception("Could not connect to Redis.")
+        self.client.setTimeout(5)
         LOGGER.info("%s initialized." % self.__class__.__name__)
 
     @inlineCallbacks
