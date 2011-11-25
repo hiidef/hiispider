@@ -19,7 +19,6 @@ class PageGetter(Component):
 
     requires = [Redis, Cassandra]
     pg = None
-    statusloop = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(PageGetter, self).__init__(server, server_mode)
@@ -33,16 +32,6 @@ class PageGetter(Component):
             redis_client=self.server.redis,
             rq=self.server.rq)
         LOGGER.info('%s initialized.' % self.__class__.__name__)
-        self.statusloop = task.LoopingCall(self.status_check)
-        self.statusloop.start(60)
-
-    def shutdown(self):
-        if self.statusloop:
-            self.statusloop.stop()
-
-    def status_check(self):
-        for host in self.server.rq.pending_reqs:            
-            LOGGER.info("%s:%s" % (host, [(x["url"], time.time() - x["start"]) for x in self.server.rq.pending_reqs[host]]))
 
     @shared
     def getPage(self, *args, **kwargs):

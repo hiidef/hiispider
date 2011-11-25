@@ -69,32 +69,25 @@ class JobExecuter(Component):
             job.kwargs["job_uuid"] = job.uuid
         if f["check_fast_cache"]:
             job.kwargs["fast_cache"] = job.fast_cache
-        job.status = "pre-execution"
         d = maybeDeferred(f['function'], **job.kwargs)
         d.addCallback(self._executeJobCallback, job, timer)
         d.addErrback(self._executeJobErrback, job, timer)
-        job.status = "post-deferred"
         return d
 
     def _executeJobCallback(self, data, job, timer):
-        job.status = "complete"
         try:
             del self.active_jobs[job.uuid]
         except:
             pass
         self.server.jobhistoryredis.save(job, True)
-        job.status = "post-job-history"
         self.jobs_complete += 1
         self.server.pagecachequeue.clear(job)
-        job.status = "post-pagecachequeue-clear"
         self.server.stats.increment('job.%s.success' % job.dotted_name)
         self.server.stats.timer.stop(timer)
         self.server.stats.timer.stop('job.time')
-        job.status = "post-stats"
         return data
 
     def _executeJobErrback(self, error, job, timer):
-        job.status = "errback"
         try:
             del self.active_jobs[job.uuid]
         except:
@@ -102,23 +95,18 @@ class JobExecuter(Component):
         try:
             error.raiseException()
         except DeleteReservationException:
-            job.status = "DeleteReservationException"
             self.jobs_complete += 1
             self.server.jobgetter.delete(job.uuid)
         except JobGetterShutdownException, e:
-            job.status = "JobGetterShutdownException"
             LOGGER.info(e)
         except StaleContentException:
-            job.status = "StaleContentException"
             self.jobs_complete += 1
         except QueueTimeoutException, e:
-            job.status = "QueueTimeoutException"
             self.job_failures += 1
             self.server.stats.increment('job.%s.queuetimeout' % job.dotted_name)
             self.server.stats.increment('pg.queuetimeout.hit', 0.05)
             self.server.jobhistoryredis.save(job, False)
         except NegativeCacheException, e:
-            job.status = "NegativeCacheException"
             self.jobs_complete += 1
             if isinstance(e, NegativeReqCacheException):
                 self.server.stats.increment('job.%s.negreqcache' % job.dotted_name)
@@ -126,13 +114,12 @@ class JobExecuter(Component):
                 self.server.stats.increment('job.%s.negcache' % job.dotted_name)
             self.server.jobhistoryredis.save(job, False)
         except (TimeoutError, ConnectionRefusedError, TwistedWebError), e:
-            job.status = "TimeoutError"
+
             self.job_failures += 1
             self.server.stats.increment('job.%s.failure' % job.dotted_name)
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
         except Exception, e:
-            job.status = "General error"
             self.server.jobgetter.deleteJobCache(job.uuid)
             self.job_failures += 1
             self.server.stats.increment('job.%s.failure' % job.dotted_name)
@@ -147,7 +134,6 @@ class JobExecuter(Component):
                 format_exc()))
             self.server.stats.increment('job.exceptions', 0.1)
             self.server.jobhistoryredis.save(job, False)
-        job.status = "Error handling complete."
         self.server.stats.timer.stop(timer)
         self.server.stats.timer.stop('job.time')
 

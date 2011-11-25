@@ -184,6 +184,7 @@ class PageGetter(object):
 #        logger.info("Got %s after %s" % (host, time.time() - start))
 #        # Check for stale contents
         data = yield self.rq.getPage(url, **request_kwargs)
+        logger.info("Got %s after %s" % (host, time.time() - start))
         if "content-sha1" not in data:
             data["content-sha1"] = sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
