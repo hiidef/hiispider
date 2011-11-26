@@ -51,7 +51,7 @@ class Delta(object):
             self.id = HiiGUID(date).packed
         else:
             self.id = HiiGUID(time.time()).packed
-        LOGGER.info("Created delta %s" % HiiGUID(self.id).base36)
+
 
 class AutogenerateException(Exception):
     pass
