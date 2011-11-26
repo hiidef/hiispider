@@ -44,6 +44,7 @@ class JobExecuter(MetaComponent):
     job_failures = 0
     allow_clients = False
     requires = [Stats, MySQL, JobHistoryRedis, JobGetter, PageGetter, PageCacheQueue, Cassandra, Logger]
+    delta_count = 0
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(JobExecuter, self).__init__(server, server_mode)
@@ -154,6 +155,7 @@ class JobExecuter(MetaComponent):
 
         # get deltas by comparing new and old data sets
         deltas = delta_func(new_data, old_data)
+        self.delta_count += len(deltas)
         for delta in deltas:
             category = self.server.functions[job.function_name].get('category', 'unknown')
             if not category:

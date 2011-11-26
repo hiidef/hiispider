@@ -40,7 +40,7 @@ class PageGetter(MetaComponent):
         LOGGER.info('%s initialized.' % self.__class__.__name__)
 
     def status_check(self):
-        LOGGER.info("Active requests: %s" % pformat(self.server.rq.active_reqs))
+        pass
     
     @inlineCallbacks
     def shutdown(self):

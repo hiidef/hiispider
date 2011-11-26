@@ -29,7 +29,7 @@ class Worker(JobExecuter):
 
     delta_enabled = False
     active_workers = 0
-    simultaneous_jobs = 30
+    simultaneous_jobs = 100
     jobs = set([])
     job_speed_start = time.time()
     job_speed_report_loop = None
@@ -69,6 +69,7 @@ class Worker(JobExecuter):
         LOGGER.info("Active jobs:\n %s" % pformat(sorted([(x.function_name, round(time.time() - x.start, 2), x.status, x.uuid) for x in self.jobs], key=lambda x:x[1])))
         LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
         LOGGER.info("Wait time by component:\n%s" % "\n".join(["%s:%s" % (x.__class__.__name__, x.wait_time) for x in self.server.components]))
+        LOGGER.info("Generated %s deltas." % self.delta_count)
         self.job_speed_start = time.time()
         self.jobs_complete = 0
         self.job_failures = 0
