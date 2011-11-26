@@ -19,6 +19,7 @@ from hiispider.components import Redis, MySQL, JobQueue, Logger, Component,\
         shared, Queue
 from hiispider.job import Job
 from .base import MetaComponent
+from random import shuffle
 
 LOGGER = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ class JobGetter(MetaComponent):
         if len(self) > self.min_size:
             return
         self._dequeuejobs()
+        shuffle(self.job_queue)
 
     @inlineCallbacks
     def _dequeuejobs(self):
