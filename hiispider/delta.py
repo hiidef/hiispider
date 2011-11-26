@@ -5,7 +5,9 @@ from itertools import chain
 from hiiguid import HiiGUID
 import dateutil.parser
 from numbers import Number
+import logging
 
+LOGGER = logging.getLogger(__name__)
 
 def parseDate(data, dates):
     if not isinstance(data, dict):
@@ -49,7 +51,7 @@ class Delta(object):
             self.id = HiiGUID(date).packed
         else:
             self.id = HiiGUID(time.time()).packed
-
+        LOGGER.info("Created delta %s" % HiiGUID(self.id).base36)
 
 class AutogenerateException(Exception):
     pass
