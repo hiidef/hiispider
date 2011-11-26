@@ -139,14 +139,10 @@ class JobExecuter(MetaComponent):
         self.server.stats.timer.stop('job.time')
 
     @inlineCallbacks
-    def generate_deltas(self, new_data, job, save=True):
+    def generate_deltas(self, new_data, old_data, job, save=True):
         delta_func = self.server.functions[job.function_name]["delta"]
         if not delta_func:
             return
-        old_data = yield self.server.cassandra.getData(job, consistency=2)
-        if not old_data:
-            return
-
         # make sure old_data and new_data are similar (strings are all unicode, ect)
 
         # Taking this out as encoding and decoding should be done by the same

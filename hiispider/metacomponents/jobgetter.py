@@ -182,7 +182,6 @@ class JobGetter(MetaComponent):
                     continue
                 self.fast_cache_queue.append(job)
             else:
-                LOGGER.debug('Could not find uuids %s in Redis.' % row[0])
                 self.uncached_uuid_queue.append(row[0])
 
     @inlineCallbacks

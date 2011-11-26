@@ -66,7 +66,7 @@ class Worker(JobExecuter):
         average_times = [(x, self.timer[x]/(self.timer_count[x] * mean_time_per_call)) for x in self.timer]
         LOGGER.info("Total times:\n %s" % pformat(sorted(total_times, key=lambda x:x[1])))
         LOGGER.info("Average times:\n %s" % pformat(sorted(average_times, key=lambda x:x[1])))
-        LOGGER.info("Active jobs:\n %s" % pformat(sorted([(x.function_name, round(time.time() - x.start, 2), x.uuid) for x in self.jobs], key=lambda x:x[1])))
+        LOGGER.info("Active jobs:\n %s" % pformat(sorted([(x.function_name, round(time.time() - x.start, 2), x.status, x.uuid) for x in self.jobs], key=lambda x:x[1])))
         LOGGER.info("%s jobs per second, %s failures per second." % (jps, fps))
         LOGGER.info("Wait time by component:\n%s" % "\n".join(["%s:%s" % (x.__class__.__name__, x.wait_time) for x in self.server.components]))
         self.job_speed_start = time.time()
@@ -114,6 +114,7 @@ class Worker(JobExecuter):
             reactor.callLater(.1, self.work)
             return
         job.start = time.time()
+        job.status = "executing"
         self.jobs.add(job)
         try:
             self.time_start(job.uuid)
@@ -129,14 +130,18 @@ class Worker(JobExecuter):
             self.jobs.remove(job)
             reactor.callLater(0, self.work)
             return
+        job.status = "delta"
         if self.deltas:
             try:
                 self.time_start(job.uuid)
-                yield self.generate_deltas(data, job)
+                old_data = yield self.server.cassandra.getData(job)
+                if old_data:
+                    self.generate_deltas(data, old_data, job)
                 self.time_end(job.uuid, "%s.delta" % job.function_name)
             except Exception:
                 self.time_end(job.uuid, "%s.delta" % job.function_name)
                 LOGGER.error(format_exc())
+        job.status = "cassandra"
         try:
             self.time_start(job.uuid)
             self.server.cassandra.setData(job.user_account["user_id"], data, job.uuid)
