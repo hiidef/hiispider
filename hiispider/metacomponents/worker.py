@@ -130,12 +130,14 @@ class Worker(JobExecuter):
             self.jobs.remove(job)
             reactor.callLater(0, self.work)
             return
-        job.status = "delta"
+        
         if self.deltas:
             try:
                 self.time_start(job.uuid)
+                job.status = "delta-data"
                 old_data = yield self.server.cassandra.getData(job)
                 if old_data:
+                    job.status = "delta-generation"
                     self.generate_deltas(data, old_data, job)
                 self.time_end(job.uuid, "%s.delta" % job.function_name)
             except Exception:
