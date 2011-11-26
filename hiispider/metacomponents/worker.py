@@ -18,7 +18,7 @@ from hiispider.metacomponents.jobexecuter import JobExecuter
 from hiispider.metacomponents.jobgetter import JobGetter
 from hiispider.metacomponents.pagegetter import PageGetter
 from hiispider.components import *
-
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 

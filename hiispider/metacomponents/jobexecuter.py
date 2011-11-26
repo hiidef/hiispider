@@ -21,7 +21,8 @@ from twisted.web.error import Error as TwistedWebError
 from hiispider.metacomponents.jobgetter import JobGetter
 from hiispider.metacomponents.pagegetter import PageGetter
 from hiispider.exceptions import *
-from hiispider.components import Component, Stats, MySQL, JobHistoryRedis
+from .base import MetaComponent
+from hiispider.components import Stats, MySQL, JobHistoryRedis
 from hiispider.components import Cassandra, Logger, PageCacheQueue
 from hiispider.components.base import ComponentException
 
@@ -34,7 +35,7 @@ def invert(d):
     return dict([(v, k) for (k, v) in d.iteritems()])
 
 
-class JobExecuter(Component):
+class JobExecuter(MetaComponent):
 
     active_jobs = {}
     fast_cache = {}

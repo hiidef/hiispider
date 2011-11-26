@@ -18,7 +18,7 @@ from twisted.spread import pb
 from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
-
+from ..sleep import Sleep
 from hiispider.exceptions import ComponentException
 
 
@@ -120,6 +120,7 @@ class Component(object):
     running = False
     requires = None
     wait_time = 0
+    shutdown_complete = False
 
     def __init__(self, server, server_mode):
         self.server = server
@@ -188,9 +189,15 @@ class Component(object):
 
     @inlineCallbacks
     def _shutdown(self):
+        # Shut down the metacomponents first.
+        from ..metacomponents import MetaComponent
+        while not all([x.shutdown_complete for x in self.server.components \
+                if isinstance(x, MetaComponent)]):
+            yield Sleep(1)
         self.running = False
         if self.server_mode:
             yield maybeDeferred(self.shutdown)
+        self.shutdown_complete = True
         returnValue(None)
 
     def shutdown(self):

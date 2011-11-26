@@ -10,12 +10,12 @@ from twisted.internet import task
 from ..components import *
 from ..metacomponents import *
 import logging
-
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class Scheduler(Component):
+class Scheduler(MetaComponent):
 
     heap = []
     allow_clients = False

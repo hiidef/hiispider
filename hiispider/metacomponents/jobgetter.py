@@ -11,21 +11,19 @@ from uuid import UUID
 from collections import defaultdict
 from traceback import format_exc
 from copy import copy
-
 from twisted.internet import task
 from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from txamqp.queue import Empty
-
 from hiispider.exceptions import JobGetterShutdownException
 from hiispider.components import Redis, MySQL, JobQueue, Logger, Component,\
         shared, Queue
 from hiispider.job import Job
-
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class JobGetter(Component):
+class JobGetter(MetaComponent):
 
     dequeueloop = None
     uuid_queue = []

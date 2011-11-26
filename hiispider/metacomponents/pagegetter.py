@@ -10,15 +10,19 @@ from hiispider.components.base import Component, shared, broadcasted
 from hiispider.components import Redis, Cassandra, Logger
 from hiispider.pagegetter import PageGetter as pg
 from twisted.internet import task
-
+from pprint import pformat
+from twisted.internet.defer import inlineCallbacks, returnValue
+from .base import MetaComponent
+from ..sleep import Sleep
 LOGGER = logging.getLogger(__name__)
 
 
-class PageGetter(Component):
+class PageGetter(MetaComponent):
     """Implements the getPage RPC call."""
 
     requires = [Redis, Cassandra]
     pg = None
+    statusloop = None
 
     def __init__(self, server, config, server_mode, **kwargs):
         super(PageGetter, self).__init__(server, server_mode)
@@ -31,7 +35,23 @@ class PageGetter(Component):
             self.server.cassandra,
             redis_client=self.server.redis,
             rq=self.server.rq)
+        self.statusloop = task.LoopingCall(self.status_check)
+        self.statusloop.start(60)
         LOGGER.info('%s initialized.' % self.__class__.__name__)
+
+    def status_check(self):
+        LOGGER.info("Active requests: %s" % pformat(self.server.rq.active_reqs))
+    
+    @inlineCallbacks
+    def shutdown(self):
+        if self.statusloop:
+            self.statusloop.stop()
+        while self.server.rq.getActive() > 0:
+            LOGGER.info("%s waiting on %s before shutdown." % (
+                self.__class__.__name__, 
+                pformat(self.server.rq.active_reqs.keys())))
+            yield Sleep(1)
+        returnValue(None)
 
     @shared
     def getPage(self, *args, **kwargs):

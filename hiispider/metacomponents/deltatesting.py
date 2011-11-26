@@ -15,11 +15,12 @@ from zlib import decompress
 from difflib import SequenceMatcher
 import binascii
 from pprint import pformat
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class DeltaTesting(Component):
+class DeltaTesting(MetaComponent):
 
     allow_clients = False
     requires = [Cassandra]

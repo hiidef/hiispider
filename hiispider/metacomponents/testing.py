@@ -10,12 +10,12 @@ from hiispider.metacomponents import *
 import logging
 from copy import copy
 from hiispider.job import Job
-
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class Testing(Component):
+class Testing(MetaComponent):
 
     allow_clients = False
     requires = [MySQL, PageGetter, Cassandra]

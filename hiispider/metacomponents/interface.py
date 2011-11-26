@@ -8,12 +8,12 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from hiispider.components import *
 from hiispider.metacomponents import *
 import logging
-
+from .base import MetaComponent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class Interface(Component):
+class Interface(MetaComponent):
 
     allow_clients = False
     requires = [MySQL, PageGetter, Cassandra, Logger]
