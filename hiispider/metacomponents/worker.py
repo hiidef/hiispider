@@ -10,15 +10,14 @@ from copy import copy
 from collections import defaultdict
 from traceback import format_exc
 from random import random
-
 from twisted.internet import task, reactor
 from twisted.internet.defer import inlineCallbacks
-
 from hiispider.metacomponents.jobexecuter import JobExecuter
 from hiispider.metacomponents.jobgetter import JobGetter
 from hiispider.metacomponents.pagegetter import PageGetter
 from hiispider.components import *
 from .base import MetaComponent
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +130,6 @@ class Worker(JobExecuter):
             self.jobs.remove(job)
             reactor.callLater(0, self.work)
             return
-        
         if self.deltas:
             try:
                 self.time_start(job.uuid)
