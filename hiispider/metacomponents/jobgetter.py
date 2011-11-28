@@ -56,16 +56,15 @@ class JobGetter(MetaComponent):
     def start(self):
         self.dequeueloop = task.LoopingCall(self.dequeue)
         self.dequeueloop.start(2)
-        super(JobGetter, self).start()
 
-    @inlineCallbacks
     def shutdown(self):
+        if self.dequeueloop:
+            self.dequeueloop.stop()
         for req in self.job_requests:
             req.errback(JobGetterShutdownException("JobGetter shut down."))
         self.uuid_queue = []
         self.uncached_uuid_queue = []
         self.user_account_queue = []
-        yield super(JobGetter, self).shutdown()
 
     @shared
     @inlineCallbacks
@@ -152,20 +151,19 @@ class JobGetter(MetaComponent):
             try:
                 content = yield self.server.jobqueue.get(timeout=5)
             except Empty:
-                pass
+                continue
             except Exception, e:
                 LOGGER.error(format_exc())
                 break
-            if content:
-                self.uuid_queue.append(UUID(bytes=content).hex)
-                if len(self.uuid_queue) > self.min_size / 2:
-                    uuids, self.uuid_queue = self.uuid_queue, []
-                    try:
-                        data = yield self.server.redis.mget(*uuids)
-                    except Exception:
-                        LOGGER.error(format_exc())
-                        break
-                    self.checkCachedJobs(zip(uuids, data))
+            self.uuid_queue.append(UUID(bytes=content).hex)
+            if len(self.uuid_queue) > self.min_size / 2:
+                uuids, self.uuid_queue = self.uuid_queue, []
+                try:
+                    data = yield self.server.redis.mget(*uuids)
+                except Exception:
+                    LOGGER.error(format_exc())
+                    break
+                self.checkCachedJobs(zip(uuids, data))
         self.uuid_dequeueing = False
 
     def checkCachedJobs(self, results):

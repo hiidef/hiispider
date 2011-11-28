@@ -24,6 +24,9 @@ class NegativeReqCacheException(NegativeCacheException):
 class JobGetterShutdownException(Exception):
     pass
 
+class IdentityGetterShutdownException(Exception):
+    pass
+
 class NotRunningException(Exception):
     pass
 

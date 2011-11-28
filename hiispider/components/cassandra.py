@@ -49,6 +49,10 @@ class Cassandra(Component):
         self.cf_content = config["cassandra_cf_content"]
         self.cf_delta = config["cassandra_cf_delta"]
         self.cf_delta_user = config["cassandra_cf_delta_user"]
+        self.cf_identity = config["cassandra_cf_identity"]
+        self.cf_connections = config["cassandra_cf_connections"]
+        self.cf_recommendations = config["cassandra_cf_recommendations"]
+        self.cf_reverse_recommendations = config["cassandra_cf_reverse_recommendations"]
 
     def initialize(self):
         LOGGER.info('Initializing %s' % self.__class__.__name__)

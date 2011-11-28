@@ -1,3 +1,10 @@
+# Identity Getter
+python componentserver.py --components=identitygetter,mysql,identityqueue,logger,identityworker --http_port=8000 verbose
+
+
+# Identity Scheduler
+python componentserver.py --components=identityscheduler,mysql,identityqueue,logger,identitygetter --http_port=8000 verbose
+
 # Job Scheduler
 python componentserver.py --components=jobscheduler,mysql,jobqueue,logger --http_port=8000 verbose
 

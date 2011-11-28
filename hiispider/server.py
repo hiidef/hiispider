@@ -47,7 +47,9 @@ COMPONENTS = [
     JobScheduler,
     IdentityScheduler,
     Testing,
-    DeltaTesting]
+    DeltaTesting,
+    IdentityGetter,
+    IdentityWorker]
     
 # The intra-server poll interval
 POLL_INTERVAL = 60
