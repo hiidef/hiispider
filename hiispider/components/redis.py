@@ -39,6 +39,9 @@ class Redis(Component):
             LOGGER.error("Could not connect to Redis: %s" % e)
             self.server.shutdown()
             raise Exception("Could not connect to Redis.")
+        if self.client is None:
+            self.server.shutdown()
+            raise Exception("Could not connect to Redis.")
         LOGGER.info("%s initialized." % self.__class__.__name__)
 
     @inlineCallbacks

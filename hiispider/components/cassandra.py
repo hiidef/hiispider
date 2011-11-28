@@ -12,11 +12,12 @@ from copy import copy
 from telephus.pool import CassandraClusterPool
 from telephus.cassandra.c08.ttypes import NotFoundException
 from twisted.internet import threads
-
-from twisted.internet.defer import inlineCallbacks, returnValue
+from traceback import format_exc
+from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 from hiispider.components.base import Component, shared
 from hiispider.components.logger import Logger
 import binascii
+from pprint import pformat
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ def decompress(s):
     """Decompress with gzip, then load obj from JSON string"""
     return json.loads(zlib.decompress(s))
 
+def chunks(l, n):
+    for i in xrange(0, len(l), n):
+        yield l[i:i+n]
 
 class Cassandra(Component):
     """
@@ -150,6 +154,91 @@ class Cassandra(Component):
             column=uuid)
         returnValue(result)
 
+    @shared
+    @inlineCallbacks
+    def setServiceIdentity(self, service, user_id, service_id):
+        try:
+            yield self.client.insert(
+                "%s|%s" % (service, service_id),
+                self.cf_identity,
+                user_id,
+                column="user_id")
+        except:
+            LOGGER.error(format_exc())
+        returnValue(None)
+
+    @shared
+    @inlineCallbacks
+    def getServiceConnections(self, service, user_id):
+        try:
+            data = yield self.client.get_slice(
+                key=user_id,
+                column_family=self.cf_connections,
+                start=service,
+                finish=service + chr(0xff))
+        except:
+            LOGGER.error(format_exc())
+            returnValue([])
+        returnValue(dict([(x.column.name.split("|").pop(), x.column.value) 
+            for x in data]))
+
+    @inlineCallbacks
+    def addConnections(self, service, user_id, new_ids):
+        mapped_new_ids = {}
+        for chunk in list(chunks(list(new_ids), 100)):
+            data = yield self.client.multiget(
+                keys=["%s|%s" % (service, x) for x in chunk],
+                column_family=self.cf_identity,
+                column="user_id")
+            for key in data:
+                if data[key]:
+                    mapped_new_ids[key] = data[key][0].column.value
+        if not mapped_new_ids:
+            # We don't have any of the new connections in the system.
+            return
+        LOGGER.debug("Batch inserting: %s" % pformat(mapped_new_ids))
+        yield self.client.batch_insert(
+            key=user_id,
+            column_family=self.cf_connections,
+            mapping=mapped_new_ids)
+        followee_ids = mapped_new_ids.values()
+        for chunk in list(chunks(followee_ids, 10)):
+            deferreds = []
+            for followee_id in chunk:
+                LOGGER.info("Incrementing %s:%s" % (user_id, followee_id))
+                deferreds.append(self.cassandra_client.add(
+                    key=user_id,
+                    column_family=self.cf_recommendations,
+                    value=1,
+                    column=followee_id))
+                deferreds.append(self.cassandra_client.add(
+                    key=followee_id,
+                    column_family=self.cf_reverse_recommendations,
+                    value=1,
+                    column=user_id))
+            yield DeferredList(deferreds)
+
+    @inlineCallbacks
+    def removeConnections(self, service, user_id, obsolete_mapping):
+        for service_id in obsolete_mapping:
+            LOGGER.debug("Removing %s|%s from connections CF." % (service, service_id))
+            yield self.client.remove(
+                key=user_id,
+                column_family=self.cf_connections,
+                column="%s|%s" % (service_name, service_id))
+            logger.debug("Decrementing %s:%s." % (user_id, old_ids[service_id]))
+            yield DeferredList([
+                self.client.add(
+                    key=user_id,
+                    column_family=self.cf_recommendations,
+                    value=-1,
+                    column=obsolete[service_id]),
+                self.client.add(
+                    key=obsolete[service_id],
+                    column_family=self.cf_reverse_recommendations,
+                    value=-1,
+                    column=user_id)])
+    
 #    @shared
 #    def get(self, *args, **kwargs):
 #        return self.client.get(*args, **kwargs)

@@ -4,7 +4,6 @@
 """Scheules Identity checks."""
 
 import logging
-from uuid import UUID
 from hiispider.metacomponents.scheduler import Scheduler
 from hiispider.components import Logger, MySQL, IdentityQueue
 from twisted.internet.defer import inlineCallbacks
@@ -38,7 +37,7 @@ class IdentityScheduler(Scheduler):
 
     @shared
     def add_user_id(self, user_id):
-    	return self._add_user_id(user_id)
+        return self._add_user_id(user_id)
 
     def _add_user_id(self, user_id):
         self.add(str(user_id), 60*60*24)

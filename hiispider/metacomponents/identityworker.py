@@ -14,9 +14,15 @@ from hiispider.metacomponents import PageGetter, IdentityGetter
 from traceback import format_exc
 from twisted.internet import task, reactor
 from collections import defaultdict
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, maybeDeferred
+
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _get_args(f, user):
+    args = f["required_arguments"] + f["optional_arguments"]
+    return dict([(key, user[key]) for key in args])
 
 
 class IdentityWorker(MetaComponent):
@@ -35,6 +41,7 @@ class IdentityWorker(MetaComponent):
         config = copy(config)
         config.update(kwargs)
         self.mysql = self.server.mysql
+        self.plugin_mapping = config["plugin_mapping"]
 
     def time_start(self, task_id):
         self.timer_starts[task_id] = time.time()
@@ -61,6 +68,51 @@ class IdentityWorker(MetaComponent):
         pass
 
     @inlineCallbacks
+    def get_service_connections(self, user):    
+        service = self.plugin_mapping.get(
+            user["_account_type"], 
+            user["_account_type"])
+        function_key = "%s/_getconnections" % service
+        f = self.server.functions[function_key]
+        try:
+            ids = yield maybeDeferred(f, **_get_args(f, user))
+            ids = set(ids)
+        except NotImplementedError:
+            LOGGER.info("%s not implemented." % function_key)
+            return
+        # Currently stored connections
+        current = self.server.cassandra.getServiceConnections(
+            service, 
+            user["user_id"])
+        # Remove Currently stored connections no longer in the service
+        yield self.server.cassandra.removeConnections(
+            service, 
+            user["user_id"], 
+            dict([x for x in current.items() if x[0] in set(current) - ids]))
+        # Add connections in the service not currently stored
+        yield self.server.cassandra.addConnections(
+            service, 
+            user["user_id"],
+            ids - set(current))
+
+    @inlineCallbacks
+    def get_service_identity(self, user):
+        service = self.plugin_mapping.get(
+            user["_account_type"], 
+            user["_account_type"])
+        function_key = "%s/_getidentity" % service
+        f = self.server.functions[function_key]
+        try:
+            service_id = yield self.maybeDeferred(f, **_get_args(f, user))
+        except NotImplementedError:
+            LOGGER.info("%s not implemented." % function_key)
+            return
+        yield self.server.cassandra.setServiceIdentity(
+            service, 
+            user["user_id"], 
+            service_id)     
+
+    @inlineCallbacks
     def getUsers(self):
         self.getting_users = True
         try:
@@ -68,8 +120,7 @@ class IdentityWorker(MetaComponent):
             self.user_queue.extend(users)
         except Exception:
             LOGGER.error(format_exc())
-        self.getting_users = False
-
+        self.getting_users = False  
 
     def work(self):
         if not self.running:
@@ -85,6 +136,23 @@ class IdentityWorker(MetaComponent):
             self.time_end(r, "get_users", add=.1)
             reactor.callLater(.1, self.work)
             return
-        LOGGER.debug(user)
+        service = self.plugin_mapping.get(
+            user["_account_type"], 
+            user["_account_type"])
+        # Identity
+        self.time_start(r)
+        try:
+            yield self.get_service_identity(user)
+        except:
+            LOGGER.error(format_exc())
+        self.time_end(r, "%s identity" % service)
+        # Connections
+        self.time_start(r)
+        try:
+            yield self.get_service_connections(user)
+        except:
+            LOGGER.error(format_exc())
+        self.time_end(r, "%s connections" % service)
+        # Connections
         reactor.callLater(0, self.work)
         

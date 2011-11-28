@@ -4,7 +4,6 @@
 """Connects to various components to generate an internal queue of indentity objects."""
 
 from .base import MetaComponent
-from random import shuffle
 from hiispider.exceptions import IdentityGetterShutdownException
 from hiispider.components import MySQL, IdentityQueue, Logger, Redis, shared
 from txamqp.queue import Empty
@@ -128,7 +127,7 @@ class IdentityGetter(MetaComponent):
                     self.uncached_queue.append(row[0])
                     continue
             else:
-                self.uncached_queue.append(row[0])
+                self.uncached_queue.append(row[0]) 
 
     @inlineCallbacks
     def _lookupUsers(self):  
@@ -159,8 +158,9 @@ class IdentityGetter(MetaComponent):
                     if value in row:
                         row[key] = row.pop(value)
                 row["user_id"] = str(row["user_id"])
-                self.server.redis.set(row["user_id"], row)
+                self.server.redis.set(row["user_id"], compress(cPickle.dumps(row)))
             self.user_queue.extend(results)
             LOGGER.debug("User queue has %s items." % len(self.user_queue))
+    
 
 
