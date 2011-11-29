@@ -103,7 +103,6 @@ class IdentityGetter(MetaComponent):
             except Exception, e:
                 LOGGER.error(format_exc())
                 break
-            LOGGER.debug("Enqueing %s" % int(content))
             self.user_id_queue.append(content)
         self.user_id_dequeueing = False
         returnValue(None)
@@ -149,7 +148,6 @@ class IdentityGetter(MetaComponent):
             WHERE content_account.user_id IN (%(user_ids)s)""" % {
                 "account_type": account_type,
                 "user_ids": ",".join(accounts_by_type[account_type])}
-            LOGGER.debug(sql)
             mapping = self.inverted_args_mapping.get(account_type, {})
             results = yield self.server.mysql.runQuery(sql)
             for row in results:
@@ -160,7 +158,6 @@ class IdentityGetter(MetaComponent):
                 row["user_id"] = str(row["user_id"])
                 self.server.redis.set(row["user_id"], compress(cPickle.dumps(row)))
             self.user_queue.extend(results)
-            LOGGER.debug("User queue has %s items." % len(self.user_queue))
     
 
 

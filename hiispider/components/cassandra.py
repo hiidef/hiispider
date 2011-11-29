@@ -157,6 +157,7 @@ class Cassandra(Component):
     @shared
     @inlineCallbacks
     def setServiceIdentity(self, service, user_id, service_id):
+        LOGGER.debug("Inserting identity: %s | %s" % (service, service_id))
         try:
             yield self.client.insert(
                 "%s|%s" % (service, service_id),
@@ -206,12 +207,12 @@ class Cassandra(Component):
             deferreds = []
             for followee_id in chunk:
                 LOGGER.info("Incrementing %s:%s" % (user_id, followee_id))
-                deferreds.append(self.cassandra_client.add(
+                deferreds.append(self.client.add(
                     key=user_id,
                     column_family=self.cf_recommendations,
                     value=1,
                     column=followee_id))
-                deferreds.append(self.cassandra_client.add(
+                deferreds.append(self.client.add(
                     key=followee_id,
                     column_family=self.cf_reverse_recommendations,
                     value=1,
