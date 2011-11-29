@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 # Also requires python-dev and python-openssl
 #version = '.'.join(map(str, VERSION))
 
-version=0.10.2.9
+version="0.10.2.9"
 
 setup(
     name = "HiiSpider",
