@@ -20,6 +20,7 @@ class Scheduler(MetaComponent):
     heap = []
     allow_clients = False
     enqueueloop = None
+    redistribute = True
 
     def __init__(self, server, config, server_mode, queue, **kwargs):
         self.queue = queue
@@ -60,7 +61,7 @@ class Scheduler(MetaComponent):
                     heappush(self.heap, (now + x[1][1], x[1]))
             if i:
                 LOGGER.debug("Added %s items to the queue." % i)
-        elif self.heap:
+        elif self.heap and self.redistribute:
             x = heappop(self.heap)
             distribution = random.randint(-1 * x[1][1] / 2, x[1][1] / 2)
             heappush(self.heap, (now + x[1][1] + distribution, x[1]))

@@ -14,7 +14,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 class IdentityScheduler(Scheduler):
-
+    
+    redistribute = False
     removed_user_ids = set([])
     requires = [Logger, MySQL, IdentityQueue]
 
@@ -40,7 +41,7 @@ class IdentityScheduler(Scheduler):
         return self._add_user_id(user_id)
 
     def _add_user_id(self, user_id):
-        self.add(str(user_id), 60*60*24)
+        self.add(str(user_id), 60*60*2)
 
     @shared
     def remove_user_id(self, user_id):

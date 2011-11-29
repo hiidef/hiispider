@@ -1,6 +1,10 @@
+# Identity Interface
+python componentserver.py --components=identityinterface,mysql,logger,cassandra --http_port=8000 verbose
+
 # Identity Getter
 python componentserver.py --components=identitygetter,mysql,identityqueue,logger,identityworker,identityscheduler,redis,pagegetter,cassandra --http_port=8000 verbose
 
+python componentserver.py --components=mysql,identityqueue,logger,identityscheduler --http_port=8000 verbose
 
 # Identity Scheduler
 python componentserver.py --components=identityscheduler,mysql,identityqueue,logger,identitygetter --http_port=8000 verbose

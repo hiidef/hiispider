@@ -16,9 +16,10 @@ from .testing import Testing
 from .deltatesting import DeltaTesting
 from .identitygetter import IdentityGetter
 from .identityworker import IdentityWorker
+from .identityinterface import IdentityInterface
 from .base import MetaComponent
 
 __all__ = ['PageGetter', 'Worker', 'JobGetter', 'Interface', "JobScheduler", 
 	"IdentityScheduler", "Testing", "DeltaTesting", "MetaComponent", 
-	"IdentityGetter", "IdentityWorker"]
+	"IdentityGetter", "IdentityWorker", "IdentityInterface"]
 

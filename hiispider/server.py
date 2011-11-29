@@ -49,7 +49,8 @@ COMPONENTS = [
     Testing,
     DeltaTesting,
     IdentityGetter,
-    IdentityWorker]
+    IdentityWorker,
+    IdentityInterface]
     
 # The intra-server poll interval
 POLL_INTERVAL = 60

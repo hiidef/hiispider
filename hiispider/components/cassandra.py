@@ -97,6 +97,10 @@ class Cassandra(Component):
         return self.client.get_slice(*args, **kwargs)
 
     @shared
+    def get_range_slices(self, *args, **kwargs):
+        return self.client.get_range_slices(*args, **kwargs)
+
+    @shared
     @inlineCallbacks
     def get_delta(self, delta_id):
         """Get data from cassandra by user delta_id."""

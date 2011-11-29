@@ -44,7 +44,11 @@ class MySQL(Component):
             cp_reconnect=True,
             cursorclass=DictCursor)
         LOGGER.info('%s initialized.' % self.__class__.__name__)
-    
+
     @shared
     def runQuery(self, *args, **kwargs):
         return self.mysql.runQuery(*args, **kwargs)
+
+    @shared
+    def runOperation(self, *args, **kwargs):
+        return self.mysql.runOperation(*args, **kwargs)
