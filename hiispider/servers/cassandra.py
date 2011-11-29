@@ -4,7 +4,7 @@
 """Cassandra using version of BaseServer."""
 
 import os
-import simplejson
+import ujson as json
 import zlib
 import pprint
 import urllib
@@ -17,19 +17,19 @@ from uuid import uuid4
 from difflib import SequenceMatcher, unified_diff
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredList
 from twisted.internet import reactor
-from .base import BaseServer
-from ..pagegetter import PageGetter
-from ..delta import Autogenerator, Delta
 from txredisapi import RedisShardingConnection
 from mixins.jobgetter import JobGetterMixin
-from ..uuidhelpers import convert_time_to_uuid
 from telephus.cassandra.c08.ttypes import IndexExpression, IndexOperator, NotFoundException
 from telephus.pool import CassandraClusterPool
+
 from hiispider.exceptions import *
+from hiispider.servers.base import BaseServer
+from hiispider.pagegetter import PageGetter
+from hiispider.delta import Autogenerator, Delta
+from hiispider.uuidhelpers import convert_time_to_uuid
 
 PP = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
-
 
 def recursive_sort(x):
     if isinstance(x, basestring):
@@ -131,7 +131,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 old_data = yield self.getData(user_id, job.uuid)
                 # TODO: make sure we check that old_data exists
                 deltas = delta_func(new_data, old_data)
-                logger.debug("Got %s deltas" % len(deltas))
+                logger.debug("Got %s deltas for %s: %s(%s)" % (len(deltas), user_id, job.subservice, job.uuid))
                 for delta in deltas:
                     # FIXME why is category not always set?
                     category = 'unknown'
@@ -140,7 +140,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     service = job.subservice.split('/')[0]
                     user_column = b'%s||%s||%s||%s' % (delta.id, category, job.subservice, str(job.user_account['account_id']))
                     mapping = {
-                        'data': zlib.compress(simplejson.dumps(delta.data)),
+                        'data': zlib.compress(json.dumps(delta.data)),
                         'user_id': str(user_id),
                         'category': category,
                         'service': service,
@@ -150,8 +150,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     if self.delta_debug:
                         ts = str(time.time())
                         mapping.update({
-                            'old_data': zlib.compress(simplejson.dumps(old_data)),
-                            'new_data': zlib.compress(simplejson.dumps(new_data)),
+                            'old_data': zlib.compress(json.dumps(old_data)),
+                            'new_data': zlib.compress(json.dumps(new_data)),
                             'generated': ts,
                             'updated': ts})
                     yield self.cassandra_client.batch_insert(
@@ -166,7 +166,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
-            zlib.compress(simplejson.dumps(new_data)),
+            zlib.compress(json.dumps(new_data)),
             column=job.uuid)
         returnValue(new_data)
 
@@ -176,7 +176,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
         ret = yield self.cassandra_client.insert(
             str(user_id),
             self.cassandra_cf_content,
-            zlib.compress(simplejson.dumps(data)),
+            zlib.compress(json.dumps(data)),
             column=uuid)
         returnValue(ret)
 
@@ -189,7 +189,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 key=str(user_id),
                 column_family=self.cassandra_cf_content,
                 column=uuid)
-            returnValue(simplejson.loads(zlib.decompress(data.column.value)))
+            returnValue(json.loads(zlib.decompress(data.column.value)))
         except NotFoundException:
             returnValue([])
 
@@ -299,8 +299,8 @@ class CassandraServer(BaseServer, JobGetterMixin):
             yield self.delete_delta(delta_id)
             return
         try:
-            new_data = simplejson.loads(zlib.decompress(row["new_data"]))
-            old_data = simplejson.loads(zlib.decompress(row["old_data"]))
+            new_data = json.loads(zlib.decompress(row["new_data"]))
+            old_data = json.loads(zlib.decompress(row["old_data"]))
         except KeyError:
             yield self.delete_delta(delta_id, user_id)
             return
@@ -358,7 +358,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                     key=delta_id,
                     column_family=self.cassandra_cf_delta,
                     mapping={
-                        "data": zlib.compress(simplejson.dumps("")),
+                        "data": zlib.compress(json.dumps("")),
                         "updated": str(time.time()),
                         "service": row["service"],
                         "category": row["category"],
@@ -372,7 +372,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data": zlib.compress(simplejson.dumps(replacement_delta)),
+                    "data": zlib.compress(json.dumps(replacement_delta)),
                     "updated": str(time.time()),
                     "service": row["service"],
                     "category": row["category"],
@@ -389,7 +389,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
             s = SequenceMatcher()
             s.set_seq1(zlib.decompress(row["data"]))
             for delta in deltas:
-                value = simplejson.dumps(delta.data)
+                value = json.dumps(delta.data)
                 s.set_seq2(value)
                 delta_options.append((s.ratio(), value, delta.data))
             # Sort to find the most similar option.
@@ -399,7 +399,7 @@ class CassandraServer(BaseServer, JobGetterMixin):
                 key=delta_id,
                 column_family=self.cassandra_cf_delta,
                 mapping={
-                    "data": zlib.compress(simplejson.dumps(replacement_delta)),
+                    "data": zlib.compress(json.dumps(replacement_delta)),
                     "updated": str(time.time()),
                     "service": row["service"],
                     "category": row["category"],

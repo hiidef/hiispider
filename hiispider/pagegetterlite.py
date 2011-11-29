@@ -1,4 +1,9 @@
-import simplejson
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""pagegetter lite"""
+
+import ujson as json
 import twisted.python.failure
 import datetime
 import dateutil.parser
@@ -6,11 +11,13 @@ import hashlib
 import logging
 import time
 import copy
+
 from twisted.internet.defer import maybeDeferred
-from .requestqueuer import RequestQueuer
-from .unicodeconverter import convertToUTF8, convertToUnicode
-from .exceptions import StaleContentException
 from twisted.web.client import _parse
+
+from hiispider.requestqueuer import RequestQueuer
+from hiispider.unicodeconverter import convertToUTF8, convertToUnicode
+from hiispider.exceptions import StaleContentException
 
 
 class ReportedFailure(twisted.python.failure.Failure):
@@ -135,11 +142,11 @@ class PageGetter:
         # Create request_hash to serve as a cache key from
         # either the URL or user-provided hash_url.
         if hash_url is None:
-            request_hash = hashlib.sha1(simplejson.dumps([
+            request_hash = hashlib.sha1(json.dumps([
                 url,
                 agent])).hexdigest()
         else:
-            request_hash = hashlib.sha1(simplejson.dumps([
+            request_hash = hashlib.sha1(json.dumps([
                 hash_url,
                 agent])).hexdigest()
 

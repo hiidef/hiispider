@@ -1,11 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Jobgetter mixin."""
 
 import cPickle
 import logging
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 from zlib import compress, decompress
-from .mysql import MySQLMixin
-from ..base import Job
+from hiispider.servers.mixins.mysql import MySQLMixin
+from hiispider.servers.base import Job
 
 logger = logging.getLogger(__name__)
 

@@ -1,19 +1,23 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Page cache queue"""
+
 from uuid import UUID
-import simplejson
+import ujson as json
 import logging
 from hashlib import sha256
+
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import task
 from txamqp.content import Content
-from ...amqp import amqp as AMQP
-from .amqp import AMQPMixin
-
+from hiispider.amqp import amqp as AMQP
+from hiispider.servers.mixins.amqp import AMQPMixin
 
 logger = logging.getLogger(__name__)
 
-
 class PageCacheQueueMixin(AMQPMixin):
-    
+
     amqp_pagecache_queue_size = 0
     pagecache_chan = None
 
@@ -91,7 +95,7 @@ class PageCacheQueueMixin(AMQPMixin):
                 job.user_account['username'])
         pagecache_msg['username'] = job.user_account['username']
         pagecache_msg['cache_key'] = sha256(cache_key).hexdigest()
-        msg = Content(simplejson.dumps(pagecache_msg))
+        msg = Content(json.dumps(pagecache_msg))
         try:
             yield self.pagecache_chan.basic_publish(
                 exchange=self.amqp_exchange,

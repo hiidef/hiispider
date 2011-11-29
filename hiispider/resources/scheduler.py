@@ -1,4 +1,9 @@
-from .base import BaseResource
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Scheduler Resource"""
+
+from hiispider.resources.base import BaseResource
 
 class SchedulerResource(BaseResource):
 

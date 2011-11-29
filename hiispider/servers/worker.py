@@ -1,10 +1,16 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Hiispider worker server."""
+
 import logging
 import time
 
-from .cassandra import CassandraServer
-from ..resources import WorkerResource
+from hiispider.servers.cassandra import CassandraServer
+from hiispider.resources import WorkerResource
 from hiispider.servers.mixins import JobQueueMixin, PageCacheQueueMixin, JobGetterMixin, JobHistoryMixin
 from hiispider.requestqueuer import QueueTimeoutException
+
 from twisted.internet import reactor, task
 from twisted.web import server
 from twisted.internet.defer import inlineCallbacks, returnValue

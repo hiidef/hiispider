@@ -5,12 +5,11 @@
 distributed manner and handle thousands of requests per second.  It's capable
 of writing results to both MySQL and Cassandra and features a """
 
-__all__ = ['SchedulerServer', 'InterfaceServer', 'WorkerServer',
-           'HiiSpiderPlugin', 'VERSION']
-
 VERSION = (0, 10, 2, 9)
 
-from .servers import SchedulerServer
-from .servers import InterfaceServer
-from .servers import WorkerServer
-from .plugin import HiiSpiderPlugin
+from servers import *
+from plugin import HiiSpiderPlugin
+
+__all__ = ['SchedulerServer', 'InterfaceServer', 'WorkerServer', 'TestingServer',
+    'CassandraServer', 'IdentityServer', 'HiiSpiderPlugin', 'VERSION']
+
