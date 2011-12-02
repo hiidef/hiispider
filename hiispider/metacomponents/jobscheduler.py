@@ -66,7 +66,7 @@ class JobScheduler(Scheduler):
 
     @inlineCallbacks
     def start(self):
-        yield super(JobScheduler, self).start()
+        super(JobScheduler, self).start()
         # Get jobs
         data = []
         start = 0

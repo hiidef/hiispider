@@ -49,7 +49,7 @@ class IdentityScheduler(Scheduler):
 
     @inlineCallbacks
     def start(self):
-        yield super(IdentityScheduler, self).start()
+        super(IdentityScheduler, self).start()
         data = []
         start = 0
         while len(data) >= 100000 or start == 0:

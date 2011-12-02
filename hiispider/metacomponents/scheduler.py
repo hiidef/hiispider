@@ -50,8 +50,11 @@ class Scheduler(MetaComponent):
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         if self.queue.queue_size < 100000:
+
             # LOGGER.debug("%s : %s" % (self.__class__.__name__, now))
             i = 0
+            
+            LOGGER.debug(len(self.heap))
             while self.heap and self.heap[0][0] < now:
                 x = heappop(self.heap) # x is (enqueue_time, (item, interval))
                 i += 1

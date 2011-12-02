@@ -15,16 +15,13 @@ from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from collections import defaultdict
 import cPickle
 from zlib import decompress, compress
+from .identity import Identity
+
 
 LOGGER = logging.getLogger(__name__)
 
 
-def invert(d):
-    """Invert a dictionary."""
-    return dict([(v, k) for (k, v) in d.iteritems()])
-
-
-class IdentityGetter(MetaComponent):
+class IdentityGetter(Identity):
     
     dequeueloop = None
     user_id_dequeueing = False
@@ -36,15 +33,10 @@ class IdentityGetter(MetaComponent):
     user_requests = []
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(IdentityGetter, self).__init__(server, server_mode)
+        super(IdentityGetter, self).__init__(server, config, server_mode, **kwargs)
         config = copy(config)
         config.update(kwargs)
         self.min_size = config.get('identitygetter_min_size', IdentityGetter.min_size)
-        self.scheduler_server = config["identity_scheduler_server"]
-        self.scheduler_server_port = config["identity_scheduler_server_port"]
-        self.service_args_mapping = config["service_args_mapping"]
-        self.inverted_args_mapping = dict([(s[0], invert(s[1]))
-            for s in self.service_args_mapping.items()])
         
     def __len__(self):
         return sum([len(self.user_id_queue), 

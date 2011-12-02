@@ -7,7 +7,7 @@
 import logging
 import time
 from random import random
-from .base import MetaComponent
+from .identity import Identity
 from copy import copy
 from hiispider.components import *
 from hiispider.metacomponents import PageGetter, IdentityGetter
@@ -21,7 +21,7 @@ from pprint import pformat
 LOGGER = logging.getLogger(__name__)
 
 
-class IdentityWorker(MetaComponent):
+class IdentityWorker(Identity):
 
     statusloop = None
     simultaneous_jobs = 100
@@ -33,7 +33,7 @@ class IdentityWorker(MetaComponent):
     timer_starts = {}
 
     def __init__(self, server, config, server_mode, **kwargs):
-        super(IdentityWorker, self).__init__(server, server_mode)
+        super(IdentityWorker, self).__init__(server, config, server_mode, **kwargs)
         config = copy(config)
         config.update(kwargs)
         self.mysql = self.server.mysql
@@ -70,76 +70,6 @@ class IdentityWorker(MetaComponent):
         LOGGER.info("Total times:\n %s" % pformat(sorted(total_times, key=lambda x:x[1])))
         LOGGER.info("Average times:\n %s" % pformat(sorted(average_times, key=lambda x:x[1])))
         LOGGER.info("Wait time by component:\n%s" % "\n".join(["%s:%s" % (x.__class__.__name__, x.wait_time) for x in self.server.components]))
-
-    
-    def get_service_connections(self, user):    
-        service = self.plugin_mapping.get(
-            user["_account_type"], 
-            user["_account_type"])
-        function_key = "%s/_getconnections" % service
-        f = self.server.functions[function_key]
-        d = maybeDeferred(f["function"], **user)
-        d.addCallback(self._get_service_connections_callback, service, user)
-        d.addErrback(self._get_service_connections_errback)
-        return d
-
-    @inlineCallbacks
-    def _get_service_connections_callback(self, ids, service, user):
-        ids = set(ids)
-        # Currently stored connections
-        current = yield self.server.cassandra.getServiceConnections(
-            service, 
-            user["user_id"])
-        # Remove Currently stored connections no longer in the service
-        yield self.server.cassandra.removeConnections(
-            service, 
-            user["user_id"], 
-            dict([x for x in current.items() if x[0] in set(current) - ids]))
-        # Add connections in the service not currently stored
-        yield self.server.cassandra.addConnections(
-            service, 
-            user["user_id"],
-            ids - set(current))
-
-    def _get_service_connections_errback(self, error):
-        try:
-            error.raiseException()
-        except NotImplementedError:
-            return
-        except Exception, e:
-            tb = '\n'.join(format_tb(error.getTracebackObject()))
-            LOGGER.error("Error getting service connections: %s\n%s" % (
-                tb,
-                format_exc()))
-
-    def get_service_identity(self, user):
-        service = self.plugin_mapping.get(
-            user["_account_type"], 
-            user["_account_type"])
-        function_key = "%s/_getidentity" % service
-        f = self.server.functions[function_key]
-        d = maybeDeferred(f["function"], **user)
-        d.addCallback(self._get_service_identity_callback, service, user)
-        d.addErrback(self._get_service_identity_errback)
-        return d
-
-    @inlineCallbacks
-    def _get_service_identity_callback(self, service_id, service, user):
-        yield self.server.cassandra.setServiceIdentity(
-            service, 
-            user["user_id"], 
-            service_id) 
-
-    def _get_service_identity_errback(self, error):
-        try:
-            error.raiseException()
-        except NotImplementedError:
-            return
-        except Exception, e:
-            tb = '\n'.join(format_tb(error.getTracebackObject()))
-            LOGGER.error("Error getting identity connections: %s\n%s" % (
-                tb,
-                format_exc()))
 
     @inlineCallbacks
     def getUsers(self):
