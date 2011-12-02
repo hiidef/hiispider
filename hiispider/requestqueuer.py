@@ -12,12 +12,12 @@ import dateutil.parser
 from hiispider.unicodeconverter import convertToUTF8
 from OpenSSL import SSL
 import logging
-
+from .exceptions import QueueTimeoutException
+from copy import copy
 
 logger = logging.getLogger(__name__)
 
-class QueueTimeoutException(Exception):
-    pass
+
 
 class AllCipherSSLClientContextFactory(ssl.ClientContextFactory):
     """A context factory for SSL clients that uses all ciphers."""
@@ -240,10 +240,14 @@ class RequestQueuer(object):
             "timeout":timeout,
             "cookies":cookies,
             "follow_redirect":follow_redirect,
-            "deferred":Deferred()}
+            "deferred":Deferred(),
+            "start":time.time()}
         host = _parse(req["url"])[1]
+        if host in self.max_reqs_per_hosts_per_sec and host in self.pending_reqs:
+            if len(self.pending_reqs[host]) * self.max_reqs_per_hosts_per_sec[host] > queue_timeout:
+                req["deferred"].errback(QueueTimeoutException())
+                return req["deferred"]
         req["host"] = host
-        req["queue_timeout"] = reactor.callLater(queue_timeout, self._timeout, req)
         if host not in self.pending_reqs:
             self.pending_reqs[host] = []
         if prioritize:
@@ -288,8 +292,6 @@ class RequestQueuer(object):
                 elif self._hostRequestCheck(host):
                     dispatched_requests = True
                     req = self.pending_reqs[host].pop(0)
-                    if req["queue_timeout"].active():
-                        req["queue_timeout"].cancel()
                     d = self._getPage(req)
                     d.addCallback(self._requestComplete, req["deferred"], host)
                     d.addErrback(self._requestError, req["deferred"], host)
@@ -344,7 +346,7 @@ class RequestQueuer(object):
     def _getPageComplete(self, response, factory):
         return {
                     "response":response,
-                    "headers":factory.response_headers,
+                    "headers":copy(factory.response_headers),
                     "status":int(factory.status),
                     "message":factory.message
                 }
@@ -352,5 +354,5 @@ class RequestQueuer(object):
     def _getPageError(self, error, factory):
         if hasattr(factory, "response_headers") \
             and factory.response_headers is not None:
-            error.value.headers = factory.response_headers
+            error.value.headers = copy(factory.response_headers)
         return error

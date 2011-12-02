@@ -6,17 +6,73 @@
 import cPickle
 import logging
 
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from zlib import compress, decompress
 from hiispider.servers.mixins.mysql import MySQLMixin
 from hiispider.servers.base import Job
 
 logger = logging.getLogger(__name__)
 
+class JobGetterBatchException(Exception):
+    pass
+
 class JobGetterMixin(MySQLMixin):
+
+    request_queue = {}
+    batch_size = 20
 
     def setupJobGetter(self, config):
         self.setupMySQL(config)
+
+    def batchGetJob(self, uuid):
+        d = self._getCachedJob(uuid)
+        d.addErrback(self._batchGetJobErrback, uuid)
+        return d
+
+    def _batchGetJobErrback(self, error, uuid):
+        d = Deferred()
+        self.request_queue[uuid] = d
+        if len(self.request_queue) >= self.batch_size:
+            self._execute_batch()
+        return d
+
+    @inlineCallbacks
+    def _execute_batch(self):
+        request_queue, self.request_queue = self.request_queue, {}
+        sql = """SELECT uuid, content_userprofile.user_id as user_id, username, host, account_id, type
+            FROM spider_service, auth_user, content_userprofile
+            WHERE uuid IN ('%s')
+            AND auth_user.id=spider_service.user_id
+            AND auth_user.id=content_userprofile.user_id
+        """ % "','".join(request_queue.keys())
+        try:
+            data = yield self.mysql.runQuery(sql)
+        except Exception, e:
+            logger.debug("Could not find users in '%s'" % "','".join(request_queue.keys()))
+            raise e
+        accounts_by_type = dict([(x["type"], x) for x in data])
+        for service_type in accounts_by_type:
+            accounts_by_id = dict([(x["account_id"], x) for x in accounts_by_type[service_type]])
+            sql = "SELECT * FROM content_%saccount WHERE account_id IN (%s)" % (service_type, ",".join(accounts_by_id.keys()))
+            try:
+                data = yield self.mysql.runQuery(sql)
+            except Exception, e:
+                message = "Could not find service %s, %s" % (service_type, sql)
+                logger.error(message)
+                raise
+            for service_credentials in data:
+                user_account = accounts_by_id[service_credentials["account_id"]]
+                job = Job(
+                    function_name=user_account['type'],
+                    service_credentials=service_credentials,
+                    user_account=user_account,
+                    uuid=user_account['uuid'])
+                self.mapJob(job) # Do this now so mapped values are cached.
+                self._setJobCache(job)
+                request_queue[user_account['uuid']].callback(job)
+                del request_queue[user_account['uuid']]
+        for uuid in request_queue:
+            request_queue[uuid].errback(JobGetterBatchException("Could not get job in batch."))
 
     @inlineCallbacks
     def getJob(self, uuid):

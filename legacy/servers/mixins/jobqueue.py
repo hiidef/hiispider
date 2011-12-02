@@ -27,6 +27,7 @@ class JobQueueMixin(AMQPMixin):
 
     @inlineCallbacks
     def startJobQueue(self):
+        logger.debug("Starting Job Queue.")
         self.jobs_conn = yield AMQP.createClient(
             self.amqp_host,
             self.amqp_jobs_vhost,
@@ -79,11 +80,11 @@ class JobQueueMixin(AMQPMixin):
     @inlineCallbacks
     def getJobUUID(self):
         msg = yield self.jobs_rabbit_queue.get()
-        if msg.delivery_tag:
-            try:
-                logger.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
-                yield self.jobs_chan.basic_ack(msg.delivery_tag)
-            except Exception, e:
-                logger.error('basic_ack Error: %s' % e)
+        #if msg.delivery_tag:
+        #    try:
+        #        logger.debug('basic_ack for delivery_tag: %s' % msg.delivery_tag)
+        #        yield self.jobs_chan.basic_ack(msg.delivery_tag)
+        #    except Exception, e:
+        #        logger.error('basic_ack Error: %s' % e)
         returnValue(UUID(bytes=msg.content.body).hex)
 

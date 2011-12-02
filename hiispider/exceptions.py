@@ -12,9 +12,26 @@ class StaleContentException(Exception):
 class NegativeCacheException(Exception):
     pass
 
+class QueueTimeoutException(Exception):
+    pass
+
 class NegativeHostCacheException(NegativeCacheException):
     pass
 
 class NegativeReqCacheException(NegativeCacheException):
     pass
 
+class JobGetterShutdownException(Exception):
+    pass
+
+class IdentityGetterShutdownException(Exception):
+    pass
+
+class NotRunningException(Exception):
+    pass
+
+class ComponentException(Exception):
+    pass
+
+class RedisTimeoutException(Exception):
+    pass

@@ -5,7 +5,9 @@ from itertools import chain
 from hiiguid import HiiGUID
 import dateutil.parser
 from numbers import Number
+import logging
 
+LOGGER = logging.getLogger(__name__)
 
 def parseDate(data, dates):
     if not isinstance(data, dict):
@@ -73,9 +75,11 @@ def _shift(a):
 
 def _simplesort(a):
     if type(a) is dict:
-        return [(x, _simplesort(a[x])) for x in sorted(a)]
+        return [(unicode(x), _simplesort(a[x])) for x in sorted(a)]
     elif type(a) is list:
         return sorted([_simplesort(x) for x in a])
+    elif type(a) is str:
+        return unicode(a)
     return a
 
 
@@ -86,20 +90,21 @@ def _sort(a, ignores, includes):
         # If there are include paths, iterate through keys in these paths.
         included_keys = _included(includes)
         if included_keys:
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(unicode(x), _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(included_keys) if x in a]
         else:
             # Disregard keys at the top level of the ignore paths.
             ignored_keys = _ignored(ignores)
-            return [(x, _sort(a[x], _shift(ignores), _shift(includes)))
+            return [(unicode(x), _sort(a[x], _shift(ignores), _shift(includes)))
                 for x in sorted(a) if x not in ignored_keys]
     elif type(a) is list:
         try:
             return sorted([_sort(x, ignores, includes) for x in a])
         except ValueError:
             return a
+    elif type(a) is str:
+        return unicode(a)
     return a
-
 
 def _hash(a, ignores, includes):
      # Item is hashable no need to serialize.
@@ -148,9 +153,9 @@ def _narrow(a, b, path):
     indicated by the path.
     """
     if not b:
-        if isinstance(a, dict):
+        if type(a) is dict:
             b = {}
-        elif isinstance(a, list):
+        elif type(a) is list:
             b = []
     # If the path is empty, no need to narrow any further.
     # If there is nothing to narrow, no need to narrow further.
@@ -273,4 +278,7 @@ class Autogenerator(object):
         elif not isinstance(paths, list):
             raise TypeError("Parameter must be str, unicode, or list. '%s' is type: %s" % (paths, type(paths)))
         # Filters a list of paths split on '/' to remove empty strings.
-        return [[x for x in path.split("/") if x] for path in paths]
+        parsed_paths = [[x for x in path.split("/") if x] for path in paths]
+        # merge list of lists
+        # merged_parsed_paths = [item for sublist in parsed_paths for item in sublist]
+        return parsed_paths

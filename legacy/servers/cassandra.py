@@ -109,11 +109,13 @@ class CassandraServer(BaseServer, JobGetterMixin):
             redis_client=self.redis_client,
             disable_negative_cache=self.disable_negative_cache,
             rq=self.rq)
+        logger.debug("Initialized pagegetter.")
         returnValue(True)
 
     def shutdown(self):
         # Shutdown things here.
         return super(CassandraServer, self).shutdown()
+
 
     def deltaSampleRate(self):
         return random.random() <= self.delta_sample_rate

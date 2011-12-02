@@ -1,20 +1,45 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Plugin helpers."""
+"""Hiispider plugin class and plugin utilities."""
 
 import inspect
 import types
-
+import time
 from hiispider.delta import Autogenerator
 
-__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta"]
+__all__ = ["aliases", "expose", "make_callable", "HiiSpiderPlugin", "delta", "Stopwatch"]
+
 EXPOSED_FUNCTIONS = {}
 CALLABLE_FUNCTIONS = {}
 MEMOIZED_FUNCTIONS = {}
 FUNCTION_ALIASES = {}
 DELTA_FUNCTIONS = {}
 
+class Stopwatch(object):
+    """A timer that allows you to make named ticks and can print a simple
+    breakdown of the time between ticks after it's stopped."""
+    def __init__(self, name='Stopwatch'):
+        self.name = name
+        self.start = time.time()
+        self.ticks = []
+
+    def tick(self, name):
+        self.ticks.append((name, time.time()))
+
+    def stop(self):
+        self.stop = time.time()
+
+    def summary(self):
+        """Return a summary of timing information."""
+        total = self.stop - self.start
+        s = "%s duration: %0.2f\n" % (self.name, total)
+        prev = ("start", self.start)
+        for tick in self.ticks:
+            s += ("   %s => %s" % (prev[0], tick[0])).ljust(30) + "... %0.2fs\n" % (tick[1] - prev[1])
+            prev = tick
+        s += ("   %s => end" % (tick[0])).ljust(30) + "... %0.2fs" % (self.stop - tick[1])
+        return s
 
 def aliases(*args):
     def decorator(f):
@@ -68,39 +93,54 @@ class HiiSpiderPlugin(object):
         for instance_method in instance_methods:
             instance_id = id(instance_method[1].__func__)
             if instance_id in DELTA_FUNCTIONS:
-                self.spider.delta(
+                self.spider.server.delta(
                     instance_method[1],
                     DELTA_FUNCTIONS[instance_id])
             if instance_id in EXPOSED_FUNCTIONS:
-                self.spider.expose(
+                # Aliases for legacy support.
+                alias = ("function/%s/%s" % (instance_method[1].im_class.__name__, 
+                    instance_method[1].__name__)).lower()
+                self.spider.server.expose(
                     instance_method[1],
                     interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
                     name=EXPOSED_FUNCTIONS[instance_id]["name"],
-                    category=EXPOSED_FUNCTIONS[instance_id]["category"])
+                    category=EXPOSED_FUNCTIONS[instance_id]["category"],
+                    alias=alias)
                 if instance_id in FUNCTION_ALIASES:
                     for name in FUNCTION_ALIASES[instance_id]:
-                        self.spider.expose(
+                        self.spider.server.expose(
                             instance_method[1],
                             interval=EXPOSED_FUNCTIONS[instance_id]["interval"],
-                            name=name)
+                            name=name,
+                            alias="function/%s" % name)
             if instance_id in CALLABLE_FUNCTIONS:
-                self.spider.expose(
+                self.spider.server.expose(
                     instance_method[1],
                     interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                     name=CALLABLE_FUNCTIONS[instance_id]["name"],
                     category=CALLABLE_FUNCTIONS[instance_id]["category"])
                 if instance_id in FUNCTION_ALIASES:
                     for name in CALLABLE_FUNCTIONS[instance_id]:
-                        self.spider.expose(
+                        self.spider.server.expose(
                             instance_method[1],
                             interval=CALLABLE_FUNCTIONS[instance_id]["interval"],
                             name=name)
 
     def setFastCache(self, uuid, data):
-        return self.spider.setFastCache(uuid, data)
+        if not self.spider.server.jobgetter.server_mode:
+            return
+        if self.spider.server.config.get('enable_fast_cache', True):
+            return self.spider.server.jobgetter.setFastCache(uuid, data)
 
     def getPage(self, *args, **kwargs):
-        return self.spider.getPage(*args, **kwargs)
+        return self.spider.server.pagegetter.getPage(*args, **kwargs)
+
+    def setHostMaxRequestsPerSecond(self, *args, **kwargs):
+        return self.spider.server.pagegetter.setHostMaxRequestsPerSecond(*args, **kwargs)
+
+    def setHostMaxSimultaneousRequests(self, *args, **kwargs):
+        return self.spider.server.pagegetter.setHostMaxSimultaneousRequests(*args, **kwargs)
+        
 
     @make_callable
     def _getIdentity(self, *args, **kwargs):

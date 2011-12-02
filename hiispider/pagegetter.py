@@ -13,7 +13,7 @@ import logging
 import time
 import copy
 from zlib import compress, decompress
-from twisted.internet.defer import maybeDeferred, DeferredList
+from twisted.internet.defer import maybeDeferred, DeferredList, inlineCallbacks, returnValue
 from twisted.internet.error import ConnectionDone
 
 from hiispider.requestqueuer import RequestQueuer
@@ -24,16 +24,9 @@ from twisted.python.failure import Failure
 
 from hiispider.exceptions import StaleContentException, NegativeHostCacheException,\
     NegativeReqCacheException
+
 from hiispider import stats
 
-def negative_cache_hit(error, cls):
-    """Given some error with a 'raiseException' attribute, raise a custom error
-    class with the same traceback and value."""
-    try:
-        error.raiseException()
-    except Exception, e:
-        trace = sys.exc_info()[2]
-        raise cls(str(e)), None, trace
 
 class ReportedFailure(Failure):
     pass
@@ -57,8 +50,7 @@ UTC = CoordinatedUniversalTime()
 logger = logging.getLogger(__name__)
 
 
-class PageGetter:
-
+class PageGetter(object):
 
     def __init__(self,
         cassandra_client,
@@ -83,117 +75,15 @@ class PageGetter:
             self.rq = RequestQueuer()
         else:
             self.rq = rq
-
-    def _getPageCallback(self, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if request_kwargs["method"] != "GET":
-            d = self.rq.getPage(url, **request_kwargs)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-        if cache == -1:
-            # Cache mode -1. Bypass cache entirely.
-            logger.debug("Getting request %s for URL %s." % (request_hash, url))
-            d = self.rq.getPage(url, **request_kwargs)
-            d.addCallback(self._returnFreshData,
-                request_hash,
-                url,
-                confirm_cache_write)
-            d.addErrback(self._requestWithNoCacheHeadersErrback,
-                request_hash,
-                url,
-                confirm_cache_write,
-                request_kwargs,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-        elif cache == 0:
-            # Cache mode 0. Check cache, send cached headers, possibly use cached data.
-            # Check if there is a cache entry, return headers.
-            headers_key = 'headers:%s' % request_hash
-            logger.debug("Checking redis headers key %s for URL %s." % (request_hash, url))
-            d = self.redis_client.get(headers_key)
-            d.addCallback(self._checkCacheHeaders,
-                request_hash,
-                url,
-                request_kwargs,
-                confirm_cache_write,
-                content_sha1,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-        elif cache == 1:
-            # Cache mode 1. Use cache immediately, if possible.
-            logger.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
-            d = self.getCachedData(request_hash)
-            d.addCallback(self._returnCachedData, request_hash)
-            d.addErrback(self._requestWithNoCacheHeaders,
-                request_hash,
-                url,
-                request_kwargs,
-                confirm_cache_write,
-                host=host)
-            d.addCallback(self._checkForStaleContent, content_sha1, request_hash)
-            return d
-
-    def _negativeReqCacheCallback(self, raw_negative_req_cache_item, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if not self.disable_negative_cache:
-            if raw_negative_req_cache_item:
-                try:
-                    negative_req_cache_item = pickle.loads(str(decompress(raw_negative_req_cache_item)))
-                except Exception, e:
-                    logger.critical(e)
-                    negative_req_cache_item = None
-                if negative_req_cache_item and negative_req_cache_item['timeout'] > time.time():
-                    stats.stats.increment('pg.negreqcache.hit')
-                    negative_cache_hit(
-                        negative_req_cache_item['error'],
-                        NegativeReqCacheException
-                    )
-                else:
-                    stats.stats.increment('pg.negreqcache.flush', 0.5)
-                    self.redis_client.delete(negative_req_cache_key)
-        d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        return d
-
-    def checkNegativeReqCache(self, data, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        d = self.redis_client.get(negative_req_cache_key)
-        d.addCallback(self._negativeReqCacheCallback, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        return d
-
-    def _negativeCacheCallback(self, raw_negative_cache_host, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        if not self.disable_negative_cache:
-            if raw_negative_cache_host:
-                try:
-                    negative_cache_host = pickle.loads(str(decompress(raw_negative_cache_host)))
-                except Exception, e:
-                    logger.critical(e)
-                    negative_cache_host = None
-                if negative_cache_host and negative_cache_host['timeout'] > time.time():
-                    # we get quite a lot of these, ~500/sec on occasions
-                    stats.stats.increment('pg.negcache.hit', 0.1)
-                    raise NegativeHostCacheException(str(negative_cache_host['error']))
-                    #negative_cache_hit(
-                    #    negative_cache_host['error'],
-                    #    NegativeHostCacheException
-                    #)
-                else:
-                    logger.error('Removing host %s from the negative cache' % request_hash)
-                    stats.stats.increment('pg.negcache.flush')
-                    self.redis_client.delete(negative_cache_host_key)
-        d = self.checkNegativeReqCache(None, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        return d
-
-    def checkNegativeCache(self, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
-        d = self.redis_client.get(negative_cache_host_key)
-        d.addCallback(self._negativeCacheCallback, negative_cache_host_key, negative_req_cache_key, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        return d
-
+    
+    @inlineCallbacks
     def getPage(self,
             url,
             method='GET',
             postdata=None,
             headers=None,
             agent="HiiSpider",
-            timeout=60,
+            timeout=5,
             cookies=None,
             follow_redirect=1,
             prioritize=False,
@@ -237,6 +127,7 @@ class PageGetter:
          * *check_only_tld* -- for negative cache, check only the top level domain name
          * *disable_negative_cache* -- disable negative cache for this request
         """
+        start = time.time()
         request_kwargs = {
             "method":method.upper(),
             "postdata":postdata,
@@ -275,23 +166,103 @@ class PageGetter:
         if cookies:
             hash_items.append(repr(cookies))
         request_hash = sha1(json.dumps(hash_items)).hexdigest()
-        if not disable_negative_cache and not self.disable_negative_cache:
-            negative_req_cache_key = 'negative_req_cache:%s' % request_hash
-            negative_cache_host_key = 'negative_cache:%s' % host
-            d = self.checkNegativeCache(
-                    negative_cache_host_key,
-                    negative_req_cache_key,
-                    url,
-                    request_hash,
-                    request_kwargs,
-                    cache,
-                    content_sha1,
-                    confirm_cache_write,
-                    host,
-                )
-        else:
-            d = self._getPageCallback(url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host)
-        return d
+#        if not disable_negative_cache and not self.disable_negative_cache:
+#            yield self.checkNegativeCache(
+#                    'negative_cache:%s' % host,
+#                    'negative_req_cache:%s' % request_hash)
+#        if request_kwargs["method"] != "GET":
+#            data = yield self.rq.getPage(url, **request_kwargs)
+#        else:
+#            data = yield self._getPage(
+#                    url, 
+#                    request_hash, 
+#                    request_kwargs, 
+#                    cache, 
+#                    content_sha1, 
+#                    confirm_cache_write, 
+#                    host)
+#        logger.info("Got %s after %s" % (host, time.time() - start))
+#        # Check for stale contents
+        data = yield self.rq.getPage(url, **request_kwargs)
+        if "content-sha1" not in data:
+            data["content-sha1"] = sha1(data["response"]).hexdigest()
+        if content_sha1 == data["content-sha1"]:
+            logger.debug("Raising StaleContentException (4) on %s" % request_hash)
+            raise StaleContentException(content_sha1)
+        returnValue(data)
+
+    @inlineCallbacks
+    def checkNegativeCache(self, negative_cache_host_key, negative_req_cache_key):
+        raw_negative_cache_host = yield self.redis_client.get(negative_cache_host_key)
+        if raw_negative_cache_host:
+            try:
+                negative_cache_host = pickle.loads(str(decompress(raw_negative_cache_host)))
+                if negative_cache_host['timeout'] > time.time():
+                    # we get quite a lot of these, ~500/sec on occasions
+                    stats.stats.increment('pg.negcache.hit', 0.1)
+                    raise NegativeHostCacheException(str(negative_cache_host['error']))
+            except NegativeHostCacheException:
+                raise
+            except Exception, e:
+                logger.error('Removing host %s from the negative cache: %s' % (request_hash, e))
+                stats.stats.increment('pg.negcache.flush')
+                self.redis_client.delete(negative_cache_host_key)
+        raw_negative_req_cache_item = yield self.redis_client.get(negative_req_cache_key)
+        if raw_negative_req_cache_item:
+            try:
+                negative_req_cache_item = pickle.loads(str(decompress(raw_negative_req_cache_item)))
+                if negative_req_cache_item['timeout'] > time.time():
+                    stats.stats.increment('pg.negreqcache.hit')
+                    raise NegativeReqCacheException(str(negative_req_cache_item['error']))
+            except NegativeHostCacheException:
+                raise
+            except Exception, e:
+                logger.error('Removing item %s from the negative cache: %s' % (negative_req_cache_key, e))
+                stats.stats.increment('pg.negreqcache.flush', 0.5)
+                self.redis_client.delete(negative_req_cache_key)
+
+    def _getPage(self, url, request_hash, request_kwargs, cache, content_sha1, confirm_cache_write, host):
+        if cache == -1:
+            # Cache mode -1. Bypass cache entirely.
+            logger.debug("Getting request %s for URL %s." % (request_hash, url))
+            d = self.rq.getPage(url, **request_kwargs)
+            d.addCallback(self._returnFreshData,
+                request_hash,
+                url,
+                confirm_cache_write)
+            d.addErrback(self._requestWithNoCacheHeadersErrback,
+                request_hash,
+                url,
+                confirm_cache_write,
+                request_kwargs,
+                host=host)
+            return d
+        elif cache == 0:
+            # Cache mode 0. Check cache, send cached headers, possibly use cached data.
+            # Check if there is a cache entry, return headers.
+            headers_key = 'headers:%s' % request_hash
+            logger.debug("Checking redis headers key %s for URL %s." % (request_hash, url))
+            d = self.redis_client.get(headers_key)
+            d.addCallback(self._checkCacheHeaders,
+                request_hash,
+                url,
+                request_kwargs,
+                confirm_cache_write,
+                content_sha1,
+                host=host)
+            return d
+        elif cache == 1:
+            # Cache mode 1. Use cache immediately, if possible.
+            logger.debug("Getting Cassandra object request %s for URL %s." % (request_hash, url))
+            d = self.getCachedData(request_hash)
+            d.addCallback(self._returnCachedData, request_hash)
+            d.addErrback(self._requestWithNoCacheHeaders,
+                request_hash,
+                url,
+                request_kwargs,
+                confirm_cache_write,
+                host=host)
+            return d
 
     def getCachedData(self, request_hash):
         headers_key = 'headers:%s' % request_hash
@@ -748,11 +719,4 @@ class PageGetter:
         logger.error("Error storing data for %s" % (request_hash))
         return response_data
 
-    def _checkForStaleContent(self, data, content_sha1, request_hash):
-        if "content-sha1" not in data:
-            data["content-sha1"] = sha1(data["response"]).hexdigest()
-        if content_sha1 == data["content-sha1"]:
-            logger.debug("Raising StaleContentException (4) on %s" % request_hash)
-            raise StaleContentException(content_sha1)
-        else:
-            return data
+

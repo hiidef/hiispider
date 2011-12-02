@@ -58,32 +58,38 @@ class TestAutogenerate(TestCase):
         self.assertEqual(autogenerate_z_include(a, b), [])
         # 'a' and 'b' have the included key, and it changes.
         a = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
-        b = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]        
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":1}])
+        b = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)),
+            sorted([{"x":3, "y":2, "z":1}]))
         # 'a' and 'b' have the included key, and it changes.
-        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
+        a = [{"x":1, "y":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]
         b = [{"x":1, "y":1}, {"x":3, "y":2, "z":1}]
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)),
+            sorted([{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]))
         # 'a' and 'b' have the included key, and it changes.
-        a = [{"x":1, "y":1, "z":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]         
+        a = [{"x":1, "y":1, "z":1}, {"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]
         b = [{"x":4, "y":5, "z":1}]
-        self.assertEqual(autogenerate_z_include(a, b), [{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}])
+        self.assertEqual(
+            sorted(autogenerate_z_include(a, b)),
+            sorted([{"x":3, "y":2, "z":2}, {"x":4, "y":9, "z":3}]))
         # Nested, multiple includes
         autogenerator = delta.Autogenerator(includes=["example/y", "example/z"], paths="example")
         a = {"example":[{"x":1, "y":2, "z":3}]}
         b = {"example":[{"x":2, "y":2, "z":3}]}
         self.assertEqual(autogenerator(a, b), [])
         a = {"example":[{"x":2, "y":1, "z":3}]}
-        b = {"example":[{"x":2, "y":2, "z":3}]}  
+        b = {"example":[{"x":2, "y":2, "z":3}]}
         self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":1, "z":3})
         a = {"example":[{"x":2, "y":2, "z":3}]}
-        b = {"example":[{"x":2, "y":2, "z":4}]}        
+        b = {"example":[{"x":2, "y":2, "z":4}]}
         self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":2, "z":3})
 
     def test_date_parsing(self):
         def autogenerate_z_date(*args, **kwargs):
             autogenerator = delta.Autogenerator(dates="z")
-            return HiiGUID(autogenerator(*args, **kwargs)[0].id).timestamp     
+            return HiiGUID(autogenerator(*args, **kwargs)[0].id).timestamp
         now = time.time()
         b = []
         # Float
@@ -91,10 +97,10 @@ class TestAutogenerate(TestCase):
         self.assertEqual(autogenerate_z_date(a, b), int(now))
         # Int
         a = [{"z":int(now)}]
-        self.assertEqual(autogenerate_z_date(a, b), int(now))        
+        self.assertEqual(autogenerate_z_date(a, b), int(now))
         # Str
         a = [{"z":datetime.fromtimestamp(now).isoformat()}]
-        self.assertEqual(autogenerate_z_date(a, b), int(now)) 
+        self.assertEqual(autogenerate_z_date(a, b), int(now))
         # With include
         autogenerator = delta.Autogenerator(dates="date", includes="z")
         a = [{"date":int(now), "z":1}]
@@ -104,17 +110,17 @@ class TestAutogenerate(TestCase):
         autogenerator = delta.Autogenerator(paths='example', dates="example/date", includes="example/z")
         a = {"example":[{"date":int(now), "z":1}]}
         b = {"example":[{"date":int(now + 10), "z":1}]}
-        self.assertEqual(autogenerator(a, b), []) 
+        self.assertEqual(autogenerator(a, b), [])
         # Nested, multiple includes
         autogenerator = delta.Autogenerator(includes=["example/y", "example/z"], paths="example", dates="example/date")
         a = {"example":[{"x":1, "y":2, "z":3, "date":int(now)}]}
         b = {"example":[{"x":2, "y":2, "z":3, "date":int(now + 10)}]}
         self.assertEqual(autogenerator(a, b), [])
         a = {"example":[{"x":2, "y":1, "z":3, "date":int(now)}]}
-        b = {"example":[{"x":2, "y":2, "z":3, "date":int(now + 10)}]}  
+        b = {"example":[{"x":2, "y":2, "z":3, "date":int(now + 10)}]}
         self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":1, "z":3, "date":int(now)})
         a = {"example":[{"x":2, "y":2, "z":3, "date":int(now)}]}
-        b = {"example":[{"x":2, "y":2, "z":4, "date":int(now + 10)}]}        
+        b = {"example":[{"x":2, "y":2, "z":4, "date":int(now + 10)}]}
         self.assertEqual(autogenerator(a, b)[0].data, {"x":2, "y":2, "z":3, "date":int(now)})
 
 
@@ -165,7 +171,7 @@ class TestAutogenerate(TestCase):
             [{'a': 1, 'b': 3}])),
             srt([{'a': 1, 'b': 2}, {'c': 3}, ['foo', 'bar']]),
         )
-    
+
     def test_goodreads(self):
         def autogenerate_goodreads(*args, **kwargs):
             autogenerator = delta.Autogenerator(paths="books", includes="books/id")
@@ -174,3 +180,15 @@ class TestAutogenerate(TestCase):
         old = decode(read("%s/goodreads/old.json" % DATAPATH))
         new = decode(read("%s/goodreads/new.json" % DATAPATH))
         self.assertEqual(autogenerate_goodreads(old, new), [])
+
+    def test_unicode(self):
+        a = {"x":["y", 1, 2]}
+        b = {"x":[1, u"y", 2]}
+        self.assertEqual(autogenerate(a, b), [])
+        a = {"x":["y", 1, 2]}
+        b = {u"x":[1, u"y", 2]}
+        self.assertEqual(autogenerate(a, b), [])
+        a = [{"z":1}, {"x":["y", 1, 2]}]
+        b = [{u"x":[1, u"y", 2]}, {u"z":1}]
+        self.assertEqual(autogenerate(a, b), [])
+
