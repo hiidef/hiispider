@@ -107,7 +107,8 @@ class Cassandra(Component):
         try:
             columns = yield self.client.get_slice(
                 key=binascii.unhexlify(delta_id),
-                column_family=self.cf_delta)
+                column_family=self.cf_delta,
+                consistency=2)
         except NotFoundException:
             LOGGER.error("%s not found." % delta_id)
             return
@@ -117,7 +118,7 @@ class Cassandra(Component):
             results["old_data"] = decompress(results["old_data"])
         if "new_data" in results:
             results["new_data"] = decompress(results["new_data"])
-        returnValue(results)     
+        returnValue(results)
 
     @shared
     @inlineCallbacks
@@ -127,15 +128,16 @@ class Cassandra(Component):
             data = yield self.client.get(
                 key=str(user_id),
                 column_family=self.cf_content,
-                column=uuid)
+                column=uuid,
+                consistency=2)
         except NotFoundException:
             return
         obj = yield threads.deferToThread(decompress, data.column.value)
-        returnValue(obj)      
+        returnValue(obj)
 
     @shared
     @inlineCallbacks
-    def getData(self, job, consistency=1):
+    def getData(self, job, consistency=2):
         try:
             data = yield self.client.get(
                 key=str(job.user_account["user_id"]),
@@ -155,7 +157,8 @@ class Cassandra(Component):
             str(user_id),
             self.cf_content,
             s,
-            column=uuid)
+            column=uuid,
+            consistency=2)
         returnValue(result)
 
     @shared
@@ -167,7 +170,8 @@ class Cassandra(Component):
                 "%s|%s" % (service, service_id),
                 self.cf_identity,
                 user_id,
-                column="user_id")
+                column="user_id",
+                consistency=2)
         except:
             LOGGER.error(format_exc())
         returnValue(None)
@@ -180,11 +184,12 @@ class Cassandra(Component):
                 key=user_id,
                 column_family=self.cf_connections,
                 start=service,
-                finish=service + chr(0xff))
+                finish=service + chr(0xff),
+                consistency=2)
         except:
             LOGGER.error(format_exc())
             returnValue([])
-        returnValue(dict([(x.column.name.split("|").pop(), x.column.value) 
+        returnValue(dict([(x.column.name.split("|").pop(), x.column.value)
             for x in data]))
 
     @inlineCallbacks
@@ -194,7 +199,8 @@ class Cassandra(Component):
             data = yield self.client.multiget(
                 keys=["%s|%s" % (service, x) for x in chunk],
                 column_family=self.cf_identity,
-                column="user_id")
+                column="user_id",
+                consistency=2)
             for key in data:
                 if data[key]:
                     mapped_new_ids[key] = data[key][0].column.value
@@ -205,7 +211,8 @@ class Cassandra(Component):
         yield self.client.batch_insert(
             key=user_id,
             column_family=self.cf_connections,
-            mapping=mapped_new_ids)
+            mapping=mapped_new_ids,
+            consistency=2)
         followee_ids = mapped_new_ids.values()
         for chunk in list(chunks(followee_ids, 10)):
             deferreds = []
@@ -220,7 +227,8 @@ class Cassandra(Component):
                     key=followee_id,
                     column_family=self.cf_reverse_recommendations,
                     value=1,
-                    column=user_id))
+                    column=user_id),
+                    consistency=2)
             yield DeferredList(deferreds)
 
     @inlineCallbacks
@@ -230,20 +238,23 @@ class Cassandra(Component):
             yield self.client.remove(
                 key=user_id,
                 column_family=self.cf_connections,
-                column="%s|%s" % (service_name, service_id))
+                column="%s|%s" % (service_name, service_id),
+                consistency=2)
             logger.debug("Decrementing %s:%s." % (user_id, old_ids[service_id]))
             yield DeferredList([
                 self.client.add(
                     key=user_id,
                     column_family=self.cf_recommendations,
                     value=-1,
-                    column=obsolete[service_id]),
+                    column=obsolete[service_id],
+                    consistency=2),
                 self.client.add(
                     key=obsolete[service_id],
                     column_family=self.cf_reverse_recommendations,
                     value=-1,
-                    column=user_id)])
-    
+                    column=user_id,
+                    consistency=2)])
+
 #    @shared
 #    def get(self, *args, **kwargs):
 #        return self.client.get(*args, **kwargs)
