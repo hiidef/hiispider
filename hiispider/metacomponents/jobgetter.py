@@ -110,7 +110,8 @@ class JobGetter(MetaComponent):
             LOGGER.error(format_exc())
         yield self.server.cassandra.remove(
             uuid,
-            self.server.cassandra.cf_content)
+            self.server.cassandra.cf_content,
+            consistency=2)
         returnValue({'success': True})
 
     @shared
