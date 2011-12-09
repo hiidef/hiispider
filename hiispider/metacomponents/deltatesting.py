@@ -30,12 +30,12 @@ class DeltaTesting(MetaComponent):
         self.config = copy(config)
         self.service_mapping = config["service_mapping"]
         self.server.expose(self.regenerate_by_uuid)
-    
+
     @inlineCallbacks
     def regenerate_by_uuid(self, uuid):
         delta = yield self.server.cassandra.get_delta(uuid)
         function_name = self.service_mapping.get(
-            delta["subservice"], 
+            delta["subservice"],
             delta["subservice"])
         delta_func = self.server.functions[function_name]["delta"]
         if not delta_func:
@@ -43,7 +43,7 @@ class DeltaTesting(MetaComponent):
                 "does not exist." % delta["service"])
         deltas = delta_func(delta["new_data"], delta["old_data"])
         if not deltas:
-            raise Exception("No deltas were generated.")            
+            raise Exception("No deltas were generated.")
         # Find nearest delta.
         delta_options = []
         s = SequenceMatcher()
@@ -57,10 +57,11 @@ class DeltaTesting(MetaComponent):
         delta_options = sorted(delta_options, key=lambda x: x[0])
         replacement_data = zlib.compress(json.dumps(delta_options[-1][2]))
         ts = str(time.time())
-        mapping = {"updated":ts, "data":replacement_data}
+        mapping = {"updated": ts, "data": replacement_data}
         yield self.server.cassandra.batch_insert(
             key=binascii.unhexlify(uuid),
             column_family=self.server.cassandra.cf_delta,
-            mapping=mapping)
+            mapping=mapping,
+            consistency=2)
         LOGGER.debug("%s deltas generated." % len(deltas))
         returnValue(True)

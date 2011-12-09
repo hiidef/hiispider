@@ -181,12 +181,14 @@ class JobExecuter(MetaComponent):
                 yield self.server.cassandra.batch_insert(
                     key=str(delta.id),
                     column_family=self.server.cassandra.cf_delta,
-                    mapping=mapping)
+                    mapping=mapping,
+                    consistency=2)
                 yield self.server.cassandra.insert(
                     key=user_id,
                     column_family=self.server.cassandra.cf_delta_user,
                     column=user_column,
-                    value='')
+                    value='',
+                    consistency=2)
 
     def getServerData(self):
         running_time = time.time() - self.start_time
