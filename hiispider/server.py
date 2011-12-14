@@ -149,6 +149,10 @@ class Server(pb.Root):
             provides=None,
             http_port=None,
             pb_port=None):
+        if not provides:
+            provides = []
+        if not components:
+            components = []
         if len(set(provides) - set(components)) > 0:
             raise ComponentServerException("Cannot provide a component not "
                 "running in server mode.")

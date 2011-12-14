@@ -7,4 +7,6 @@ build
 dist
 HiiSpider.egg-info
 tags
+tests/maps.py
+tests/config.py
 *.sw[pon]

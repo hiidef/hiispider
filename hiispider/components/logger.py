@@ -24,15 +24,15 @@ class Logger(Component, PylogdHandler):
         config = copy(config)
         conf = config.get('logd', {})
         conf.update(kwargs)
-        if not conf or 'path' not in conf:
-            raise Exception("Logger component requires "
-                "configuration option `logd.path`.")
-        self.path = conf['path']
-        self.logd_port = conf.get('port', 8126)
-        self.logd_host = conf.get('host', 'localhost')
-        self.logger = config.get('base_logger', logging.getLogger())
         self.sock = None
         if server_mode:
+            if not conf or 'path' not in conf:
+                raise Exception("Logger component requires "
+                    "configuration option `logd.path`.")
+            self.path = conf['path']
+            self.logd_port = conf.get('port', 8126)
+            self.logd_host = conf.get('host', 'localhost')
+            self.logger = config.get('base_logger', logging.getLogger())
             logging.Handler.__init__(self)
             if self.__class__ not in (x.__class__ for x in self.logger.handlers):
                 self.logger.addHandler(self)
