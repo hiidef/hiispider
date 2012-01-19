@@ -12,7 +12,7 @@ from ..metacomponents import *
 import logging
 from .base import MetaComponent
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class Scheduler(MetaComponent):
@@ -50,25 +50,27 @@ class Scheduler(MetaComponent):
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
         if self.queue.queue_size < 100000:
-
-            # LOGGER.debug("%s : %s" % (self.__class__.__name__, now))
             i = 0
-            
-            LOGGER.debug(len(self.heap))
+            logger.debug(len(self.heap))
             while self.heap and self.heap[0][0] < now:
-                x = heappop(self.heap) # x is (enqueue_time, (item, interval))
+                enqueue_time, (item, interval) = heappop(self.heap) # x is (enqueue_time, (item, interval))
                 i += 1
-                if self.is_valid(x[1][0]): # Check for valid item
-                    self.queue.publish(x[1][0]) # Publish if valid
-                    # push item/interval back on heap
-                    heappush(self.heap, (now + x[1][1], x[1]))
+                if self.is_valid(item):
+                    # support for complex types, just set 'bytes'
+                    if hasattr(item, 'bytes'):
+                        self.queue.publish(item.bytes)
+                    else:
+                        self.queue.publish(item)
+                    heappush(self.heap, (now + interval, (item, interval)))
+                    if hasattr(item, 'type'):
+                        self.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
             if i:
-                LOGGER.debug("Added %s items to the queue." % i)
+                logger.debug("Added %s items to the queue." % i)
         elif self.heap and self.redistribute:
-            x = heappop(self.heap)
-            distribution = random.randint(-1 * x[1][1] / 2, x[1][1] / 2)
-            heappush(self.heap, (now + x[1][1] + distribution, x[1]))
-            LOGGER.critical('%s is at or beyond max limit (%d/100000)'
-                % (self.__class__.__name__, self.queue.queue_size))
+            enqueue_time, (item, interval) = heappop(self.heap)
+            distribution = random.randint(-1 * interval / 2, interval / 2)
+            heappush(self.heap, (now + interval + distribution, (item, interval)))
+            #logger.critical('%s is at or beyond max limit (%d/100000)'
+            #    % (self.__class__.__name__, self.queue.queue_size))
 
 
