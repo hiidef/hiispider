@@ -63,7 +63,7 @@ class Scheduler(MetaComponent):
                         self.queue.publish(item)
                     heappush(self.heap, (now + interval, (item, interval)))
                     if hasattr(item, 'type'):
-                        self.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
+                        self.server.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
             if i:
                 logger.debug("Added %s items to the queue." % i)
         elif self.heap and self.redistribute:
