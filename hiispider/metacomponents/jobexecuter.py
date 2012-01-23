@@ -14,8 +14,8 @@ from decimal import Decimal
 import ujson as json
 from traceback import format_tb, format_exc
 
-from twisted.internet.defer import inlineCallbacks, maybeDeferred
-from twisted.internet.error import ConnectionRefusedError, TimeoutError
+from twisted.internet.defer import inlineCallbacks, maybeDeferred, TimeoutError
+from twisted.internet.error import ConnectionRefusedError
 from twisted.web.error import Error as TwistedWebError
 
 from hiispider.metacomponents.jobgetter import JobGetter
