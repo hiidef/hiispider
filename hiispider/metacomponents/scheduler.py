@@ -21,6 +21,7 @@ class Scheduler(MetaComponent):
     allow_clients = False
     enqueueloop = None
     redistribute = True
+    enqueuing = False
 
     def __init__(self, server, config, server_mode, queue, **kwargs):
         self.queue = queue
@@ -49,24 +50,27 @@ class Scheduler(MetaComponent):
         # Compare the heap min timestamp with now().
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
-        i = 0
-        logger.debug(len(self.heap))
-        while self.heap and self.heap[0][0] < now:
-            if self.queue.queue_size > 100000 and self.redistribute:
-                enqueue_time, (item, interval) = heappop(self.heap)
-                distribution = random.randint(-1 * interval / 2, interval / 2)
-                heappush(self.heap, (now + interval + distribution, (item, interval)))
-            else:
-                enqueue_time, (item, interval) = heappop(self.heap)  # x is (enqueue_time, (item, interval))
-                i += 1
-                if self.is_valid(item):
-                    # support for complex types, just set 'bytes'
-                    if hasattr(item, 'bytes'):
-                        self.queue.publish(item.bytes)
-                    else:
-                        self.queue.publish(item)
-                    heappush(self.heap, (now + interval, (item, interval)))
-                    if hasattr(item, 'type'):
-                        self.server.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
-        if i:
-            logger.debug("Added %s items to the queue." % i)
+        if not self.enqueuing:
+            self.enqueuing = True
+            i = 0
+            logger.debug(len(self.heap))
+            while self.heap and self.heap[0][0] < now:
+                if self.queue.queue_size > 100000 and self.redistribute:
+                    enqueue_time, (item, interval) = heappop(self.heap)
+                    distribution = random.randint(-1 * interval / 2, interval / 2)
+                    heappush(self.heap, (now + interval + distribution, (item, interval)))
+                else:
+                    enqueue_time, (item, interval) = heappop(self.heap)  # x is (enqueue_time, (item, interval))
+                    i += 1
+                    if self.is_valid(item):
+                        # support for complex types, just set 'bytes'
+                        if hasattr(item, 'bytes'):
+                            self.queue.publish(item.bytes)
+                        else:
+                            self.queue.publish(item)
+                        heappush(self.heap, (now + interval, (item, interval)))
+                        if hasattr(item, 'type'):
+                            self.server.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
+            if i:
+                logger.debug("Added %s items to the queue." % i)
+            self.enqueuing = False
