@@ -49,11 +49,15 @@ class Scheduler(MetaComponent):
         # Compare the heap min timestamp with now().
         # If it's time for the item to be queued, pop it, update the
         # timestamp and add it back to the heap for the next go round.
-        if self.queue.queue_size < 100000:
-            i = 0
-            logger.debug(len(self.heap))
-            while self.heap and self.heap[0][0] < now:
-                enqueue_time, (item, interval) = heappop(self.heap) # x is (enqueue_time, (item, interval))
+        i = 0
+        logger.debug(len(self.heap))
+        while self.heap and self.heap[0][0] < now:
+            if self.queue.queue_size > 100000 and self.redistribute:
+                enqueue_time, (item, interval) = heappop(self.heap)
+                distribution = random.randint(-1 * interval / 2, interval / 2)
+                heappush(self.heap, (now + interval + distribution, (item, interval)))
+            else:
+                enqueue_time, (item, interval) = heappop(self.heap)  # x is (enqueue_time, (item, interval))
                 i += 1
                 if self.is_valid(item):
                     # support for complex types, just set 'bytes'
@@ -64,13 +68,5 @@ class Scheduler(MetaComponent):
                     heappush(self.heap, (now + interval, (item, interval)))
                     if hasattr(item, 'type'):
                         self.server.stats.increment('scheduler.job.%s' % (item.type.replace('/', '.')), 0.1)
-            if i:
-                logger.debug("Added %s items to the queue." % i)
-        elif self.heap and self.redistribute:
-            enqueue_time, (item, interval) = heappop(self.heap)
-            distribution = random.randint(-1 * interval / 2, interval / 2)
-            heappush(self.heap, (now + interval + distribution, (item, interval)))
-            #logger.critical('%s is at or beyond max limit (%d/100000)'
-            #    % (self.__class__.__name__, self.queue.queue_size))
-
-
+        if i:
+            logger.debug("Added %s items to the queue." % i)
