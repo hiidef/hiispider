@@ -16,8 +16,7 @@ from .base import Component, shared
 from traceback import format_exc
 
 
-LOGGER = logging.getLogger(__name__)
-
+logger = logging.getLogger(__name__)
 
 class Stats(Component, Logd):
 

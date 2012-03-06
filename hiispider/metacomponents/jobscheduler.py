@@ -23,6 +23,11 @@ def get_uuid_bytes(uuid):
         LOGGER.error("Could not turn UUID into bytes: %s" % uuid)
         return None
 
+class QueueJob(object):
+    def __init__(self, uuid, bytes, type):
+        self.uuid, self.bytes, self.type = uuid, bytes, type
+    def __repr__(self):
+        return "<Job: %s %s>" % (self.uuid, self.type)
 
 class JobScheduler(Scheduler):
 
@@ -38,8 +43,8 @@ class JobScheduler(Scheduler):
         self.server.expose(self.remove_uuid)
 
     def is_valid(self, item):
-        if item in self.removed_jobs:
-            self.removed_jobs.remove(item)
+        if item.bytes in self.removed_jobs:
+            self.removed_jobs.remove(item.bytes)
             return False
         return True
 
@@ -58,7 +63,8 @@ class JobScheduler(Scheduler):
             interval = self.server.functions[type]['interval']
             bytes = get_uuid_bytes(uuid)
             if bytes:
-                self.add(bytes, int(interval))
+                obj = QueueJob(uuid, bytes, type)
+                self.add(obj, int(interval))
 
     @shared
     def remove_uuid(self, uuid):

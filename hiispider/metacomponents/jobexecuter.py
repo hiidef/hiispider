@@ -14,8 +14,9 @@ from decimal import Decimal
 import ujson as json
 from traceback import format_tb, format_exc
 
-from twisted.internet.defer import inlineCallbacks, maybeDeferred
-from twisted.internet.error import ConnectionRefusedError, TimeoutError
+from twisted.internet.defer import inlineCallbacks, maybeDeferred, TimeoutError
+from twisted.internet.error import ConnectionRefusedError
+from twisted.internet.error import TimeoutError as errTimeoutError
 from twisted.web.error import Error as TwistedWebError
 
 from hiispider.metacomponents.jobgetter import JobGetter
@@ -115,8 +116,12 @@ class JobExecuter(MetaComponent):
             else:
                 self.server.stats.increment('job.%s.negcache' % job.dotted_name)
             self.server.jobhistoryredis.save(job, False)
-        except (TimeoutError, ConnectionRefusedError, TwistedWebError), e:
-
+        except (TimeoutError, errTimeoutError), e:
+            self.job_failures += 1
+            self.server.stats.increment('job.%s.timeout' % job.dotted_name)
+            self.server.stats.increment('job.exceptions', 0.1)
+            self.server.jobhistoryredis.save(job, False)
+        except (ConnectionRefusedError, TwistedWebError), e:
             self.job_failures += 1
             self.server.stats.increment('job.%s.failure' % job.dotted_name)
             self.server.stats.increment('job.exceptions', 0.1)
