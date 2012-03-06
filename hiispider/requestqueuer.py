@@ -325,7 +325,6 @@ class RequestQueuer(object):
             postdata=req['postdata'],
             headers=req['headers'],
             agent=req['agent'],
-            timeout=req['timeout'],
             cookies=req['cookies'],
             followRedirect=req['follow_redirect']
         )
