@@ -5,7 +5,7 @@
 distributed manner and handle thousands of requests per second.  It's capable
 of writing results to both MySQL and Cassandra and features a """
 
-VERSION = (0, 10, 3, 0)
+VERSION = (0, 10, 3, 1)
 
 #from servers import *
 from plugin import HiiSpiderPlugin
