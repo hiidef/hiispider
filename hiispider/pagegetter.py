@@ -127,6 +127,7 @@ class PageGetter(object):
          * *check_only_tld* -- for negative cache, check only the top level domain name
          * *disable_negative_cache* -- disable negative cache for this request
         """
+        stats.stats.increment("pg.getpage", 0.05)
         start = time.time()
         request_kwargs = {
             "method":method.upper(),
@@ -187,7 +188,7 @@ class PageGetter(object):
         if "content-sha1" not in data:
             data["content-sha1"] = sha1(data["response"]).hexdigest()
         if content_sha1 == data["content-sha1"]:
-            logger.debug("Raising StaleContentException (4) on %s" % request_hash)
+            stats.stats.increment('pg.stalecontent')
             raise StaleContentException(content_sha1)
         returnValue(data)
 
@@ -329,7 +330,6 @@ class PageGetter(object):
                 now = time.mktime(datetime.datetime.now(UTC).timetuple())
                 if expires > now:
                     if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
-                        logger.debug("Raising StaleContentException (1) on %s" % request_hash)
                         stats.stats.increment('pg.stalecontent')
                         raise StaleContentException()
                     logger.debug("Cached data %s for URL %s is not stale. Getting from redis." % (request_hash, url))
@@ -405,7 +405,7 @@ class PageGetter(object):
         try:
             error.raiseException()
         except StaleContentException, e:
-            logger.debug("Raising StaleContentException (2) on %s\nError: %s" % (request_hash, str(e)))
+            stats.stats.increment('pg.stalecontent')
             raise StaleContentException()
         except Exception:
             pass
@@ -599,7 +599,7 @@ class PageGetter(object):
                 logger.error("PageGetter reporting that hiispider.stats.stats is a Noop, no stats recorded")
             stats.stats.increment("pg.headercache.hit", 0.25)
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
-                logger.debug("Raising StaleContentException (3) on %s" % request_hash)
+                stats.stats.increment('pg.stalecontent')
                 raise StaleContentException()
             logger.debug("Request %s for URL %s hasn't been modified since it was last downloaded. Getting data from Cassandra." % (request_hash, url))
             d = self.getCachedData(request_hash)
