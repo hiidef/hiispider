@@ -595,6 +595,8 @@ class PageGetter(object):
             # they are not and is messing up negative cache
             return ReportedFailure(error)
         if status == 304:
+            if isinstance(stats.stats, stats.StatsNoop):
+                logger.error("PageGetter reporting that hiispider.stats.stats is a Noop, no stats recorded")
             stats.stats.increment("pg.headercache.hit", 0.25)
             if "content-sha1" in http_history and http_history["content-sha1"] == content_sha1:
                 logger.debug("Raising StaleContentException (3) on %s" % request_hash)
