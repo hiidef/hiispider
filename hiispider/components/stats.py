@@ -23,6 +23,8 @@ class Stats(Component, Logd):
     """Uses remote method _send to communicate with other servers."""
 
     def __init__(self, server, config, server_mode, **kwargs):
+        from hiispider import stats
+        from hiispider import pagegetter
         super(Stats, self).__init__(server, server_mode)
         config = copy(config)
         conf = config.get('logd', {})
@@ -32,6 +34,8 @@ class Stats(Component, Logd):
         self.addr = (self.logd_host, self.logd_port)
         self.prefix = conf.get('prefix', 'workerserver')
         self.timer = Timer(self)
+        stats.stats = self
+        pagegetter.stats.stats = self
 
     def initialize(self):
         self.sock = socket.UDPSocket(self.logd_host, self.logd_port)
